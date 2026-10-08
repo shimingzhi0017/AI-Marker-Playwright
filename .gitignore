@@ -1,0 +1,14 @@
+node_modules/
+.playwright-cli/
+output/
+browser-profile/
+ui-profile/
+sessions/
+archived-sessions/
+.env
+.env.*
+*.log
+test-results/
+playwright-report/
+data/
+config.json

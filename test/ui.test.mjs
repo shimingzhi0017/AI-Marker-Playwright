@@ -1,0 +1,76 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import sharp from 'sharp';
+import { chromium } from 'playwright';
+import { createApp } from '../src/server.mjs';
+
+test('可视化配置、评分改分、填分、暂停、历史和来源校验', {timeout:60000}, async t => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'marker-ui-'));
+  const image=await sharp({create:{width:200,height:100,channels:3,background:'#fff'}}).png().toBuffer();
+  let submits=0;
+  const fixture=http.createServer((req,res)=>{
+    if(req.url==='/image'){res.setHeader('Content-Type','image/png');res.end(image);return;}
+    if(req.url==='/submit'){submits++;res.setHeader('Content-Type','application/json');res.end('{"success":true}');return;}
+    if(req.url==='/v1/models'){res.setHeader('Content-Type','application/json');res.end('{"data":[{"id":"fixture-model"}]}');return;}
+    res.setHeader('Content-Type','text/html');res.end('<div id="task">demo</div><div id="paper" data-paper-id="demo1">demo1</div><div name="topicImg"><img src="/image"></div><input name="topicTxt" score="4"><button id="bnt_save" onclick="fetch(\'/submit\',{method:\'POST\'})">提交分数</button>');
+  });
+  await new Promise(resolve=>fixture.listen(0,'127.0.0.1',resolve));
+  const fixtureUrl=`http://127.0.0.1:${fixture.address().port}`;
+  const browser=await chromium.launch({headless:true,channel:'chromium'});
+  let gradingPage;
+  const app=await createApp({root,browserFactory:async()=>{const context=await browser.newContext();gradingPage=await context.newPage();return context;},gradeFunction:async()=>({score:2,studentAnswer:'模拟识别内容',comment:'模拟评分依据',subScores:[]})});
+  t.after(async()=>{await app.close();await browser.close();await new Promise(resolve=>fixture.close(resolve));});
+  const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[];
+  page.setDefaultTimeout(10000);
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.goto(app.url);
+  await page.waitForFunction(()=>document.querySelector('#phase').textContent==='待开始');
+  assert.equal(await page.title(),'阅卷工作台');
+  assert.ok(await page.locator('#grading').isVisible());
+  await page.locator('[data-tab=presets]').click();
+  page.once('dialog',dialog=>dialog.accept());
+  await page.locator('#importFile').setInputFiles({name:'fixture-config.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({presets:{active:'我的方案',list:{'我的方案':{answer:{text:'',images:[]},rubric:'',scoring:{maxScore:0,units:[]},workflowId:'我的工作流'}}},providers:{providers:{'个人接口':{protocol:'chat',endpoint:'',models:[]}}},workflows:{workflows:{'我的工作流':{id:'我的工作流',model:{provider:'个人接口',model:''}}}}}))});
+  await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('导入成功'));
+  const forbidden=await fetch(`${app.url}/api/settings`,{method:'POST',body:'{}'});assert.equal(forbidden.status,403);
+  await page.locator('[data-tab=presets]').click();
+  await page.locator('#answer').fill('模拟参考说明');await page.locator('#rubric').fill('模拟评分规范');await page.locator('#maxScore').fill('4');await page.locator('#savePreset').click();
+  await page.waitForFunction(()=>document.querySelector('#notice').textContent==='方案已保存并设为当前方案');
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets['我的方案'].answer,{text:'模拟参考说明',images:[]});
+  await page.locator('#questionUpload').setInputFiles({name:'reference.png',mimeType:'image/png',buffer:image});
+  await page.waitForFunction(()=>document.querySelectorAll('#questionImages img').length===1);
+  await page.locator('#savePreset').click();await page.waitForFunction(()=>document.querySelector('#dirtyBadge').hidden);
+  assert.match(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets['我的方案'].question.images[0],/^data:image\/png;base64,/);
+  await page.locator('[data-tab=models]').click();await page.locator('#endpoint').fill(fixtureUrl);await page.locator('#apiKey').fill('local-fixture');await page.locator('#saveProvider').click();
+  await page.waitForFunction(()=>document.querySelector('#notice').textContent==='供应商已保存');
+  await page.locator('#primaryModel').fill('fixture-model');await page.locator('#saveWorkflow').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent==='工作流已保存');
+  await page.getByText('输出与请求设置',{exact:true}).click();await page.locator('#outputLimit').check();await page.locator('#outputTokens').fill('2048');await page.locator('#primaryEffort').selectOption('high');await page.locator('#saveWorkflow').click();await page.waitForFunction(()=>document.querySelector('#dirtyBadge').hidden);assert.equal(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).workflows['我的工作流'].model.reasoningEffort,'high');
+  await page.locator('#fetchModels').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent==='模型目录已更新');assert.match(await page.locator('#modelCatalog').innerText(),/fixture-model/);
+  await page.getByText('页面适配配置（完成真实测试后使用）',{exact:true}).click();await page.locator('[data-platform="browser.url"]').fill(fixtureUrl);await page.locator('[data-platform=taskIdSelector]').fill('#task');await page.locator('[data-platform=paperIdSelector]').fill('#paper');await page.locator('#savePlatform').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent==='页面适配已保存');
+  await page.reload();await page.locator('[data-tab=presets]').click();assert.equal(await page.locator('#answer').inputValue(),'模拟参考说明');
+  await page.locator('[data-tab=grading]').click();await page.locator('#open').click();await page.waitForFunction(()=>!document.querySelector('#diagnose').disabled);await page.locator('#diagnose').click();await page.waitForFunction(()=>document.querySelector('#phase').textContent==='页面已识别');
+  await page.locator('#start').click();await page.waitForFunction(()=>!document.querySelector('#fill').disabled);assert.ok(await page.locator('#submit').isDisabled());
+  app.state.countdown=5;
+  await page.waitForFunction(()=>!document.querySelector('#countdown').hidden);
+  await page.locator('#comment').fill('开始编辑');
+  await page.waitForFunction(()=>document.querySelector('#countdown').hidden);assert.equal(app.state.countdown,null);
+  await page.locator('#answerImages img').click();assert.ok(await page.locator('#imageDialog').isVisible());await page.locator('#closeImage').click();
+  await page.locator('[data-score]').fill('3');await page.locator('#comment').fill('教师调整评分依据');await page.locator('#correction').fill('测试人工调整');await page.locator('#fill').click();await page.waitForFunction(()=>document.querySelector('#reason').textContent.includes('等待用户在网站提交'));
+  assert.equal(await gradingPage.locator('input').inputValue(),'3');assert.equal(submits,0);assert.equal(app.store.records()[0].result.score,3);assert.equal(app.store.records()[0].originalResult.score,2);
+  assert.equal(app.store.records()[0].result.comment,'教师调整评分依据');
+  await page.locator('#start').click();await page.waitForFunction(()=>!document.querySelector('#fill').disabled);await page.locator('#pause').click();await page.waitForFunction(()=>document.querySelector('#phase').textContent==='已暂停');assert.ok(await page.locator('#fill').isDisabled());
+  await page.locator('[data-tab=history]').click();await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===2);await page.locator('#historyRows button').first().click();assert.ok(await page.locator('#historyDetail').isVisible());
+  const exported=await page.request.get(`${app.url}/api/export?format=json`);assert.equal(exported.status(),200);assert.equal((await exported.json()).length,2);
+  await page.locator('#historyFilter').selectOption('filled');await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===1);await page.locator('#historySearch').fill('教师调整');await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===1);
+  await page.locator('[data-tab=presets]').click();await page.locator('#detectUnits').click();await page.waitForFunction(()=>document.querySelectorAll('.unit-row').length===1);assert.equal(await page.locator('[data-unit=maxScore]').inputValue(),'4');await page.locator('[data-unit=roundStep]').fill('0.5');await page.locator('#savePreset').click();await page.waitForFunction(()=>document.querySelector('#dirtyBadge').hidden);assert.equal(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets['我的方案'].scoring.units[0].roundStep,0.5);
+  await page.locator('#copyPreset').click();await page.waitForFunction(()=>document.querySelector('#presetSelect').options.length===2);page.once('dialog',d=>d.accept());await page.locator('#deletePreset').click();await page.waitForFunction(()=>document.querySelector('#presetSelect').options.length===1);
+  // Fresh empty configuration gives an actionable visible message, not a silent stop.
+  const cfg=JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8'));cfg.presets[cfg.active].answer='';
+  await page.evaluate(async value=>fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)}),cfg);
+  await page.locator('[data-tab=grading]').click();await page.locator('#start').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('参考答案和评分标准不能为空'));
+  assert.deepEqual(errors,[]);
+  await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+});

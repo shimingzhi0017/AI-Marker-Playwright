@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "active": "我的方案",
+  "mode": "trial",
+  "batchLimit": 10,
+  "requestBudget": 6,
+  "browser": { "url": "https://www.zhixue.com/", "headless": false },
+  "platform": {
+    "verified": false,
+    "frameUrlPattern": "",
+    "paperIdSelector": "",
+    "taskIdSelector": "#currentTopicIndex",
+    "completionSelector": "",
+    "submitResponseUrlPattern": "",
+    "successField": "success",
+    "successValue": true
+  },
+  "bindings": {},
+  "presets": {
+    "我的方案": {
+      "question": "",
+      "answer": "",
+      "rubric": "",
+      "workflowId": "我的工作流",
+      "scoring": { "maxScore": 0, "units": [], "roundStep": 1, "roundMethod": "round", "diligence": { "enabled": false } }
+    }
+  },
+  "providers": {
+    "个人接口": { "protocol": "chat", "endpoint": "", "apiKeyEnv": "MARKER_API_KEY", "models": [] }
+  },
+  "workflows": {
+    "我的工作流": {
+      "model": { "provider": "个人接口", "model": "" },
+      "dualEval": { "enabled": false, "questionType": "objective", "threshold": 2, "secondary": { "provider": "个人接口", "model": "" }, "arbitration": { "provider": "个人接口", "model": "" } }
+    }
+  }
+}

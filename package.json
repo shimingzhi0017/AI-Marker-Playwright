@@ -1,0 +1,23 @@
+{
+  "name": "zhixue-playwright-development",
+  "version": "0.1.0",
+  "private": true,
+  "description": "智学网Playwright可视化阅卷工具；真实平台自动提交待验收",
+  "type": "module",
+  "scripts": {
+    "check:browser": "node check-browser.mjs",
+    "tool": "node src/cli.mjs",
+    "ui": "node src/server.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.64.0",
+    "sharp": "0.35.5"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  },
+  "license": "GPL-3.0"
+}

@@ -1,0 +1,72 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import sharp from 'sharp';
+import {chromium} from 'playwright';
+import {createApp} from '../src/server.mjs';
+async function until(predicate) { const deadline=Date.now()+10000; while(Date.now()<deadline){if(await predicate())return;await new Promise(r=>setTimeout(r,80));}throw Error('等待并发状态超时'); }
+
+test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂停与重启恢复', {timeout:60000}, async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'marker-concurrent-'));
+  const img=await sharp({create:{width:180,height:90,channels:3,background:'#fff'}}).png().toBuffer();
+  const fixture=http.createServer((req,res)=>{
+    if(req.url==='/image'){res.setHeader('Content-Type','image/png');res.end(img);return;}
+    res.setHeader('Content-Type','text/html');res.end(`<div id="paper" data-paper-id="${req.url}"></div><div id="task">demo</div><div name="topicImg"><img src="/image"></div><input name="topicTxt" score="4"><button id="bnt_save">提交分数</button>`);
+  });
+  await new Promise(resolve=>fixture.listen(0,'127.0.0.1',resolve));
+  const base=`http://127.0.0.1:${fixture.address().port}`;
+  const config=JSON.parse(fs.readFileSync(new URL('../config.example.json',import.meta.url),'utf8'));
+  config.browser.url=base+'/A';config.presets[config.active]={answer:'模拟规范',rubric:'模拟规范',workflowId:'我的工作流',scoring:{maxScore:4,units:[]}};
+  config.providers['个人接口']={endpoint:base,apiKey:'fixture'};config.workflows['我的工作流'].model.model='fixture';config.platform={paperIdSelector:'#paper',taskIdSelector:'#task',loadTimeoutMs:1000};
+  fs.writeFileSync(path.join(root,'config.json'),JSON.stringify(config));
+  const browser=await chromium.launch({headless:true,channel:'chromium'}),gradingPages=[],errors=[];
+  let active=0,maxActive=0;
+  const opts={root,browserFactory:async()=>{const context=await browser.newContext();gradingPages.push(await context.newPage());return context;},gradeFunction:async()=>{active++;maxActive=Math.max(active,maxActive);await new Promise(r=>setTimeout(r,350));active--;return {score:2,studentAnswer:'模拟内容',comment:'模拟依据',subScores:[]};}};
+  let app=await createApp(opts);
+  t.after(async()=>{await app.close();await browser.close();await new Promise(resolve=>fixture.close(resolve));});
+  const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(app.url);await page.waitForFunction(()=>document.querySelector('#workspaceSelect').options.length===1);
+  const request=async(url,body,id='default')=>page.evaluate(async({url,body,id})=>{
+    const response=await fetch(url+(id==='default'?'':(url.includes('?')?'&':'?')+'workspace='+id),body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    return {status:response.status,value:await response.json()};
+  },{url,body,id});
+  await page.waitForFunction(()=>document.querySelector('#phase').textContent==='待开始');await page.locator('#addWorkspace').click();await page.waitForFunction(()=>document.querySelector('#workspaceSelect').options.length===2 && document.querySelector('#workspaceSelect').value!=='default' && document.querySelector('#workspaceSelect').value);const b=await page.locator('#workspaceSelect').inputValue();
+  const cfgB=structuredClone(config);cfgB.browser.url=base+'/B';cfgB.presets[cfgB.active].rubric='第二任务规范';
+  await request('/api/settings',cfgB,b);
+  await page.locator('#renameWorkspace').click();await page.locator('#workspaceNameInput').fill('并发任务 B');await page.locator('#workspaceDialogSave').click();await page.waitForFunction(()=>document.querySelector('#workspaceSelect').selectedOptions[0].textContent.includes('并发任务 B'));
+  assert.equal((await request('/api/settings',undefined,b)).value.workspaceName,'并发任务 B');
+  await Promise.all([request('/api/open',{},'default'),request('/api/open',{},b)]);
+  const starts=await Promise.all([request('/api/start',{},'default'),request('/api/start',{},b)]);assert.ok(starts.every(s=>s.status===200),JSON.stringify(starts));
+  await until(async()=>(await Promise.all(['default',b].map(id=>request('/api/state',undefined,id)))).every(s=>s.value.review));
+  assert.equal(maxActive,2);
+  const activeDeletion=await request('/api/workspaces',{action:'delete',id:b});assert.equal(activeDeletion.status,400);
+  await page.locator('#workspaceSelect').selectOption('default');await page.waitForFunction(()=>document.querySelector('#ocr').textContent==='模拟内容');
+  await page.locator('#pause').click();await page.waitForFunction(()=>document.querySelector('#phase').textContent==='已暂停');assert.equal((await request('/api/state',undefined,b)).value.review,true);
+  await page.locator('#workspaceSelect').selectOption(b);await page.waitForFunction(()=>!document.querySelector('#fill').disabled);
+  await page.locator('[data-score]').fill('3');await page.locator('#fill').click();await page.waitForFunction(()=>document.querySelector('#reason').textContent.includes('等待用户在网站提交'));
+  assert.equal(await gradingPages[1].locator('input').inputValue(),'3');assert.equal(await gradingPages[0].locator('input').inputValue(),'');
+  const history=(await request('/api/history',undefined,b)).value;assert.equal(history[0].result.score,3);assert.equal(app.store.records()[0].state,'paused');
+  // Both pages now expose the exact same answer identity. Only one can reach review.
+  await gradingPages[1].goto(base+'/A');
+  await Promise.all([request('/api/start',{},'default'),request('/api/start',{},b)]);
+  await until(async()=>{const states=(await Promise.all(['default',b].map(id=>request('/api/state',undefined,id)))).map(s=>s.value);return states.some(s=>s.review)&&states.some(s=>s.reason.includes('同一答卷'));});
+  const both=await Promise.all(['default',b].map(id=>request('/api/state',undefined,id)));assert.equal(both.filter(s=>s.value.review).length,1);
+  await page.locator('#pauseAll').click();await until(async()=>(await Promise.all(['default',b].map(id=>request('/api/state',undefined,id)))).every(s=>!s.value.running));
+  const failedReview=await request('/api/review',{decision:'fill',recordId:'stale',scores:[1]},b);assert.equal(failedReview.status,400);
+  assert.deepEqual(errors,[]);
+  const evidence=process.env.MARKER_QA_SCREENSHOT;
+  if(evidence){await page.waitForFunction(()=>document.querySelector('#workspaceStatus').textContent.startsWith('0 个'));await page.screenshot({path:evidence,fullPage:true});}
+  await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  await page.goto('about:blank');await app.close();app=await createApp(opts);await page.goto(app.url);await page.waitForFunction(()=>document.querySelector('#workspaceSelect').options.length===2);
+  assert.equal((await request('/api/settings',undefined,b)).value.presets['我的方案'].rubric,'第二任务规范');assert.ok((await request('/api/history',undefined,b)).value.length>=1);assert.equal((await request('/api/state',undefined,b)).value.running,false);
+  assert.equal((await request('/api/workspaces')).value.find(w=>w.id===b).name,'并发任务 B');
+  await page.locator('#workspaceSelect').selectOption(b);await page.waitForFunction(()=>document.querySelector('#workspaceSelect').value!== 'default' && !document.querySelector('#deleteWorkspace').disabled);
+  await page.locator('#deleteWorkspace').click();await page.locator('#workspaceDialogSave').click();await page.waitForFunction(()=>document.querySelector('#workspaceSelect').options.length===1);
+  assert.equal(await page.locator('#workspaceSelect').inputValue(),'default');assert.ok(await page.locator('#deleteWorkspace').isDisabled());
+  const archived=fs.readdirSync(path.join(root,'archived-sessions'));assert.equal(archived.length,1);assert.ok(fs.existsSync(path.join(root,'archived-sessions',archived[0],'data','history.sqlite')));
+  assert.equal((await request('/api/workspaces',{action:'delete',id:'default'})).status,400);
+  await page.goto('about:blank');await app.close();app=await createApp(opts);await page.goto(app.url);await page.waitForFunction(()=>document.querySelector('#phase').textContent==='待开始');assert.equal((await request('/api/workspaces')).value.length,1);
+});
