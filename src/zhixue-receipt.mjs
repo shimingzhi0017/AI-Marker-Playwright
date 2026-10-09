@@ -1,5 +1,25 @@
 import { stableImageKey } from './platform.mjs';
 
+// Both routing hosts are observed on the same Zhixue marking site.
+export function isZhixueApiUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password && !url.port &&
+      ['pt-ali-bj.zhixue.com', 'pt-ali-bj-re.zhixue.com'].includes(url.hostname);
+  } catch { return false; }
+}
+
+export function zhixueCommitUrl(topic) {
+  if (!isZhixueApiUrl(topic?.apiOrigin)) throw Error('当前答卷缺少可信阅卷接口来源，请刷新阅卷页面重新识别');
+  return new URL('/marking/marking/commitTopic/', topic.apiOrigin).href;
+}
+
+export function matchesZhixueCommitUrl(value, topic) {
+  if (!isZhixueApiUrl(value)) return false;
+  const url = new URL(value);
+  return url.origin + url.pathname === zhixueCommitUrl(topic);
+}
+
 export function readTopic(json, field = 'topicInfo') {
   if (json?.code !== 200) return null;
   const topic = json.data?.[field];
@@ -41,10 +61,11 @@ export function trackZhixueTopics(page) {
   const handler = response => {
     const url = new URL(response.url());
     const prefetch = url.pathname === '/marking/marking/personal/preLoadScanrecorddetail/';
-    if (url.hostname !== 'pt-ali-bj-re.zhixue.com' || (!prefetch && url.pathname !== '/marking/marking/personal/scanrecorddetail/') || response.request().method() !== 'POST') return;
+    if (!isZhixueApiUrl(url) || (!prefetch && url.pathname !== '/marking/marking/personal/scanrecorddetail/') || response.request().method() !== 'POST') return;
     const promise = (async () => { try {
       const topic = readTopic(await response.json(), prefetch ? 'nextTopicInfo' : 'topicInfo');
       if (topic) {
+        topic.apiOrigin = url.origin;
         try { origins.set(topic, response.request().frame().page()); } catch {}
         if (!prefetch) current = topic;
         const source = origins.get(topic);

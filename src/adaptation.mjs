@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { redact } from './submission-observer.mjs';
-import { verifyCommit } from './zhixue-receipt.mjs';
+import { verifyCommit, matchesZhixueCommitUrl } from './zhixue-receipt.mjs';
 
 export function urlScope(value) {
   const url = new URL(value);
@@ -50,8 +50,7 @@ function scores(value) {
 export function verifyManualResponse(options, snapshot, expectedScores, candidate) {
   if(candidate.status<200 || candidate.status>=300) throw Error('服务器HTTP状态不是成功');
   if(snapshot.networkTopic) {
-    const url=new URL(candidate.url);
-    if(url.hostname!=='pt-ali-bj-re.zhixue.com'||url.pathname!=='/marking/marking/commitTopic/') throw Error('不是当前智学网提交接口');
+    if(!matchesZhixueCommitUrl(candidate.url,snapshot.networkTopic)) throw Error('不是当前智学网提交接口');
     return verifyCommit(candidate.requestBody,candidate.responseBody,snapshot.networkTopic,expectedScores);
   }
   if(!snapshot.strongIdentity || !options.identityRequestField || !options.scoresRequestField) throw Error('先设置稳定答卷ID、请求中的答卷ID字段及分数字段');

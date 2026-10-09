@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
-import { matchesTopic, verifyCommit } from './zhixue-receipt.mjs';
+import { matchesTopic, verifyCommit, zhixueCommitUrl, matchesZhixueCommitUrl } from './zhixue-receipt.mjs';
 
 const hash = buffer => crypto.createHash('sha256').update(buffer).digest('hex');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -137,7 +137,10 @@ export class ZhixuePlatform {
     const inputs = frame.locator(this.inputSelector());
     if (await inputs.count() !== scores.length) throw Error('提交前评分控件数量变化');
     for (let i = 0; i < scores.length; i++) if (!scoreMatches(await inputs.nth(i).inputValue(), scores[i])) throw Error('提交前分数已变化');
-    const responsePromise = this.page.waitForResponse(r => new RegExp(this.options.submitResponseUrlPattern).test(r.url()) && r.request().method() === 'POST', { timeout: this.options.submitTimeoutMs || 10000 });
+    // Bind the receipt to this paper's observed API origin, not a previously tested host.
+    if (snapshot.networkTopic) zhixueCommitUrl(snapshot.networkTopic);
+    const responsePromise = this.page.waitForResponse(r => r.request().method() === 'POST' &&
+      (snapshot.networkTopic ? matchesZhixueCommitUrl(r.url(), snapshot.networkTopic) : new RegExp(this.options.submitResponseUrlPattern).test(r.url())), { timeout: this.options.submitTimeoutMs || 10000 });
     try {
       await frame.locator(this.submitSelector()).click();
       const response = await responsePromise;
@@ -145,8 +148,7 @@ export class ZhixuePlatform {
       const json = await response.json();
       if (snapshot.networkTopic) {
         const request = response.request();
-        const url = new URL(request.url());
-        if (url.hostname !== 'pt-ali-bj-re.zhixue.com' || url.pathname !== '/marking/marking/commitTopic/') throw Error('提交响应地址不匹配');
+        if (!matchesZhixueCommitUrl(request.url(), snapshot.networkTopic)) throw Error('提交响应地址不匹配');
         const body = Object.fromEntries(new URLSearchParams(request.postData() || ''));
         return { status: response.status(), ...verifyCommit(body, json, snapshot.networkTopic, scores) };
       }
