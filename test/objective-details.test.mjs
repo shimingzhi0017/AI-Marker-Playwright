@@ -6,6 +6,7 @@ import { grade } from '../src/models.mjs';
 test('单总分框客观双阅逐项比较，任意分歧或缺失必须仲裁', async t => {
   const config = { answer: 'fixture', rubric: 'part-1: 5; part-2: 5', workflowId: 'w', scoring: { units: [{ label: '12', maxScore: 10 }] } };
   const response = scores => ({ score: scores.reduce((a, b) => a + b, 0), studentAnswer: 'fixture', comment: 'fixture', subScores: [{ label: '12', score: scores.reduce((a, b) => a + b, 0) }], scoringDetails: scores.map((score, i) => ({ label: `part-${i + 1}`, score })) });
+  const labeled = (labels, scores) => ({...response(scores), scoringDetails: labels.map((label,i)=>({label,score:scores[i]}))});
   let replies, calls;
   const server = http.createServer(async (req, res) => {
     let body = ''; for await (const chunk of req) body += chunk;
@@ -19,6 +20,11 @@ test('单总分框客观双阅逐项比较，任意分歧或缺失必须仲裁',
   const entry = model => ({ provider: 'local', model });
   const settings = { providers: { local: { endpoint: `http://127.0.0.1:${server.address().port}`, apiKey: 'fixture' } }, workflows: { w: { model: entry('A'), dualEval: { enabled: true, questionType: 'objective', threshold: 99, secondary: entry('B'), arbitration: entry('C') } } } };
   const scenarios = [
+    { a: labeled(['①第（1）问','②第（2）问'],[1,3]), b: labeled(['（2）','（1）'],[3,1]), expected: 'consensus' },
+    { a: labeled(['①第（1）问','②第（2）问'],[1,3]), b: labeled(['（1）','（2）'],[2,2]), expected: 'arbitration' },
+    { a: labeled(['③第（3）问A空箱质量','④第（3）问B空箱质量'],[1,3]), b: labeled(['（3）A空箱质量','（3）B空箱质量'],[3,1]), expected: 'arbitration' },
+    { a: labeled(['第（1）问','（1）'],[1,3]), b: labeled(['第（1）问','（1）'],[1,3]), expected: 'arbitration' },
+    { a: labeled(['（1）','（2）'],[1,3]), b: labeled(['（1）速度','（2）'],[1,3]), expected: 'arbitration' },
     { a: response([1, 3]), b: response([2, 2]), expected: 'arbitration' },
     { a: response([1, 3]), b: response([1, 2]), expected: 'arbitration' },
     { a: response([0, 0]), b: response([0, 0]), expected: 'consensus' },

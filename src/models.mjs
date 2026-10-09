@@ -1,4 +1,5 @@
 import { promptFor, parseResult, validateResult, fieldImages } from './domain.mjs';
+import { sameScoringItems } from '../ui/scoring-labels.js';
 
 export function endpoint(provider) {
   const url = provider.endpoint.replace(/\/$/, '');
@@ -88,7 +89,7 @@ export async function grade(config, settings, images, signal) {
   const diff = Math.abs(a.score - b.score);
   const items = result => result.scoringDetails?.length ? result.scoringDetails : needsDetails ? [] : result.subScores || [];
   const aItems = items(a), bItems = items(b);
-  const match = (first, second) => first.length === second.length && first.every((s, i) => s.label === second[i].label && s.score === second[i].score);
+  const match = sameScoringItems;
   const same = a.score === b.score && match(a.subScores || [], b.subScores || []) && aItems.length > 0 && match(aItems, bItems);
   if (dual.questionType !== 'subjective' ? same : diff <= (dual.threshold ?? 2)) {
     if (dual.questionType !== 'subjective') return { ...a, formatWarning: a.formatWarning || b.formatWarning, dualEval: { result: 'consensus', a, b } };
