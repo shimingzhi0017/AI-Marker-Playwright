@@ -76,6 +76,17 @@ export function buildLayout() {
   const models=$('models'), grid=models.querySelector('.grid'), cards=[...grid.children];
   const workflowSection=document.createElement('section');workflowSection.id='workflows';workflowSection.className='tab';workflowSection.hidden=true;workflowSection.append(cards[1]);models.after(workflowSection);$('presets').append(models.lastElementChild);
   const sharedHint=document.createElement('p');sharedHint.className='hint';sharedHint.textContent='模型供应商、接口地址、密钥和模型目录适用于所有任务。修改后从下一轮阅卷生效。';cards[0].prepend(sharedHint);
+  $('presetSelect').closest('.controls').hidden=true;
+  $('workflowSelect').closest('.controls').hidden=true;
+  $('presetWorkflow').closest('label').hidden=true;
+  $('runPreset').closest('label').hidden=true;$('bind').hidden=true;
+  document.querySelector('.runtime-settings summary').firstChild.textContent='运行设置 ';
+  $('presets').querySelector('h2').textContent='当前任务方案';
+  $('workflows').querySelector('h2').textContent='当前任务评分工作流';
+  const backupMenu=document.createElement('details');backupMenu.className='export-menu';backupMenu.innerHTML='<summary>配置备份</summary>';
+  const backupOptions=document.createElement('div');backupOptions.className='export-options';
+  const importControl=$('importFile').closest('label');importControl.before(backupMenu);backupOptions.append(importControl,$('exportConfig'));backupMenu.append(backupOptions);
+  $('presets').querySelector('p.hint').textContent='直接设置当前任务的参考答案和评分标准。配置备份用于迁移和恢复，旧方案与工作流数据继续保留。';
 }
 
 export function createEnhancements({getConfig,save,action,markDirty,renderPreset,renderProvider,renderWorkflow,getSnapshot,api,refreshSettings}) {

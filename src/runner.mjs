@@ -16,8 +16,8 @@ export class Runner {
       while (!signal.aborted) {
         const snapshot = await this.platform.ready(previous, signal);
         if (!snapshot) { this.store.log('completed'); return { count: this.count, reason: '平台明确显示任务完成' }; }
-        const presetName = this.settings.bindings?.[snapshot.taskId] || this.settings.active;
-        if (previous && previous.taskId !== snapshot.taskId && !this.settings.bindings?.[snapshot.taskId]) throw Error('任务已切换，尚未绑定适用方案，已暂停');
+        const presetName = this.settings.taskScopedConfig ? this.settings.active : this.settings.bindings?.[snapshot.taskId] || this.settings.active;
+        if (previous && previous.taskId !== snapshot.taskId && (this.settings.taskScopedConfig || !this.settings.bindings?.[snapshot.taskId])) throw Error('任务已切换，尚未绑定适用方案，已暂停');
         const config = structuredClone(this.settings.presets[presetName]);
         if (!config) throw Error('当前任务没有适用方案');
         validateConfig(config);

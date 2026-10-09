@@ -38,7 +38,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   const forbidden=await fetch(`${app.url}/api/settings`,{method:'POST',body:'{}'});assert.equal(forbidden.status,403);
   await page.locator('[data-tab=presets]').click();
   await page.locator('#answer').fill('模拟参考说明');await page.locator('#rubric').fill('模拟评分规范');await page.locator('#maxScore').fill('4');await page.locator('#savePreset').click();
-  await page.waitForFunction(()=>document.querySelector('#notice').textContent==='方案已保存并设为当前方案');
+  await page.waitForFunction(()=>document.querySelector('#notice').textContent==='当前任务方案已保存');
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets['我的方案'].answer,{text:'模拟参考说明',images:[]});
   await page.locator('#questionUpload').setInputFiles({name:'reference.png',mimeType:'image/png',buffer:image});
   await page.waitForFunction(()=>document.querySelectorAll('#questionImages img').length===1);
@@ -89,7 +89,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   assert.match(fs.readFileSync(path.join(exportDir,saved),'utf8'),/学生编号/);
   await page.locator('#historyFilter').selectOption('filled');await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===1);await page.locator('#historySearch').fill('教师调整');await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===1);
   await page.locator('[data-tab=presets]').click();await page.locator('#detectUnits').click();await page.waitForFunction(()=>document.querySelectorAll('.unit-row').length===1);assert.equal(await page.locator('[data-unit=maxScore]').inputValue(),'4');await page.locator('[data-unit=roundStep]').fill('0.5');await page.locator('#savePreset').click();await page.waitForFunction(()=>document.querySelector('#dirtyBadge').hidden);assert.equal(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets['我的方案'].scoring.units[0].roundStep,0.5);
-  await page.locator('#copyPreset').click();await page.waitForFunction(()=>document.querySelector('#presetSelect').options.length===2);page.once('dialog',d=>d.accept());await page.locator('#deletePreset').click();await page.waitForFunction(()=>document.querySelector('#presetSelect').options.length===1);
+  assert.equal(await page.locator('#presetSelect').isVisible(),false);assert.equal(await page.locator('#workflowSelect').isVisible(),false);assert.equal(await page.locator('#bind').isVisible(),false);
   // Fresh empty configuration gives an actionable visible message, not a silent stop.
   const cfg=JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8'));cfg.presets[cfg.active].answer='';
   await page.evaluate(async value=>fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)}),cfg);

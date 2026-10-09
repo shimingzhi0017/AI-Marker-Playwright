@@ -70,7 +70,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
       if (record.state === 'submitted') state.count++;
     }
   };
-  function settings() { const cfg=loadSettings(file);cfg.providers=JSON.parse(fs.readFileSync(sharedProvidersFile,'utf8'));return cfg; }
+  function settings() { const cfg=loadSettings(file);cfg.taskScopedConfig=true;cfg.providers=JSON.parse(fs.readFileSync(sharedProvidersFile,'utf8'));return cfg; }
   function writeSettings(value) {
     if (state.running || state.starting) throw Error('请先暂停阅卷，再修改配置');
     sanitizeSettings(value);
@@ -113,7 +113,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
     const snapshot = await platform.ready();
     if (generation !== expectedGeneration) throw Error('启动已取消');
     if (!snapshot) throw Error('平台已显示任务完成');
-    const preset = cfg.presets[cfg.bindings?.[snapshot.taskId] || cfg.active]; validateConfig(preset);
+    const preset = cfg.presets[cfg.taskScopedConfig ? cfg.active : cfg.bindings?.[snapshot.taskId] || cfg.active]; validateConfig(preset);
     const workflow = cfg.workflows[preset.workflowId];
     for (const entry of [workflow?.model, ...(workflow?.dualEval?.enabled ? [workflow.dualEval.secondary, workflow.dualEval.arbitration] : [])]) {
       const provider = cfg.providers[entry?.provider];
