@@ -133,10 +133,15 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.locator('[data-tab=grading]').click();await page.locator('#start').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('参考答案和评分标准不能为空'));
   assert.deepEqual(errors,[]);
   await page.locator('[data-tab=models]').click();
-  page.once('dialog',d=>d.accept());await page.locator('#deleteProvider').click();
+  await page.locator('#deleteProvider').click();
+  assert.ok(await page.locator('#deleteProviderDialog').isVisible());
+  await page.locator('#deleteProviderDialog button[value=cancel]').click();
+  assert.equal(await page.locator('#providerSelect option').count(),1);
+  await page.locator('#deleteProvider').click();await page.locator('#confirmDeleteProvider').click();
   await page.waitForFunction(()=>document.querySelector('#providerSelect').options.length===0);
   assert.match(await page.locator('#providerSummary').innerText(),/尚未添加/);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,'shared-providers.json'),'utf8')),{});
+  assert.ok(fs.readdirSync(root).some(name=>name.startsWith('shared-providers.json.before-delete-')));
   await page.reload();await page.locator('[data-tab=models]').click();
   assert.equal(await page.locator('#providerSelect option').count(),0);
   await page.locator('#workspaceSelect').click();await page.keyboard.press('Escape');await page.locator('[data-tab=workflows]').click();

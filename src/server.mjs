@@ -224,6 +224,14 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           children.set(id,{app,cookie,name});
           text(res,200,{ok:true,id}); return;
         }
+        case '/api/provider-delete': {
+          const providers=JSON.parse(fs.readFileSync(sharedProvidersFile,'utf8'));
+          if(typeof input.name!=='string'||!Object.hasOwn(providers,input.name))throw Error('接口不存在，请刷新后重试');
+          fs.copyFileSync(sharedProvidersFile,sharedProvidersFile+'.before-delete-'+Date.now());
+          delete providers[input.name];
+          fs.writeFileSync(sharedProvidersFile+'.tmp',JSON.stringify(providers,null,2));fs.renameSync(sharedProvidersFile+'.tmp',sharedProvidersFile);
+          note('模型接口已删除，已有历史记录保留');text(res,200,{ok:true,providers});return;
+        }
         case '/api/providers': {
           const cfg=settings();sanitizeSettings({...cfg,providers:input.providers});
           fs.writeFileSync(sharedProvidersFile+'.tmp',JSON.stringify(input.providers,null,2));fs.renameSync(sharedProvidersFile+'.tmp',sharedProvidersFile);

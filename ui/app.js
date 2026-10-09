@@ -111,7 +111,7 @@ $('importFile').onchange=()=>action(async()=>{const file=$('importFile').files[0
 $('workspaceSelect').onchange=()=>{const selected=$('workspaceSelect').value;if(busy){$('workspaceSelect').value=workspace;notice('当前操作完成后再切换任务');return;}action(()=>switchWorkspace(selected));};
 $('addWorkspace').onclick=()=>action(async()=>{const result=await api('/api/workspaces',{});await refreshWorkspaces();await switchWorkspace(result.id);notice('新任务已创建，配置已复制。请在自己的浏览器登录并选择阅卷页面。',true);});
 $('pauseAll').onclick=()=>action(async()=>{await refreshWorkspaces();await Promise.all(workspaces.map(w=>api('/api/pause',{},w.id)));notice('已请求暂停全部任务',true);});
-const enhancements=createEnhancements({getConfig:()=>config,save,action,markDirty,renderPreset,renderProvider,renderWorkflow,getSnapshot:()=>state.snapshot,api,refreshSettings:renderSettings});
+const enhancements=createEnhancements({getConfig:()=>config,save,action,markDirty,renderPreset,renderProvider,renderWorkflow,getSnapshot:()=>state.snapshot,api,refreshSettings:renderSettings,notice});
 $('historySearch').oninput=()=>action(()=>renderHistory());$('historyFilter').onchange=()=>action(()=>renderHistory());$('arbitrationFilter').onchange=()=>action(()=>renderHistory());
 async function workspaceDialog(deleting=false) {
   const current=workspaces.find(w=>w.id===workspace),dialog=$('workspaceDialog');

@@ -131,8 +131,18 @@ export function buildLayout() {
   $('viewProviderModels').onclick=()=>modelDialog.showModal();$('closeProviderModels').onclick=()=>modelDialog.close();
 }
 
-export function createEnhancements({getConfig,save,action,markDirty,renderPreset,renderProvider,renderWorkflow,getSnapshot,api,refreshSettings}) {
+export function createEnhancements({getConfig,save,action,markDirty,renderPreset,renderProvider,renderWorkflow,getSnapshot,api,refreshSettings,notice}) {
   const $=id=>document.getElementById(id);const images={};
+  const deleteDialog=document.createElement('dialog');deleteDialog.id='deleteProviderDialog';deleteDialog.setAttribute('aria-labelledby','deleteProviderTitle');
+  deleteDialog.innerHTML='<h2 id="deleteProviderTitle">删除模型接口</h2><p id="deleteProviderMessage" class="hint"></p><form method="dialog" class="actions"><button value="cancel">取消</button><button id="confirmDeleteProvider" value="delete" class="danger">确认删除</button></form>';
+  document.body.append(deleteDialog);
+  $('deleteProvider').onclick=()=>{
+    const name=$('providerSelect').value;if(!name)return;
+    $('deleteProviderMessage').textContent='删除接口“'+name+'”？所有任务共用此接口，引用它的工作流需要重新选择。历史记录保留，接口配置会先在本机备份。';
+    deleteDialog.returnValue='';deleteDialog.showModal();
+    deleteDialog.addEventListener('close',()=>{if(deleteDialog.returnValue!=='delete')return;action(async()=>{const result=await api('/api/provider-delete',{name});getConfig().providers=result.providers;$('providerDialog').hidden=true;refreshSettings();notice('接口已删除',true);});},{once:true});
+  };
+
   function media(field) {
     const target=$(field+'Images');target.replaceChildren();
     (images[field]||[]).forEach((value,index)=>{if(typeof value!=='string')return;const wrap=document.createElement('div'),img=document.createElement('img'),button=document.createElement('button');img.src=value.startsWith('data:')?value:`data:image/png;base64,${value}`;img.alt='方案说明图片';button.textContent='移除';button.onclick=()=>{images[field].splice(index,1);markDirty('presets');media(field);};wrap.append(img,button);target.append(wrap);});
@@ -149,7 +159,7 @@ export function createEnhancements({getConfig,save,action,markDirty,renderPreset
   $('clearBlank').onclick=()=>action(async()=>{const p=getConfig().presets[$('presetSelect').value];p.blankDetection={...p.blankDetection,reference:[],enabled:false};await save('空白范本已清除','presets');preset();});
   $('addModelId').onclick=()=>action(async()=>{const id=$('newModelId').value.trim();if(!id)throw Error('请填写模型 ID');const p=getConfig().providers[$('providerSelect').value];p.models=[...new Set([...(p.models||[]),id])];await save('模型目录已保存','models');$('newModelId').value='';renderProvider();});
   async function remove(group,select) {const cfg=getConfig(),name=$(select).value;if(group!=='providers'&&Object.keys(cfg[group]).length<=1)throw Error('至少保留一项');if(group==='workflows'&&Object.values(cfg.presets).some(p=>p.workflowId===name))throw Error('工作流仍被方案使用，请先替换方案工作流');if(!confirm(group==='providers'?`删除供应商“${name}”？所有任务共用此接口；引用它的工作流需要重新选择供应商。历史记录仍会保留。`:`删除“${name}”？历史记录仍会保留。`))return;delete cfg[group][name];if(group==='presets'){if(cfg.active===name)cfg.active=Object.keys(cfg.presets)[0];for(const [task,p]of Object.entries(cfg.bindings||{}))if(p===name)delete cfg.bindings[task];}await save('已删除',group==='presets'?'presets':group==='workflows'?'workflows':'models');refreshSettings();}
-  for(const [id,group,select]of[['deletePreset','presets','presetSelect'],['deleteProvider','providers','providerSelect'],['deleteWorkflow','workflows','workflowSelect']])$(id).onclick=()=>action(()=>remove(group,select));
+  for(const [id,group,select]of[['deletePreset','presets','presetSelect'],['deleteWorkflow','workflows','workflowSelect']])$(id).onclick=()=>action(()=>remove(group,select));
   $('copyPreset').onclick=()=>action(async()=>{const cfg=getConfig(),name=$('presetSelect').value;let copy=name+' 副本',i=2;while(cfg.presets[copy])copy=name+' 副本 '+i++;cfg.presets[copy]=structuredClone(cfg.presets[name]);await save('方案已复制','presets');refreshSettings();$('presetSelect').value=copy;renderPreset();});
   function applyWorkflow(w){w.recognitionPolicy=$('recognitionPolicy').value;for(const [prefix,entry]of[['primary',w.model],['secondary',w.dualEval.secondary],['arbitration',w.dualEval.arbitration]]){const effort=$(prefix+'Effort').value;if(effort)entry.reasoningEffort=effort;else delete entry.reasoningEffort;}w.outputLimitEnabled=$('outputLimit').checked;w.maxOutputTokens=Number($('outputTokens').value);getConfig().requestBudget=Number($('requestBudget').value);}
   return {preset,provider,workflow,applyPreset,applyWorkflow};
