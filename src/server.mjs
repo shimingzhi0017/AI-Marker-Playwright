@@ -213,8 +213,10 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           if (!['json','csv','html'].includes(input.format)) throw Error('导出格式无效');
           const records = enrichStudents(store.records(), path.join(data,'diagnostics','submission-observations.jsonl'));
           const directory = path.join(data,'exports'); fs.mkdirSync(directory,{recursive:true});
-          const destination = path.join(directory, 'history-'+Date.now()+'.'+input.format);
-          exportHistory(records,destination); text(res,200,{path:destination,count:records.length}); return;
+          const taskName=settings().workspaceName || '任务';
+          const safeName=taskName.replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').slice(0,60) || '任务';
+          const destination = path.join(directory, safeName+'-history-'+Date.now()+'.'+input.format);
+          exportHistory(records.map(r=>({...r,workspaceName:taskName})),destination); text(res,200,{path:destination,count:records.length,taskName}); return;
         }
         case '/api/start': await start(); break;
         case '/api/pause': pause(); break;

@@ -19,9 +19,9 @@ export function enrichStudents(records, observationFile) {
 export function exportHistory(records, file) {
   if (file.endsWith('.csv')) {
     const labels=[...new Set(records.flatMap(r=>details(r.result).map(s=>s.label)))];
-    const rows = [['记录ID','时间','学生姓名','学生编号','学生用户ID','班级ID','学生信息状态','答卷ID','考试ID','题号','方案','运行模式','状态','模型总分','最终分数','主评总分','复评总分','双阅结果','识别答案','评分依据','人工改分原因','服务器确认','错误原因',...labels.map(l=>`${l}得分`),...labels.map(l=>`${l}评分依据`)], ...records.map(r => {
+    const rows = [['记录ID','所属任务','时间','学生姓名','学生编号','学生用户ID','班级ID','学生信息状态','答卷ID','考试ID','题号','方案','运行模式','状态','模型总分','最终分数','主评总分','复评总分','双阅结果','识别答案','评分依据','人工改分原因','服务器确认','错误原因',...labels.map(l=>`${l}得分`),...labels.map(l=>`${l}评分依据`)], ...records.map(r => {
       const s=r.student || r.snapshot?.networkTopic?.student; const result=r.result, d=result?.dualEval;
-      return [r.id,r.time,s?.name,s?.userCode,s?.userId,s?.classId,s?.userCode || s?.userId ? '已匹配' : '未保存学生标识',r.snapshot?.networkTopic?.scanRecordId || r.snapshot?.paperId,r.snapshot?.pageContext?.examId,r.snapshot?.legacyTaskId || r.taskId,r.presetName,r.mode,r.state,result?.rawScore ?? result?.score,result?.score,d?.a?.score,d?.b?.score,d?.result,result?.studentAnswer,result?.comment,r.correctionReason,r.receipt?.confirmed ? '是' : '否',r.error,...labels.map(l=>details(result).find(s=>s.label===l)?.score),...labels.map(l=>{const s=details(result).find(s=>s.label===l);return s?.reason || s?.comment;})];
+      return [r.id,r.workspaceName,r.time,s?.name,s?.userCode,s?.userId,s?.classId,s?.userCode || s?.userId ? '已匹配' : '未保存学生标识',r.snapshot?.networkTopic?.scanRecordId || r.snapshot?.paperId,r.snapshot?.pageContext?.examId,r.snapshot?.legacyTaskId || r.taskId,r.presetName,r.mode,r.state,result?.rawScore ?? result?.score,result?.score,d?.a?.score,d?.b?.score,d?.result,result?.studentAnswer,result?.comment,r.correctionReason,r.receipt?.confirmed ? '是' : '否',r.error,...labels.map(l=>details(result).find(s=>s.label===l)?.score),...labels.map(l=>{const s=details(result).find(s=>s.label===l);return s?.reason || s?.comment;})];
     })];
     fs.writeFileSync(file, '\ufeff' + rows.map(row => row.map(cell => {const text=String(cell ?? '');return `"${(/^[=+@-]/.test(text) ? "'"+text : text).replace(/"/g, '""')}"`;}).join(',')).join('\r\n')); return;
   }
