@@ -87,6 +87,26 @@ export function buildLayout() {
   const backupOptions=document.createElement('div');backupOptions.className='export-options';
   const importControl=$('importFile').closest('label');importControl.before(backupMenu);backupOptions.append(importControl,$('exportConfig'));backupMenu.append(backupOptions);
   $('presets').querySelector('p.hint').textContent='直接设置当前任务的参考答案和评分标准。配置备份用于迁移和恢复，旧方案与工作流数据继续保留。';
+  const providerCard=$('providerSelect').closest('.card');
+  providerCard.querySelector('h2').textContent='模型供应商';
+  const providerForm=$('endpoint').closest('.form-grid');
+  const providerDialog=document.createElement('dialog');providerDialog.id='providerDialog';providerDialog.setAttribute('aria-labelledby','providerDialogTitle');
+  providerDialog.innerHTML='<div class="image-dialog-heading"><h2 id="providerDialogTitle">编辑接口</h2><button id="closeProvider">关闭</button></div>';
+  document.body.append(providerDialog);providerDialog.append(providerForm);
+  const advancedProvider=document.createElement('details');advancedProvider.innerHTML='<summary>高级设置</summary>';
+  advancedProvider.append($('apiKeyEnv').closest('label'));providerDialog.append(advancedProvider);
+  const saveActions=document.createElement('div');saveActions.className='actions';saveActions.append($('saveProvider'));providerDialog.append(saveActions);
+  const providerSummary=document.createElement('div');providerSummary.id='providerSummary';providerSummary.className='provider-summary';
+  providerCard.querySelector('.controls').after(providerSummary);
+  providerSummary.insertAdjacentHTML('afterend','<div class="actions"><button id="editProvider" class="primary">编辑接口</button><button id="viewProviderModels">查看模型目录</button></div>');
+  const modelDialog=document.createElement('dialog');modelDialog.id='providerModelsDialog';modelDialog.innerHTML='<div class="image-dialog-heading"><h2>模型目录</h2><button id="closeProviderModels">关闭</button></div>';
+  document.body.append(modelDialog);modelDialog.append($('modelCatalog'),$('fetchModels'),$('manualModelList'));
+  const modelAdd=document.createElement('div');modelAdd.className='controls';modelAdd.append($('newModelId').closest('label'),$('addModelId'));modelDialog.append(modelAdd);
+  providerCard.querySelectorAll('details').forEach(d=>d.remove());
+  providerCard.querySelectorAll('p.hint').forEach((p,i)=>{if(i>0)p.remove();});
+  $('editProvider').onclick=()=>{ $('providerDialogTitle').textContent='编辑接口 · '+$('providerSelect').value;$('apiKey').type='password';providerDialog.showModal();};
+  $('closeProvider').onclick=()=>providerDialog.close();
+  $('viewProviderModels').onclick=()=>modelDialog.showModal();$('closeProviderModels').onclick=()=>modelDialog.close();
 }
 
 export function createEnhancements({getConfig,save,action,markDirty,renderPreset,renderProvider,renderWorkflow,getSnapshot,api,refreshSettings}) {
@@ -98,7 +118,7 @@ export function createEnhancements({getConfig,save,action,markDirty,renderPreset
   for(const field of ['question','answer','rubric'])$(field+'Upload').onchange=()=>action(async()=>{for(const file of $(field+'Upload').files){if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>5*1024*1024)throw Error('说明图片须为 PNG/JPG/WebP，且每张不超过5MB');images[field].push(await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);}));}markDirty('presets');media(field);$(field+'Upload').value='';});
   function preset() {const p=getConfig().presets[$('presetSelect').value];for(const field of ['question','answer','rubric']){images[field]=structuredClone(p[field]?.images||[]);media(field);}const d=p.scoring?.diligence||{};$('diligenceEnabled').checked=!!d.enabled;$('diligenceBonus').value=d.maxBonus??3;$('diligenceDecay').value=d.decayPower??2;$('diligenceCriteria').value=d.criteria||'';$('blankEnabled').checked=!!p.blankDetection?.enabled;$('blankThreshold').value=p.blankDetection?.threshold??0.01;$('blankStatus').textContent=p.blankDetection?.reference?.length ? `已保存 ${p.blankDetection.reference.length} 个范本特征` : '尚未设置空白范本；启用后将交给模型评分并要求人工确认。';}
   function applyPreset(p) {for(const field of ['question','answer','rubric']){if(images[field]?.length || typeof p[field]==='object')p[field]={...(typeof p[field]==='object'?p[field]:{text:p[field]}),images:structuredClone(images[field]||[])};}p.scoring.diligence={...p.scoring.diligence,enabled:$('diligenceEnabled').checked,maxBonus:Number($('diligenceBonus').value),decayPower:Number($('diligenceDecay').value),criteria:$('diligenceCriteria').value};p.blankDetection={...p.blankDetection,enabled:$('blankEnabled').checked,threshold:Number($('blankThreshold').value)};}
-  function provider() {const p=getConfig().providers[$('providerSelect').value];$('manualModelList').replaceChildren(...(p.models||[]).map(id=>{const row=document.createElement('div'),name=document.createElement('span'),button=document.createElement('button');name.textContent=id;button.textContent='移除';button.onclick=()=>action(async()=>{p.models=p.models.filter(m=>m!==id);await save('模型目录已保存','models');provider();});row.append(name,button);return row;}));}
+  function provider() {const p=getConfig().providers[$('providerSelect').value];const summary=$('providerSummary');summary.replaceChildren();for(const [label,value] of [['接口状态',p.endpoint&&(p.apiKey||p.apiKeyEnv)?'已配置':'待配置'],['协议',{chat:'Chat Completions',responses:'Responses',gemini:'Gemini 原生'}[p.protocol||'chat']],['模型目录',`${(p.models||[]).length} 个模型`]]){const item=document.createElement('div'),title=document.createElement('span'),text=document.createElement('strong');title.textContent=label;text.textContent=value;item.append(title,text);summary.append(item);}$('manualModelList').replaceChildren(...(p.models||[]).map(id=>{const row=document.createElement('div'),name=document.createElement('span'),button=document.createElement('button');name.textContent=id;button.textContent='移除';button.onclick=()=>action(async()=>{p.models=p.models.filter(m=>m!==id);await save('模型目录已保存','models');provider();});row.append(name,button);return row;}));}
   function workflow() {const w=getConfig().workflows[$('workflowSelect').value];for(const [prefix,entry]of[['primary',w.model],['secondary',w.dualEval?.secondary],['arbitration',w.dualEval?.arbitration]])$(prefix+'Effort').value=entry?.reasoningEffort||'';$('outputLimit').checked=w.outputLimitEnabled!==false && !!w.maxOutputTokens;$('outputTokens').value=w.maxOutputTokens||4096;$('requestBudget').value=getConfig().requestBudget||6;dual();}
   function dual(){document.querySelectorAll('.dual-control').forEach(el=>el.hidden=!$('dual').checked);$('outputTokens').disabled=!$('outputLimit').checked;}
   $('dual').addEventListener('change',dual);$('outputLimit').addEventListener('change',dual);
