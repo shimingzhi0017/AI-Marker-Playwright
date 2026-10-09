@@ -32,3 +32,5 @@ main{padding:26px 32px}header{margin-bottom:18px}h1{font-size:24px;margin:0}.car
 aside .task-overview{width:100%;margin:0 0 8px}aside .task-overview-heading{align-items:flex-start;flex-direction:column;gap:4px}aside .workspace-cards{grid-template-columns:1fr;gap:8px}aside .workspace-card{padding:12px;gap:7px}aside .workspace-card-name{font-size:13px}aside .workspace-controls>label:has(#workspaceSelect){margin-top:2px}@media(max-width:800px){aside .task-overview{grid-column:1/-1}aside .workspace-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 .formatted-feedback p{margin:0 0 14px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere}.formatted-feedback p:last-child{margin-bottom:0}.formatted-feedback math{font-size:1.12em}#commentPreview{padding:16px;background:#f6f8f6;border-radius:10px}#commentEditor{margin:12px 0}
+
+.brand .logo{padding:0;background:transparent;display:block;flex-shrink:0}.brand .logo img{display:block;width:44px;height:44px}
