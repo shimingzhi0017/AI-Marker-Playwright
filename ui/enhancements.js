@@ -83,6 +83,11 @@ export function buildLayout() {
   
   $('presets').querySelector('h2').textContent='当前任务方案';
   $('workflows').querySelector('h2').textContent='当前任务评分工作流';
+  for(const prefix of ['primary','secondary','arbitration']){
+    const input=$(prefix+'Model');input.removeAttribute('list');
+    const button=document.createElement('button');button.id=prefix+'ChooseModel';button.type='button';button.className='small model-choose';button.textContent='选择模型';button.dataset.modelPrefix=prefix;input.after(button);
+  }
+  document.body.insertAdjacentHTML('beforeend','<dialog id="workflowModelDialog" aria-labelledby="workflowModelTitle"><div class="image-dialog-heading"><h2 id="workflowModelTitle">选择模型</h2><button id="closeWorkflowModels">关闭</button></div><label>搜索模型<input id="workflowModelSearch" placeholder="输入模型名称筛选"></label><p id="workflowModelHint" class="hint"></p><div id="workflowModelChoices" class="model-choice-list"></div></dialog>');
   const workflowForm=$('primaryProvider').closest('.form-grid');
   const workflowLayout=document.createElement('div');workflowLayout.className='workflow-layout';workflowForm.before(workflowLayout);
   const modelPanels={};

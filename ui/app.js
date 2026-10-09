@@ -91,6 +91,22 @@ for(const [id,decision] of [['fill','fill'],['submit','submit'],['stopReview','s
 for(const [id,outcome] of [['resolveYes','submitted'],['resolveNo','not-submitted']]) $(id).onclick=()=>action(async()=>{if(!confirm('请确认已在阅卷网站核对这份记录的实际提交状态。'))return;await api('/api/resolve',{id:selectedRecord.id,outcome});await renderHistory();$('historyDetail').hidden=true;});
 $('presetSelect').onchange=()=>{if(dirty.has('presets')&&!confirm('放弃当前方案未保存修改？')){$('presetSelect').value=config.active;return;}dirty.delete('presets');$('dirtyBadge').hidden=!dirty.size;renderPreset();};$('providerSelect').onchange=renderProvider;$('workflowSelect').onchange=renderWorkflow;
 for(const prefix of ['primary','secondary','arbitration']) $(prefix+'Provider').onchange=()=>renderCatalog(prefix);
+let choosingModelPrefix;
+function showModelChoices(){
+  const prefix=choosingModelPrefix;if(!prefix)return;
+  const provider=$(prefix+'Provider').value,models=config.providers[provider]?.models||[],query=$('workflowModelSearch').value.trim().toLowerCase();
+  const matching=models.filter(model=>model.toLowerCase().includes(query));
+  $('workflowModelTitle').textContent='选择模型 · '+provider;
+  $('workflowModelHint').textContent=!models.length?'此供应商尚无模型目录。请在模型接口中获取目录，也可以关闭窗口后手动填写模型名称。':matching.length?`共 ${models.length} 个模型，显示 ${matching.length} 个`:'没有匹配的模型，请修改搜索词。';
+  $('workflowModelChoices').replaceChildren(...matching.map(model=>{
+    const button=document.createElement('button');button.type='button';button.textContent=model;button.setAttribute('aria-pressed',String($(prefix+'Model').value===model));
+    button.onclick=()=>{$(prefix+'Model').value=model;markDirty('workflows');$('workflowModelDialog').close();$(prefix+'Model').focus();};return button;
+  }));
+}
+for(const prefix of ['primary','secondary','arbitration']) $(prefix+'ChooseModel').onclick=()=>{choosingModelPrefix=prefix;$('workflowModelSearch').value='';showModelChoices();$('workflowModelDialog').showModal();};
+$('workflowModelSearch').oninput=showModelChoices;
+$('closeWorkflowModels').onclick=()=>$('workflowModelDialog').close();
+
 $('importFile').onchange=()=>action(async()=>{const file=$('importFile').files[0];if(!file)return;if(!confirm('导入将替换当前配置，是否继续？'))return;await api('/api/import',JSON.parse(await file.text()));config=await api('/api/settings');renderSettings();notice('导入成功，请核对方案及模型后开始',true);$('importFile').value='';});
 $('workspaceSelect').onchange=()=>{const selected=$('workspaceSelect').value;if(busy){$('workspaceSelect').value=workspace;notice('当前操作完成后再切换任务');return;}action(()=>switchWorkspace(selected));};
 $('addWorkspace').onclick=()=>action(async()=>{const result=await api('/api/workspaces',{});await refreshWorkspaces();await switchWorkspace(result.id);notice('新任务已创建，配置已复制。请在自己的浏览器登录并选择阅卷页面。',true);});
