@@ -246,7 +246,7 @@ test('连续100份答卷：每份只提交一次且记录、计数对应', { tim
   const f = await fixture(t, false, { papers: 100, delay: 15 }); f.settings.batchLimit = 0;
   const outcome = await new Runner(f.platform, f.store, f.settings, async () => 'submit', async () => result([1, 1])).run();
   assert.equal(outcome.count, 100); assert.equal(f.submits(), 100); assert.equal(outcome.paused, undefined);
-  assert.match(outcome.reason, /明确/);
+  assert.match(outcome.reason, /阅卷完成/);
   const records = f.store.records(); assert.equal(records.length, 100);
   assert.equal(new Set(records.map(r => r.identity)).size, 100); assert.ok(records.every(r => r.state === 'submitted'));
 });

@@ -23,7 +23,8 @@ export const suiteAdapterScript = `(()=>{
     source=source.replace(/\nif \(\w+Adapter\.shouldInitialize\(\)\) \{[\s\S]*$/,'');
     if(a.id==='jiukexing')source=source.split('// 注册适配器')[0];
     if(a.id==='guangda-2')source=source.split('// 注册适配器（等待DOM准备')[0].replace(/        if \(url\.includes\('firstUpdateUserInfo'\)\) \{[\s\S]*?\n        \}/,'');
-    return `if(${JSON.stringify(a.patterns)}.some(p=>matches(p,location.href))){try{(()=>{${fs.existsSync(selectors)?fs.readFileSync(selectors,'utf8'):''}\n${source}\ncandidates.push(${a.variable});})();}catch(error){console.warn('适配器加载失败',${JSON.stringify(a.id)},error.message);}}`;
+    const compatibility=a.id==='c30'?`window.__C30_ADAPTER__=${a.variable};` : a.id==='huiyuejuan'?`${a.variable}._getFrameDoc=function(){const child=document.querySelector('frame[src*="17yuejuan"], frame[src*="oemimoms"]');try{if(child)return child.contentDocument || child.contentWindow?.document;}catch{}return document.querySelector('.ui-exam-teacher-correct-score-box')?document:null;};`:'';
+    return `if(${JSON.stringify(a.patterns)}.some(p=>matches(p,location.href))){try{(()=>{${fs.existsSync(selectors)?fs.readFileSync(selectors,'utf8'):''}\n${source}\n${compatibility}\ncandidates.push(${a.variable});})();}catch(error){console.warn('适配器加载失败',${JSON.stringify(a.id)},error.message);}}`;
   }).join('\n')}
   window.__markerSuiteBridge={
     adapters:()=>candidates.map(a=>({id:a.id,name:a.name})),
@@ -37,7 +38,9 @@ export const suiteAdapterScript = `(()=>{
     async snapshot(){
       const a=this.select();if(!a)return null;
       const inputs=a.getScoreInputs();
-      const urls=await a.gatherAnswerImages();
+      let urls=await a.gatherAnswerImages();
+      // C30's canvas can be tainted. The matching live API supplies its original image.
+      if(a.id==='c30'&&!urls?.length && a._state.latestImageUrl)urls=[a._state.latestImageUrl];
       const images=[...new Set(urls || [])].filter(u=>typeof u==='string'&&u).map(u=>({url:new URL(u,location.href).href,ready:true}));
       const units=inputs.map((s,i)=>({index:i,label:s.label || '第'+(i+1)+'题',maxScore:Number(s.maxScore || s.element?.getAttribute?.('score') || s.element?.getAttribute?.('max') || s.element?.placeholder?.match(/满分\\s*(\\d+(?:\\.\\d+)?)/)?.[1] || 0),type:s.type || (s.element?.matches?.('input,textarea')?'input':'click')}));
       return {adapterId:a.id,adapterName:a.name,taskId:String(a.getTaskIdentifier?.() || location.pathname),images,units,url:location.href,submissionOnFill:['c30','keewing','guangda-2'].includes(a.id),regrade:!!a.isRegradeMode?.()};

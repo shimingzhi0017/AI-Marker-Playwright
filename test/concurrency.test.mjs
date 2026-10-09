@@ -103,6 +103,7 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   releasePause();
   await page.waitForFunction(()=>document.querySelector('#phase').textContent==='已停止');
   await page.unroute('**/api/history');
+  await page.waitForFunction(id=>document.querySelector('#workspaceSelect').value===id,b);
   assert.equal(await page.locator('#workspaceSelect').inputValue(),b);
 
   await page.locator('[data-tab=history]').click();

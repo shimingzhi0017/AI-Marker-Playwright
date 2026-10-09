@@ -1,6 +1,9 @@
 // Additional controls share the existing settings and API; no separate draft store is persisted.
 export function buildLayout() {
   const $ = id => document.getElementById(id);
+  $('endpoint').closest('label').insertAdjacentHTML('afterend','<label class="wide">模型目录地址（可选）<input id="modelsEndpoint" type="url" placeholder="留空时根据模型接口地址自动推导"></label>');
+  $('addProvider').insertAdjacentHTML('afterend','<button id="addProviderTemplate">从模板添加</button>');
+  document.body.insertAdjacentHTML('beforeend','<dialog id="providerTemplateDialog"><h2>选择 AI 接口模板</h2><p>仅添加公开接口地址和模型名称，密钥需要自行填写。模板添加后可以编辑或删除。</p><div class="actions"><button data-provider-template="5+1 AI">5+1 AI</button><button data-provider-template="火山引擎">火山引擎</button><button data-provider-template="OpenAI兼容">OpenAI兼容</button></div><div class="footer-actions"><button id="closeProviderTemplate">取消</button></div></dialog>');
   $('eyebrow').hidden = true;
   document.querySelector('.workspace-controls').insertAdjacentHTML('afterbegin','<section class="task-overview" aria-label="任务概览"><div class="task-overview-heading"><h2>任务概览</h2><span>状态实时更新 · 点击切换</span></div><div id="workspaceCards" class="workspace-cards"></div></section>');
   const noticePopup=document.createElement('div');noticePopup.id='noticePopup';
@@ -117,7 +120,7 @@ export function buildLayout() {
   providerDialog.innerHTML='<div class="image-dialog-heading"><h2 id="providerDialogTitle">编辑接口</h2><button id="closeProvider">关闭</button></div>';
   providerCard.append(providerDialog);providerDialog.append(providerForm);
   const advancedProvider=document.createElement('details');advancedProvider.innerHTML='<summary>高级设置</summary>';
-  advancedProvider.append($('apiKeyEnv').closest('label'));providerDialog.append(advancedProvider);
+  advancedProvider.append($('apiKeyEnv').closest('label'),$('modelsEndpoint').closest('label'));providerDialog.append(advancedProvider);
   const saveActions=document.createElement('div');saveActions.className='actions';saveActions.append($('saveProvider'));providerDialog.append(saveActions);
   const providerSummary=document.createElement('div');providerSummary.id='providerSummary';providerSummary.className='provider-summary';
   providerCard.querySelector('.controls').after(providerSummary);

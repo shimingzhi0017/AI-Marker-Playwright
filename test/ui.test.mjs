@@ -197,5 +197,14 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   assert.equal(await page.locator('#providerSelect option').count(),0);
   await page.locator('.workspace-card.active').click();await page.locator('[data-tab=workflows]').click();
   assert.match(await page.locator('#primaryProvider option:checked').innerText(),/接口已删除/);
+  await page.locator('[data-tab=models]').click();await page.locator('#addProviderTemplate').click();
+  await page.locator('[data-provider-template="火山引擎"]').click();
+  await page.waitForFunction(()=>document.querySelector('#endpoint').value.includes('/api/v3/chat/completions'));
+  assert.equal(await page.locator('#apiKey').inputValue(),'');
+  assert.equal(await page.locator('#providerDialog').isVisible(),true);
+  await page.locator('#closeProvider').click();await page.locator('#viewProviderModels').click();
+  assert.match(await page.locator('#manualModelList').innerText(),/doubao-seed/);
+  await page.locator('#closeProviderModels').click();
+  assert.ok((await page.request.get(app.url+'/provider-templates.js')).ok());
   await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
 });

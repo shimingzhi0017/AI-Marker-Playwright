@@ -14,8 +14,10 @@ export class SuitePlatform extends ZhixuePlatform {
         if(adapter)found.push(frame);
       }catch(error){if(/多个网站/.test(error.message))throw error;}
     }
-    if(found.length>1)throw Error('多个阅卷区域匹配，请指定页面分组');
-    return found[0] || super.frame();
+    // A frameset adapter may expose the same controls from both parent and child.
+    const deepest=found.filter(parent=>!found.some(child=>{if(parent===child)return false;for(let frame=child.parentFrame();frame;frame=frame.parentFrame())if(frame===parent)return true;return false;}));
+    if(deepest.length>1)throw Error('多个阅卷区域匹配，请指定页面分组');
+    return deepest[0] || super.frame();
   }
   async snapshot() {
     const frame=await this.frame();

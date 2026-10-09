@@ -13,6 +13,7 @@ import { installSuiteAdapters } from './suite-adapters.mjs';
 import { validateConfig, validateResult } from './domain.mjs';
 import { exportHistory, enrichStudents } from './export.mjs';
 import { chooseExportDirectory } from './export-folder.mjs';
+import { listModels } from './models.mjs';
 import { blackRatio } from './blank.mjs';
 import { observeSubmissions } from './submission-observer.mjs';
 import { trackZhixueTopics } from './zhixue-receipt.mjs';
@@ -50,6 +51,9 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
   if(!fs.existsSync(sharedProvidersFile)) fs.writeFileSync(sharedProvidersFile,JSON.stringify(loadSettings(file).providers,null,2));
   const localConfig=loadSettings(file), sharedProviders=JSON.parse(fs.readFileSync(sharedProvidersFile,'utf8'));
   let migrated=false;
+  for(const provider of Object.values(sharedProviders))if(provider.models&&!Array.isArray(provider.models)){
+    provider.modelMetadata ||= provider.models;provider.models=Object.keys(provider.models);migrated=true;
+  }
   for(const [name,provider] of Object.entries(localConfig.sharedProvidersMigrated ? {} : localConfig.providers)) {
     if(!Object.hasOwn(sharedProviders,name)) {sharedProviders[name]=provider;migrated=true;}
     else if(JSON.stringify(provider)!==JSON.stringify(sharedProviders[name]) && !localConfig.sharedProvidersMigrated) {
@@ -204,7 +208,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': `marker=${token}; HttpOnly; SameSite=Strict; Path=/`, 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" });
         res.end(fs.readFileSync(new URL('../ui/index.html', import.meta.url))); return;
       }
-      if (['/app.js', '/enhancements.js', '/result-details.js', '/scoring-labels.js', '/adaptation-ui.js', '/style.css', '/feedback.js', '/icon.svg', '/icon.ico', '/icon-256.png'].includes(url.pathname) || /^\/katex\/(?:katex\.mjs|katex\.min\.css|fonts\/[A-Za-z0-9_-]+\.woff2)$/.test(url.pathname)) {
+      if (['/app.js', '/provider-templates.js', '/enhancements.js', '/result-details.js', '/scoring-labels.js', '/adaptation-ui.js', '/style.css', '/feedback.js', '/icon.svg', '/icon.ico', '/icon-256.png'].includes(url.pathname) || /^\/katex\/(?:katex\.mjs|katex\.min\.css|fonts\/[A-Za-z0-9_-]+\.woff2)$/.test(url.pathname)) {
         res.writeHead(200, { 'Content-Type': /\.m?js$/.test(url.pathname) ? 'text/javascript; charset=utf-8' : url.pathname.endsWith('.woff2') ? 'font/woff2' : url.pathname.endsWith('.ico') ? 'image/x-icon' : url.pathname.endsWith('.png') ? 'image/png' : url.pathname.endsWith('.svg') ? 'image/svg+xml' : 'text/css; charset=utf-8', 'Cache-Control': 'no-store' });
         res.end(fs.readFileSync(new URL(`../ui${url.pathname}`, import.meta.url))); return;
       }
@@ -384,13 +388,12 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
         }
         case '/api/models': {
           if (state.running) throw Error('请先暂停'); const cfg = settings(), provider = cfg.providers[input.name];
-          if (!provider) throw Error('供应商不存在'); const key = provider.apiKey || process.env[provider.apiKeyEnv || '']; if (!key) throw Error('请先保存接口密钥');
-          const base = provider.endpoint.replace(/\/(chat\/completions|responses)\/?$/, '').replace(/\/$/, '');
-          const address = provider.protocol === 'gemini' ? `${base}/models` : `${base}${base.endsWith('/v1') ? '' : '/v1'}/models`;
-          const response = await fetch(address, { headers: provider.protocol === 'gemini' ? { 'x-goog-api-key': key } : { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(30000) });
-          if (!response.ok) throw Error(`模型目录请求失败（${response.status}）`); const value = await response.json();
-          provider.models = provider.protocol === 'gemini' ? (value.models || []).map(m => m.name.replace(/^models\//, '')) : (value.data || []).map(m => m.id);
-          fs.writeFileSync(sharedProvidersFile,JSON.stringify(cfg.providers,null,2)); break;
+          if (!provider) throw Error('供应商不存在');
+          const models=await listModels(provider);
+          const current=JSON.parse(fs.readFileSync(sharedProvidersFile,'utf8'));
+          if(!current[input.name]||current[input.name].endpoint!==provider.endpoint||current[input.name].apiKey!==provider.apiKey)throw Error('接口已变化，请重新获取目录');
+          current[input.name].models=models;
+          fs.writeFileSync(sharedProvidersFile,JSON.stringify(current,null,2)); break;
         }
         default: text(res, 404, { error: '接口不存在' }); return;
       }
