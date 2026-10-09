@@ -75,7 +75,7 @@ export function buildLayout() {
   topNav.append(oldNav.querySelector('[data-tab="grading"]'),oldNav.querySelector('[data-tab="presets"]'),workflowTab,oldNav.querySelector('[data-tab="history"]'));
   document.querySelector('header').after(topNav);
   const workspaceControls=document.querySelector('.workspace-controls');sidebar.insertBefore(workspaceControls,oldNav);
-  const modelsButton=oldNav.querySelector('[data-tab="models"]');modelsButton.textContent='模型接口（全任务共享）';
+  const modelsButton=oldNav.querySelector('[data-tab="models"]');modelsButton.textContent='AI接口';
   const models=$('models'), grid=models.querySelector('.grid'), cards=[...grid.children];
   const workflowSection=document.createElement('section');workflowSection.id='workflows';workflowSection.className='tab';workflowSection.hidden=true;workflowSection.append(cards[1]);models.after(workflowSection);$('presets').append(models.lastElementChild);
   const sharedHint=document.createElement('p');sharedHint.className='hint';sharedHint.textContent='模型供应商、接口地址、密钥和模型目录适用于所有任务。修改后从下一轮阅卷生效。';cards[0].prepend(sharedHint);
