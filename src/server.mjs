@@ -227,7 +227,17 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
             text(res,200,{ok:true,archived:true});return;
           }
           const id = crypto.randomUUID(), directory = path.join(root,'sessions',id);
-          fs.mkdirSync(directory,{recursive:true}); fs.copyFileSync(file,path.join(directory,'config.json'));const newTaskConfig=loadSettings(path.join(directory,'config.json'));newTaskConfig.batchLimit=0;fs.writeFileSync(path.join(directory,'config.json'),JSON.stringify(newTaskConfig,null,2));
+          const newTaskConfig = loadSettings(path.join(defaultRoot,'config.example.json'));
+          newTaskConfig.providers = JSON.parse(fs.readFileSync(sharedProvidersFile,'utf8'));
+          newTaskConfig.sharedProvidersMigrated = true;
+          const providerName = Object.keys(newTaskConfig.providers)[0] || '';
+          for (const workflow of Object.values(newTaskConfig.workflows))
+            for (const entry of [workflow.model,workflow.dualEval?.secondary,workflow.dualEval?.arbitration])
+              if (entry) entry.provider = providerName;
+          migrateGroups(newTaskConfig);
+          newTaskConfig.adaptationGroups[0].name = '默认页面配置';
+          fs.mkdirSync(directory,{recursive:true});
+          fs.writeFileSync(path.join(directory,'config.json'),JSON.stringify(newTaskConfig,null,2));
           const app = await createApp({root:directory,browserFactory,gradeFunction,coordinator,child:true,sharedProvidersFile});
           const response = await fetch(app.url); const cookie = response.headers.get('set-cookie').split(';')[0];
           const name = String(input.name || `任务 ${children.size+2}`).slice(0,80);
