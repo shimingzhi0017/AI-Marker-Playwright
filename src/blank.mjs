@@ -19,7 +19,15 @@ export async function blackRatio(buffer, fixedThreshold) {
   return { threshold, ratio: [...data].filter(v => v <= threshold).length / data.length };
 }
 export async function detectBlank(images, reference, difference = 0.01) {
-  if (!reference || reference.length !== images.length) throw Error('空白检测范本数量与图片不一致');
+  const warning = blankReferenceWarning(reference, images.length, difference);
+  if (warning) throw Error(warning);
   const ratios = await Promise.all(images.map((image, i) => blackRatio(image.buffer, reference[i].threshold)));
   return { isBlank: ratios.every((r, i) => Math.abs(r.ratio - reference[i].ratio) <= difference), ratios };
+}
+
+export function blankReferenceWarning(reference, imageCount, difference = 0.01) {
+  if (!Array.isArray(reference) || !reference.length) return '空白检测未设置范本：请在历史记录中确认一份真正的空白答卷并保存为空白范本，或关闭空白检测。';
+  if (reference.length !== imageCount) return `空白范本有${reference.length}张，当前答卷有${imageCount}张：请重新设置与当前题目对应的空白范本，或关闭空白检测。`;
+  if (!Number.isFinite(difference) || difference < 0 || difference > 1 || reference.some(r => !r || !Number.isFinite(r.threshold) || r.threshold < 0 || r.threshold > 255 || !Number.isFinite(r.ratio) || r.ratio < 0 || r.ratio > 1)) return '空白范本参数无效：请重新保存空白范本，或关闭空白检测。';
+  return '';
 }

@@ -12,3 +12,8 @@ test-results/
 playwright-report/
 data/
 config.json
+shared-providers.json
+default-task-deleted.json
+archived-default-tasks/
+backups/
+*.before-*

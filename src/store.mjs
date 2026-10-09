@@ -29,7 +29,8 @@ export function importSettings(input) {
     workflowMap[workflow.id || name] = structuredClone(workflow);
     if (workflowMap[workflow.id || name].dualEval?.enabled && !workflowMap[workflow.id || name].dualEval.questionType) workflowMap[workflow.id || name].dualEval.questionType = 'subjective';
   }
-  return { version: 1, active: presets.active, presets: presets.list, bindings: presets.bindings || {}, providers: providers.providers,
+    const providerMap=Object.fromEntries(Object.entries(providers.providers).map(([name,provider])=>[name,{...provider,protocol:provider.protocol || 'chat',models:Array.isArray(provider.models)?provider.models:Object.keys(provider.models || {}),modelMetadata:provider.modelMetadata || (!Array.isArray(provider.models)?provider.models:{})}]));
+    return { version: 1, active: presets.active, presets: presets.list, bindings: presets.bindings || {}, providers: providerMap,
     workflows: workflowMap, browser: { url: 'https://www.zhixue.com/', headless: false },
     platform: { verified: false }, mode: 'trial', requestBudget: 6 };
 }

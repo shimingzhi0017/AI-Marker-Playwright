@@ -1,7 +1,10 @@
+import { verifyManualResponse } from './adaptation.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
+import { resolveZhixueOptions, isZhixuePage } from './zhixue-builtin.mjs';
+import { matchesTopic, verifyCommit, zhixueCommitUrl, matchesZhixueCommitUrl } from './zhixue-receipt.mjs';
 
 const hash = buffer => crypto.createHash('sha256').update(buffer).digest('hex');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -20,16 +23,25 @@ export function stableImageKey(value) {
     return url.href;
   } catch { return value; }
 }
-export function pageContext(value) {
+export function pageContext(value, depth = 0) {
   try {
     const url = new URL(value);
     const hashQuery = url.hash.includes('?') ? url.hash.slice(url.hash.indexOf('?') + 1) : '';
     const params = new URLSearchParams(hashQuery);
-    return { examId: params.get('examId') || url.searchParams.get('examId') || '', markingPaperId: params.get('markingPaperId') || url.searchParams.get('markingPaperId') || '' };
+    const direct={ examId: params.get('examId') || url.searchParams.get('examId') || '', markingPaperId: params.get('markingPaperId') || url.searchParams.get('markingPaperId') || '' };
+    if(!direct.markingPaperId && depth<3) for(const [key,value] of url.searchParams) if(/^app-\d+$/.test(key)) {
+      let decoded=value;
+      for(let i=0;i<3;i++) {
+        const nested=pageContext(new URL(decoded,url.origin).href,depth+1);
+        if(nested.markingPaperId)return {...nested,examId:direct.examId || nested.examId};
+        try {const next=decodeURIComponent(decoded);if(next===decoded)break;decoded=next;}catch{break;}
+      }
+    }
+    return direct;
   } catch { return { examId: '', markingPaperId: '' }; }
 }
 export class ZhixuePlatform {
-  constructor(page, settings, diagnosticsDir) { this.page = page; this.options = settings.platform || {}; this.dir = diagnosticsDir; }
+  constructor(page, settings, diagnosticsDir) { this.scope = settings.adaptationScope;this.page = page; this.options = resolveZhixueOptions(settings.platform || {},page.url?.()); this.dir = diagnosticsDir; }
   async frame() {
     const matches = [];
     for (const frame of this.page.frames()) {
@@ -46,36 +58,77 @@ export class ZhixuePlatform {
   async snapshot() {
     const frame = await this.frame();
     const data = await frame.evaluate(options => {
-      const images = [...document.querySelectorAll(options.imageSelector || 'div[name="topicImg"] img, img.enhance-definition-bright')].map(img => ({ url: img.currentSrc || img.src, ready: img.complete && img.naturalWidth > 0 }));
-      const read = selector => selector ? document.querySelector(selector)?.getAttribute('data-paper-id') || document.querySelector(selector)?.textContent?.trim() || '' : '';
+      const images = [...document.querySelectorAll(options.imageSelector || 'div[name="topicImg"] img, img.enhance-definition-bright')].map(img => ({ url: img.currentSrc || img.src, sourceUrl: window.__aiMarkerImageSources?.get(img.currentSrc || img.src) || img.currentSrc || img.src, ready: img.complete && img.naturalWidth > 0 }));
+      const read = selector => selector ? document.querySelector(selector)?.getAttribute('data-paper-id') || document.querySelector(selector)?.value || document.querySelector(selector)?.textContent?.trim() || '' : '';
       return { images, paperId: read(options.paperIdSelector), taskId: read(options.taskIdSelector || '#currentTopicIndex'), url: location.href };
     }, this.options);
     const inputs = frame.locator(this.inputSelector());
     const units = await inputs.evaluateAll(elements => elements.map((el, i) => ({ index: i, label: el.getAttribute('data-label') || el.closest('li')?.querySelector('.label')?.textContent?.trim() || `第${i + 1}题`, maxScore: Number(el.getAttribute('score') || el.getAttribute('max') || 0) })));
-    const context = pageContext(data.url);
+    const frameContext = pageContext(data.url), outerContext=pageContext(this.page.url?.());
+    const context = {examId:frameContext.examId || outerContext.examId,markingPaperId:frameContext.markingPaperId || outerContext.markingPaperId};
     const legacyTaskId = data.taskId || data.url.replace(/([?&])_t=[^&]+/g, '');
     const taskId = context.examId || context.markingPaperId ? `${context.examId}:${context.markingPaperId}:${legacyTaskId}` : legacyTaskId;
-    const imageKeys = data.images.map(i => stableImageKey(i.url));
+    const imageKeys = data.images.map(i => stableImageKey(i.sourceUrl || i.url));
+    const networkTopic = this.options.identityMode === 'zhixue-network' ? await this.topicTracker?.match(imageKeys, context.markingPaperId, this.page) : null;
+    if (matchesTopic(networkTopic, imageKeys, context.markingPaperId)) {
+      data.paperId = networkTopic.scanRecordId;
+      return { ...data, taskId, legacyTaskId, pageContext: context, units, imageKeys, networkTopic, builtinAdapter:this.options.builtinAdapter,
+        identity: `${taskId}:${data.paperId}`, identitySource: 'matched-scanrecorddetail', strongIdentity: true };
+    }
     return { ...data, taskId, legacyTaskId, pageContext: context, units, imageKeys,
       identity: data.paperId ? `${taskId}:${data.paperId}` : `${taskId}:${imageKeys.join('|')}`,
       identitySource: data.paperId ? 'configured-page-element' : 'image-resource-fallback', strongIdentity: !!data.paperId };
   }
   async completed() {
-    if (!this.options.completionSelector) return false;
     for (const frame of this.page.frames()) {
-      try { if (await frame.locator(this.options.completionSelector).isVisible()) return true; } catch { /* detached */ }
+      try {
+        if (this.options.completionSelector && await frame.locator(this.options.completionSelector).isVisible()) return true;
+        if ((isZhixuePage(frame.url()) || isZhixuePage(this.page.url?.())) && await frame.evaluate(()=>
+          [...document.querySelectorAll('body *')].some(el=>{
+            const text=el.textContent?.replace(/\s+/g,'').trim() || '';
+            if(!/^该题已全部阅完[，,。]?请选择留在当前题或切换到下一题[？?]?$/.test(text))return false;
+            const style=getComputedStyle(el),rect=el.getBoundingClientRect();
+            return rect.width>0 && rect.height>0 && style.visibility!=='hidden' && style.display!=='none' && !el.closest('[hidden],[aria-hidden="true"]');
+          }))) return true;
+      } catch { /* detached */ }
     }
     return false;
   }
-  async ready(previous, signal) {
+  async continueQuota() {
+    for(const frame of this.page.frames()) {
+      if(!isZhixuePage(frame.url()) && !isZhixuePage(this.page.url?.()))continue;
+      try {
+        const handled=await frame.evaluate(()=>{
+          const visible=el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&!el.closest('[hidden],[aria-hidden="true"]');};
+          const prompt=[...document.querySelectorAll('body *')].find(el=>visible(el)&&/^您该题任务量已完成[，,。]?请选择继续多阅或切换到下一题[？?]?$/.test(el.textContent?.replace(/\s+/g,'') || ''));
+          if(!prompt)return false;
+          let parent=prompt;
+          while(parent && parent!==document.body){
+            const buttons=[...parent.querySelectorAll('button')].filter(visible);
+            const next=buttons.filter(b=>b.textContent.replace(/\s+/g,'')==='继续多阅'&&!b.disabled);
+            if(next.length===1 && buttons.some(b=>b.textContent.replace(/\s+/g,'')==='切换下一题')){next[0].click();return true;}
+            parent=parent.parentElement;
+          }
+          return false;
+        });
+        if(handled)return true;
+      } catch { /* frame detached */ }
+    }
+    return false;
+  }
+  async ready(previous, signal, requireIdentity = false, allowContinueQuota = false) {
     const deadline = Date.now() + (this.options.loadTimeoutMs || 20000);
     let lastError;
     while (Date.now() < deadline) {
       signal?.throwIfAborted();
       if (await this.completed()) return null;
+      if(allowContinueQuota && await this.continueQuota()){await sleep(200);continue;}
       try {
         const current = await this.snapshot();
-        if (current.images.length && current.images.every(i => i.ready) && current.units.length && (!previous || current.identity !== previous.identity)) return current;
+        if (current.images.length && current.images.every(i => i.ready) && current.units.length && (!previous || current.identity !== previous.identity)) {
+          if (!requireIdentity || current.strongIdentity) return current;
+          lastError = Error('图片和评分框已加载，但当前答卷编号尚未与图片匹配；请刷新阅卷页面再检查，无需重新测试适配');
+        }
       } catch (e) { lastError = e; }
       await sleep(200);
     }
@@ -119,19 +172,29 @@ export class ZhixuePlatform {
     }
     await this.assertCurrent(snapshot);
   }
-  async submit(snapshot, scores) {
-    if (!this.options.verified || !this.options.paperIdSelector || !this.options.submitResponseUrlPattern) throw Error('平台尚未完成实测配置，禁止自动提交');
+  async submit(snapshot, scores, { manualTest = false } = {}) {
+    if ((!this.options.verified && !(manualTest && this.options.manualSubmissionTest && snapshot.networkTopic)) || (!this.options.paperIdSelector && !snapshot.networkTopic) || !this.options.submitResponseUrlPattern) throw Error('平台尚未完成实测配置，禁止自动提交');
     await this.assertCurrent(snapshot);
     const frame = await this.frame();
     const inputs = frame.locator(this.inputSelector());
     if (await inputs.count() !== scores.length) throw Error('提交前评分控件数量变化');
     for (let i = 0; i < scores.length; i++) if (!scoreMatches(await inputs.nth(i).inputValue(), scores[i])) throw Error('提交前分数已变化');
-    const responsePromise = this.page.waitForResponse(r => new RegExp(this.options.submitResponseUrlPattern).test(r.url()) && r.request().method() === 'POST', { timeout: this.options.submitTimeoutMs || 10000 });
+    // Bind the receipt to this paper's observed API origin, not a previously tested host.
+    if (snapshot.networkTopic) zhixueCommitUrl(snapshot.networkTopic);
+    const responsePromise = this.page.waitForResponse(r => r.request().method() === 'POST' &&
+      (snapshot.networkTopic ? matchesZhixueCommitUrl(r.url(), snapshot.networkTopic) : new RegExp(this.options.submitResponseUrlPattern).test(r.url())), { timeout: this.options.submitTimeoutMs || 10000 });
     try {
       await frame.locator(this.submitSelector()).click();
       const response = await responsePromise;
       if (!response.ok()) throw Error(`平台提交HTTP ${response.status()}`);
       const json = await response.json();
+      if (snapshot.networkTopic) {
+        const request = response.request();
+        if (!matchesZhixueCommitUrl(request.url(), snapshot.networkTopic)) throw Error('提交响应地址不匹配');
+        const body = Object.fromEntries(new URLSearchParams(request.postData() || ''));
+        return { status: response.status(), ...verifyCommit(body, json, snapshot.networkTopic, scores) };
+      }
+      if(this.options.identityRequestField && this.options.scoresRequestField) return {status:response.status(),...verifyManualResponse(this.options,snapshot,scores,{url:response.url(),status:response.status(),requestBody:(()=>{try{return JSON.parse(response.request().postData());}catch{return Object.fromEntries(new URLSearchParams(response.request().postData()||''));}})(),responseBody:json})};
       const value = (this.options.successField || 'success').split('.').reduce((o, key) => o?.[key], json);
       if (value !== (this.options.successValue ?? true)) throw Error('平台未明确确认保存成功');
       return { status: response.status(), confirmed: true };

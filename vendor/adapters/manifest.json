@@ -1,0 +1,196 @@
+[
+  {
+    "id": "ameqp",
+    "variable": "AmeqpAdapter",
+    "patterns": [
+      "*://*/AMEQP/Webroot/mar/*"
+    ]
+  },
+  {
+    "id": "c30",
+    "variable": "C30Adapter",
+    "patterns": [
+      "*://zy.iclass30.com/*"
+    ]
+  },
+  {
+    "id": "guangda",
+    "variable": "GuangdaAdapter",
+    "patterns": [
+      "*://pj.yixx.cn/*"
+    ]
+  },
+  {
+    "id": "guangda-2",
+    "variable": "Guangda2Adapter",
+    "patterns": [
+      "*://*/*"
+    ]
+  },
+  {
+    "id": "haiyun",
+    "variable": "HaiyunAdapter",
+    "patterns": [
+      "*://zp.kaow.cn/*"
+    ]
+  },
+  {
+    "id": "hanhan",
+    "variable": "HanhanAdapter",
+    "patterns": [
+      "*://*.yunyuejuan.net/*"
+    ]
+  },
+  {
+    "id": "haofenshu",
+    "variable": "HaofenshuAdapter",
+    "patterns": [
+      "https://yue.haofenshu.com/minions/*"
+    ]
+  },
+  {
+    "id": "haofenshuyize",
+    "variable": "HaofenshuyizeAdapter",
+    "patterns": [
+      "https://haofenshuyize.com/*"
+    ]
+  },
+  {
+    "id": "haoyuejuan",
+    "variable": "HaoyuejuanAdapter",
+    "patterns": [
+      "*://www.haoyuejuan.com/*",
+      "*://haoyuejuan.com/*"
+    ]
+  },
+  {
+    "id": "huixuexing",
+    "variable": "HuiXuexingAdapter",
+    "patterns": [
+      "*://www.hxxai.com/*"
+    ]
+  },
+  {
+    "id": "huiyuejuan",
+    "variable": "HuiyuejuanAdapter",
+    "patterns": [
+      "*://web.17yuejuan.cn/*"
+    ]
+  },
+  {
+    "id": "jiukexing",
+    "variable": "JiukexingAdapter",
+    "patterns": [
+      "*://marking.jkxjxw.com/*"
+    ]
+  },
+  {
+    "id": "jiuwuyouping",
+    "variable": "JiuwuyoupingAdapter",
+    "patterns": [
+      "*://*.timesphoenix.com/*",
+      "*://timesphoenix.com/*"
+    ]
+  },
+  {
+    "id": "keewing",
+    "variable": "KeewingAdapter",
+    "patterns": [
+      "*://kaoshi.keewing.com/*"
+    ]
+  },
+  {
+    "id": "lehua",
+    "variable": "LehuaAdapter",
+    "patterns": [
+      "*://main.lhsvr.cn/*"
+    ]
+  },
+  {
+    "id": "qitian",
+    "variable": "QitianAdapter",
+    "patterns": [
+      "*://*.7net.cc/*",
+      "*://*.qt7.net/*"
+    ]
+  },
+  {
+    "id": "qitian-new",
+    "variable": "QitianNewAdapter",
+    "patterns": [
+      "*://yj5.7net.cc/*"
+    ]
+  },
+  {
+    "id": "runjian",
+    "variable": "RunjianAdapter",
+    "patterns": [
+      "*://aisusheng.runjian.com/*"
+    ]
+  },
+  {
+    "id": "wuyue",
+    "variable": "WuyueAdapter",
+    "patterns": [
+      "*://*.wylkyj.com/*"
+    ]
+  },
+  {
+    "id": "wuyuetong",
+    "variable": "WuyuetongAdapter",
+    "patterns": [
+      "*://wyna.onlyets.com/*"
+    ]
+  },
+  {
+    "id": "xinjiaoyu",
+    "variable": "XinjiaoyuAdapter",
+    "patterns": [
+      "*://www.xinjiaoyu.com/*"
+    ]
+  },
+  {
+    "id": "xinkao",
+    "variable": "XinkaoAdapter",
+    "patterns": [
+      "*://*/Marking/DisPlay*"
+    ]
+  },
+  {
+    "id": "xinkao-2",
+    "variable": "Xinkao2Adapter",
+    "patterns": [
+      "*://*/biluo/*"
+    ]
+  },
+  {
+    "id": "xueba54",
+    "variable": "Xueba54Adapter",
+    "patterns": [
+      "*://54xueba.cn/*"
+    ]
+  },
+  {
+    "id": "yuejiaoxiangyun",
+    "variable": "YuejiaoxiangyunAdapter",
+    "patterns": [
+      "*://rrtcp.gdedu.gov.cn/*"
+    ]
+  },
+  {
+    "id": "yunyuejuan",
+    "variable": "YunyuejuanAdapter",
+    "patterns": [
+      "*://*/Marking/*"
+    ]
+  },
+  {
+    "id": "zhixue",
+    "variable": "ZhixueAdapter",
+    "patterns": [
+      "https://www.zhixue.com/*",
+      "https://zhixue.com/*",
+      "https://*.zhixue.com/*"
+    ]
+  }
+]
