@@ -3,6 +3,17 @@
 export function installImageProvenance() {
   const sources = new WeakMap();
   const exports = new Map();
+  const clearRect = CanvasRenderingContext2D.prototype.clearRect;
+  CanvasRenderingContext2D.prototype.clearRect = function(x, y, width, height) {
+    const result = clearRect.call(this, x, y, width, height);
+    const transform = this.getTransform();
+    if (transform.isIdentity && x <= 0 && y <= 0 && x + width >= this.canvas.width && y + height >= this.canvas.height) sources.delete(this.canvas);
+    return result;
+  };
+  for (const dimension of ['width', 'height']) {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, dimension);
+    Object.defineProperty(HTMLCanvasElement.prototype, dimension, { ...descriptor, set(value) { descriptor.set.call(this, value); sources.delete(this); } });
+  }
   const draw = CanvasRenderingContext2D.prototype.drawImage;
   CanvasRenderingContext2D.prototype.drawImage = function(image, ...args) {
     const result = draw.call(this, image, ...args);

@@ -39,7 +39,7 @@ function renderImages(target, record) { target.replaceChildren(); if (!record?.i
 function renderState() {
   $('phase').textContent=state.phase; $('reason').textContent=state.reason || ''; $('count').textContent=`本次已提交 ${state.count} 份`;
   const p=config.presets[config.bindings?.[state.snapshot?.taskId]||config.active],w=config.workflows[p?.workflowId];
-  const ready=[['方案',!!(textField(p?.answer).trim()&&textField(p?.rubric).trim()&&(p?.scoring?.units?.length?p.scoring.units.every(u=>u.maxScore>0):p?.scoring?.maxScore>0)),'presets'],['模型',!!(w?.model?.model&&config.providers[w.model.provider]?.endpoint),'models'],['页面',!!state.snapshot,'grading']];
+  const ready=[['方案',!!(textField(p?.answer).trim()&&textField(p?.rubric).trim()&&(p?.scoring?.units?.length?p.scoring.units.every(u=>u.maxScore>0):p?.scoring?.maxScore>0)),'presets'],['模型',!!(w?.model?.model&&config.providers[w.model.provider]?.endpoint),'models'],['页面',!!state.snapshot&&(config.mode==='trial'||!!state.snapshot.strongIdentity),'grading']];
   $('readiness').replaceChildren(...ready.map(([name,ok,tab],i)=>{const b=document.createElement('button');b.className=ok?'ready-step complete':'ready-step';b.textContent=`${i+1} ${name}${ok?'已就绪':'待设置'}`;b.onclick=()=>document.querySelector(`[data-tab="${tab}"]`).click();return b;}));
   $('runtimeSummary').textContent=`${config.active} · ${{trial:'人工确认',normal:'5秒确认',unattended:'无人值守'}[config.mode||'trial']}`;
   $('diagnosis').textContent=state.snapshot ? `识别到 ${state.snapshot.images.length} 张图片 / ${state.snapshot.units.length} 个评分框 · ${state.snapshot.strongIdentity?'已找到答卷 ID':'答卷 ID 待适配'}` : '尚未检查页面';

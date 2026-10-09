@@ -117,7 +117,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
     if (!platform) throw Error('请先打开阅卷浏览器');
     const cfg = applyGroup(settings(), page.url());
     platform = new ZhixuePlatform(page, cfg, path.join(data, 'diagnostics')); platform.topicTracker = topicTracker;
-    const snapshot = await platform.ready();
+    const snapshot = await platform.ready(undefined, undefined, cfg.mode !== 'trial');
     if (generation !== expectedGeneration) throw Error('启动已取消');
     if (!snapshot) throw Error('平台已显示任务完成');
     const preset = cfg.presets[cfg.taskScopedConfig ? cfg.active : cfg.bindings?.[snapshot.taskId] || cfg.active]; validateConfig(preset);

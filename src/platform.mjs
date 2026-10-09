@@ -75,7 +75,7 @@ export class ZhixuePlatform {
     }
     return false;
   }
-  async ready(previous, signal) {
+  async ready(previous, signal, requireIdentity = false) {
     const deadline = Date.now() + (this.options.loadTimeoutMs || 20000);
     let lastError;
     while (Date.now() < deadline) {
@@ -83,7 +83,10 @@ export class ZhixuePlatform {
       if (await this.completed()) return null;
       try {
         const current = await this.snapshot();
-        if (current.images.length && current.images.every(i => i.ready) && current.units.length && (!previous || current.identity !== previous.identity)) return current;
+        if (current.images.length && current.images.every(i => i.ready) && current.units.length && (!previous || current.identity !== previous.identity)) {
+          if (!requireIdentity || current.strongIdentity) return current;
+          lastError = Error('图片和评分框已加载，但当前答卷编号尚未与图片匹配；请刷新阅卷页面再检查，无需重新测试适配');
+        }
       } catch (e) { lastError = e; }
       await sleep(200);
     }

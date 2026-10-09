@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { Runner } from '../src/runner.mjs';
+import { ZhixuePlatform } from '../src/platform.mjs';
 import { trackZhixueTopics } from '../src/zhixue-receipt.mjs';
 import { installImageProvenance } from '../src/image-provenance.mjs';
 import { launchBrowser } from '../src/browser.mjs';
@@ -60,7 +61,19 @@ test('真实浏览器记录图片经画布增强后的原始来源，混合图�
     const canvas = document.createElement('canvas'); const ctx=canvas.getContext('2d'); ctx.drawImage(img,0,0);
     const output=canvas.toDataURL(); const source=window.__aiMarkerImageSources.get(output);
     const other=new Image(); other.src='https://fixture.test/two.svg'; await other.decode();ctx.drawImage(other,20,0);
-    return {source,mixed:window.__aiMarkerImageSources.has(canvas.toDataURL())};
+    const mixed=window.__aiMarkerImageSources.has(canvas.toDataURL());
+    ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(other,0,0);const cleared=window.__aiMarkerImageSources.get(canvas.toDataURL());
+    canvas.width=canvas.width;ctx.drawImage(img,0,0);const resized=window.__aiMarkerImageSources.get(canvas.toDataURL());
+    return {source,mixed,cleared,resized};
   });
-  assert.deepEqual(results,{source:'https://fixture.test/one.svg',mixed:false});
+  assert.deepEqual(results,{source:'https://fixture.test/one.svg',mixed:false,cleared:'https://fixture.test/two.svg',resized:'https://fixture.test/one.svg'});
+});
+
+test('自动模式等待当前编号匹配，人工模式允许只填分，未知编号拒绝',async()=>{
+  const platform=new ZhixuePlatform({}, {platform:{loadTimeoutMs:500}},'');platform.completed=async()=>false;
+  let reads=0;platform.snapshot=async()=>({images:[{ready:true}],units:[{}],identity:'fixture',strongIdentity:++reads>1});
+  const snapshot=await platform.ready(undefined,undefined,true);assert.equal(snapshot.strongIdentity,true);assert.equal(reads,2);
+  platform.snapshot=async()=>({images:[{ready:true}],units:[{}],identity:'fixture',strongIdentity:false});
+  assert.equal((await platform.ready()).strongIdentity,false);
+  await assert.rejects(platform.ready(undefined,undefined,true),/编号尚未与图片匹配/);
 });
