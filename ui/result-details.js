@@ -22,6 +22,7 @@ export function renderResultDetails(container, record, history = false) {
   paragraph(container,'模型总分 → 最终分数',`${value(result.rawScore ?? record.originalResult?.score ?? result.score)} → ${value(result.score)}`);
   readingDetails(container, result);
   if (result.recognitionDecision === 'arbitration') paragraph(container, '存疑处理', '按当前任务设置采用仲裁分数；识别疑点仍保留，请结合原图审查。');
+  if (result.recognitionDecision === 'three-way-consensus') paragraph(container, '存疑处理', '主评、复评、仲裁的总分及逐项分数均一致，按一致分数继续；识别疑点保留供审查。');
   if (result.recognitionArbitration) {
     for (const [title, r] of [['首次识别', result.recognitionArbitration.primary], ['识别仲裁', result.recognitionArbitration.verdict]]) {
       const detail=node('details');detail.append(node('summary',`${title} · ${r?.model || '模型名未记录'} · ${value(r?.score)}`));readingDetails(detail,r);paragraph(detail,'评分依据',r?.comment);container.append(detail);

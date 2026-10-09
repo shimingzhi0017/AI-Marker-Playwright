@@ -5,7 +5,7 @@ import { grade } from '../src/models.mjs';
 
 test('单总分框客观双阅逐项比较，任意分歧或缺失必须仲裁', async t => {
   const config = { answer: 'fixture', rubric: 'part-1: 5; part-2: 5', workflowId: 'w', scoring: { units: [{ label: '12', maxScore: 10 }] } };
-  const response = scores => ({ score: scores.reduce((a, b) => a + b, 0), studentAnswer: 'fixture', comment: 'fixture', subScores: [{ label: '12', score: scores.reduce((a, b) => a + b, 0) }], scoringDetails: scores.map((score, i) => ({ label: `part-${i + 1}`, score })) });
+  const response = scores => ({ score: scores.reduce((a, b) => a + b, 0), studentAnswer: 'fixture', comment: 'fixture', recognition:{status:'clear',coverageChecked:true,notes:[],issues:[]}, subScores: [{ label: '12', score: scores.reduce((a, b) => a + b, 0) }], scoringDetails: scores.map((score, i) => ({ label: `part-${i + 1}`, score })) });
   const labeled = (labels, scores) => ({...response(scores), scoringDetails: labels.map((label,i)=>({label,score:scores[i]}))});
   let replies, calls;
   const server = http.createServer(async (req, res) => {
@@ -37,7 +37,7 @@ test('单总分框客观双阅逐项比较，任意分歧或缺失必须仲裁',
     calls = []; replies = { A: scenario.a, B: scenario.b, C: response([2, 3]) };
     const result = await grade(config, settings, [], new AbortController().signal);
     assert.equal(result.dualEval.result, scenario.expected);
-    assert.match(result.recognitionWarning, /书写识别检查/);
+    assert.equal(result.recognitionWarning, '');
     assert.equal(calls.includes('C'), scenario.expected === 'arbitration');
     if (scenario.expected === 'arbitration') { assert.equal(result.score, 5); assert.deepEqual(result.subScores, [{ label: '12', score: 5 }]); }
   }
@@ -47,9 +47,14 @@ test('单总分框客观双阅逐项比较，任意分歧或缺失必须仲裁',
   await assert.rejects(grade(config, settings, [], new AbortController().signal), /合计/);
   assert.equal(calls.includes('C'), false);
   settings.workflows.w.recognitionPolicy='arbitration';
-  calls=[];replies={A:response([1,3]),B:response([1,3]),C:response([2,3])};
+  const uncertainResponse=scores=>({...response(scores),recognition:{status:'uncertain',coverageChecked:true,notes:[],issues:[]}});
+  calls=[];replies={A:uncertainResponse([1,3]),B:uncertainResponse([1,3]),C:uncertainResponse([2,3])};
   const uncertain=await grade(config,settings,[],new AbortController().signal);
   assert.equal(uncertain.dualEval.result,'arbitration');assert.equal(uncertain.score,5);assert.equal(uncertain.recognitionDecision,'arbitration');assert.ok(uncertain.recognitionWarning);assert.ok(calls.includes('C'));
+  settings.workflows.w.recognitionPolicy='manual';calls=[];replies={A:uncertainResponse([1,3]),B:uncertainResponse([1,3]),C:uncertainResponse([1,3])};
+  const agreed=await grade(config,settings,[],new AbortController().signal);assert.equal(agreed.recognitionDecision,'three-way-consensus');assert.ok(agreed.recognitionWarning);assert.ok(calls.includes('C'));
+  replies.B=uncertainResponse([2,2]);calls=[];const notAgreed=await grade(config,settings,[],new AbortController().signal);assert.equal(notAgreed.recognitionDecision,undefined);assert.equal(notAgreed.dualEval.threeWayConsensus,false);
+  settings.workflows.w.recognitionPolicy='arbitration';replies.C=uncertainResponse([2,3]);
   settings.workflows.w.dualEval.enabled=false;
   calls=[];const single=await grade(config,settings,[],new AbortController().signal);
   assert.deepEqual(calls,['A','C']);assert.equal(single.score,5);assert.equal(single.recognitionDecision,'arbitration');assert.ok(single.recognitionArbitration.primary);

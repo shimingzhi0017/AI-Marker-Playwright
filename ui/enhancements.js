@@ -95,7 +95,7 @@ export function buildLayout() {
   }
   const rules=document.createElement('section');rules.className='workflow-rules';rules.innerHTML='<h3>复评与存疑处理</h3><div class="form-grid"></div>';
   const rulesGrid=rules.querySelector('.form-grid');rulesGrid.append($('dual').closest('label'),$('questionType').closest('label'),$('threshold').closest('label'));
-  rulesGrid.insertAdjacentHTML('beforeend','<label class="wide">模型无法确认书写时<select id="recognitionPolicy"><option value="manual">交由人工确认</option><option value="arbitration">调用仲裁，按仲裁分数继续</option></select></label><p class="hint wide">人工确认：存疑时暂停自动提交。按仲裁给分：有疑点即调用仲裁，即使两次评分一致；仲裁仍存疑时也采用其有效分数，保留疑点供审查。提交仍遵循当前运行模式，仲裁失败或分数无效时暂停。</p>');
+  rulesGrid.insertAdjacentHTML('beforeend','<label class="wide">模型无法确认书写时<select id="recognitionPolicy"><option value="manual">交由人工确认</option><option value="arbitration">调用仲裁，按仲裁分数继续</option></select></label><p class="hint wide">有疑点时调用第三模型；三评总分及逐项分数一致则直接采用一致分数。三评不一致时，人工确认：暂停自动提交；按仲裁给分：采用仲裁有效分数。仲裁仍存疑时也采用其有效分数，保留疑点供审查。提交仍遵循当前运行模式，仲裁失败或分数无效时暂停。</p>');
   const ruleHint=workflowForm.querySelector('p.hint');if(ruleHint){ruleHint.classList.add('wide');rulesGrid.append(ruleHint);}workflowLayout.after(rules);
 
   const backupMenu=document.createElement('details');backupMenu.className='export-menu';backupMenu.innerHTML='<summary>配置备份</summary>';

@@ -41,7 +41,7 @@ export class Runner {
         else result = await this.modelGrade(config, this.settings, images.map(i => i.data), signal);
         signal.throwIfAborted();
         record.result = calculate(result, config); record.state = 'review'; this.store.save(record);
-        const decision = await this.review(record, record.blankDetection?.isBlank || record.blankDetection?.skipped || record.result.formatWarning || (record.result.recognitionWarning && record.result.recognitionDecision !== 'arbitration') ? 'trial' : this.settings.mode || 'trial');
+        const decision = await this.review(record, record.blankDetection?.isBlank || record.blankDetection?.skipped || record.result.formatWarning || (record.result.recognitionWarning && !['arbitration', 'three-way-consensus'].includes(record.result.recognitionDecision)) ? 'trial' : this.settings.mode || 'trial');
         signal.throwIfAborted();
         if (decision === 'stop') { record.state = 'paused'; this.store.save(record); return { count: this.count, reason: '用户停止，评分已保存' }; }
         const scores = record.result.subScores.length ? record.result.subScores.map(s => s.score) : [record.result.score];
