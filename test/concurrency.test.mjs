@@ -119,8 +119,8 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   assert.equal((await request('/api/workspaces')).value.find(w=>w.id===b).name,'并发任务 B');
   await page.locator('#workspaceSelect').selectOption(b);await page.waitForFunction(()=>document.querySelector('#workspaceSelect').value!== 'default' && !document.querySelector('#deleteWorkspace').disabled);
   await page.locator('#deleteWorkspace').click();await page.locator('#workspaceDialogSave').click();await page.waitForFunction(()=>document.querySelector('#workspaceSelect').options.length===1);
-  assert.equal(await page.locator('#workspaceSelect').inputValue(),'default');assert.ok(await page.locator('#deleteWorkspace').isDisabled());
+  assert.equal(await page.locator('#workspaceSelect').inputValue(),'default');assert.equal(await page.locator('#deleteWorkspace').isDisabled(),false);
   const archived=fs.readdirSync(path.join(root,'archived-sessions'));assert.equal(archived.length,1);assert.ok(fs.existsSync(path.join(root,'archived-sessions',archived[0],'data','history.sqlite')));
-  assert.equal((await request('/api/workspaces',{action:'delete',id:'default'})).status,400);
+  const mainDeleted=await request('/api/workspaces',{action:'delete',id:'default'});assert.equal(mainDeleted.status,200);assert.notEqual(mainDeleted.value.nextId,'default');
   await page.goto('about:blank');await app.close();app=await createApp(opts);await page.goto(app.url);await page.waitForFunction(()=>document.querySelector('#phase').textContent==='待开始');assert.equal((await request('/api/workspaces')).value.length,1);
 });

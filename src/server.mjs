@@ -28,6 +28,8 @@ function sanitizeSettings(settings) {
 }
 export async function createApp({ root = defaultRoot, browserFactory = opts => launchPersistentBrowser(opts.profile, opts.launch), gradeFunction, coordinator, child = false, sharedProvidersFile } = {}) {
   const children = new Map();
+  const deletedDefaultFile = path.join(root,'default-task-deleted.json');
+  let defaultDeleted = !child && fs.existsSync(deletedDefaultFile);
   if (!coordinator) {
     const locks = new Map(), stores = new Set();
     coordinator = { stores, acquire(identity, ownStore) {
@@ -83,6 +85,27 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
     fs.writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2)); fs.renameSync(`${file}.tmp`, file);
     if (page) { platform = new ZhixuePlatform(page, applyGroup(value,page.url()), path.join(data, 'diagnostics')); platform.topicTracker = topicTracker; }
     note('设置已保存');
+  }
+  async function createTask(taskName) {
+          const id = crypto.randomUUID(), directory = path.join(root,'sessions',id);
+          const newTaskConfig = loadSettings(path.join(defaultRoot,'config.example.json'));
+          newTaskConfig.providers = JSON.parse(fs.readFileSync(sharedProvidersFile,'utf8'));
+          newTaskConfig.sharedProvidersMigrated = true;
+          const providerName = Object.keys(newTaskConfig.providers)[0] || '';
+          for (const workflow of Object.values(newTaskConfig.workflows))
+            for (const entry of [workflow.model,workflow.dualEval?.secondary,workflow.dualEval?.arbitration])
+              if (entry) entry.provider = providerName;
+          migrateGroups(newTaskConfig);
+          newTaskConfig.adaptationGroups[0].name = '默认页面配置';
+          fs.mkdirSync(directory,{recursive:true});
+          fs.writeFileSync(path.join(directory,'config.json'),JSON.stringify(newTaskConfig,null,2));
+          const app = await createApp({root:directory,browserFactory,gradeFunction,coordinator,child:true,sharedProvidersFile});
+          const response = await fetch(app.url); const cookie = response.headers.get('set-cookie').split(';')[0];
+          const name = String(taskName || `任务 ${children.size+2}`).slice(0,80);
+          const childSettings=JSON.parse(fs.readFileSync(path.join(directory,'config.json'),'utf8'));childSettings.workspaceName=name;fs.writeFileSync(path.join(directory,'config.json'),JSON.stringify(childSettings,null,2));
+          fs.writeFileSync(path.join(directory,'workspace.json'),JSON.stringify({name}));
+          children.set(id,{app,cookie,name});
+    return id;
   }
   async function openBrowser() {
     if (context || opening) { if (page) await page.bringToFront(); return; }
@@ -181,7 +204,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
       }
       if (!req.headers.cookie?.split(';').some(c => c.trim() === `marker=${token}`) || (req.headers.origin && req.headers.origin !== origin)) { text(res, 403, { error: '请从本地控制台操作' }); return; }
       if (!child && url.pathname === '/api/workspaces' && req.method === 'GET') {
-        text(res, 200, [{ id: 'default', name:settings().workspaceName || '任务 1', running: state.running, phase: state.phase, count: state.count,review:state.review }, ...[...children].map(([id,c]) => ({ id, name:c.app.name(), running:c.app.state.running, phase:c.app.state.phase, count:c.app.state.count,review:c.app.state.review }))]); return;
+        text(res, 200, [...(!defaultDeleted ? [{ id: 'default', name:settings().workspaceName || '任务 1', running: state.running, phase: state.phase, count: state.count,review:state.review }] : []), ...[...children].map(([id,c]) => ({ id, name:c.app.name(), running:c.app.state.running, phase:c.app.state.phase, count:c.app.state.count,review:c.app.state.review }))]); return;
       }
       const workspace = url.searchParams.get('workspace');
       if (!child && workspace && workspace !== 'default') {
@@ -216,34 +239,37 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
         case '/api/workspaces': {
           if (child) throw Error('只能在主控制台新建任务');
           if(input.action==='delete') {
+            if(input.id==='default') {
+              if(defaultDeleted)throw Error('任务已删除');
+              if(state.running||state.starting)throw Error('请先暂停此任务，再删除');
+              pause();await runPromise;adaptationDebug.stop();await submissionObserver?.close();await context?.close();
+              topicTracker?.close();context=page=platform=null;state.browserOpen=false;
+              const destination=path.join(root,'archived-sessions',`default-${Date.now()}`);
+              fs.mkdirSync(destination,{recursive:true});
+              fs.copyFileSync(file,path.join(destination,'config.json'));
+              const archiveData=path.join(destination,'data');fs.mkdirSync(archiveData);
+              store.db.exec(`VACUUM INTO '${path.join(archiveData,'history.sqlite').replace(/'/g,"''")}'`);
+              for(const entry of fs.readdirSync(data))if(!/^history\.sqlite(?:-|$)/.test(entry))fs.cpSync(path.join(data,entry),path.join(archiveData,entry),{recursive:true});
+              const profile=path.join(root,'browser-profile');if(fs.existsSync(profile))fs.renameSync(profile,path.join(destination,'browser-profile'));
+              store.db.exec('DELETE FROM records');
+              defaultDeleted=true;fs.writeFileSync(deletedDefaultFile,JSON.stringify({archive:destination}));
+              Object.assign(state,{record:null,snapshot:null,count:0,review:false,phase:'待开始'});
+              events.length=0;
+              const nextId=children.keys().next().value || await createTask('新任务');
+              text(res,200,{ok:true,archived:true,nextId});return;
+            }
             const target=children.get(input.id);
-            if(!target)throw Error('请选择新建的任务；主任务不能删除');
+            if(!target)throw Error('请选择有效任务');
             if(target.app.state.running||target.app.state.starting)throw Error('请先暂停此任务，再删除');
             const source=path.resolve(root,'sessions',input.id), archiveRoot=path.resolve(root,'archived-sessions');
             if(!/^[a-f0-9-]{36}$/.test(input.id)||path.dirname(source)!==path.resolve(root,'sessions'))throw Error('任务路径无效');
             await target.app.close();fs.mkdirSync(archiveRoot,{recursive:true});
             const destination=path.join(archiveRoot,`${input.id}-${Date.now()}`);
             fs.renameSync(source,destination);children.delete(input.id);
-            text(res,200,{ok:true,archived:true});return;
+            const nextId=!defaultDeleted?'default':children.keys().next().value || await createTask('新任务');
+            text(res,200,{ok:true,archived:true,nextId});return;
           }
-          const id = crypto.randomUUID(), directory = path.join(root,'sessions',id);
-          const newTaskConfig = loadSettings(path.join(defaultRoot,'config.example.json'));
-          newTaskConfig.providers = JSON.parse(fs.readFileSync(sharedProvidersFile,'utf8'));
-          newTaskConfig.sharedProvidersMigrated = true;
-          const providerName = Object.keys(newTaskConfig.providers)[0] || '';
-          for (const workflow of Object.values(newTaskConfig.workflows))
-            for (const entry of [workflow.model,workflow.dualEval?.secondary,workflow.dualEval?.arbitration])
-              if (entry) entry.provider = providerName;
-          migrateGroups(newTaskConfig);
-          newTaskConfig.adaptationGroups[0].name = '默认页面配置';
-          fs.mkdirSync(directory,{recursive:true});
-          fs.writeFileSync(path.join(directory,'config.json'),JSON.stringify(newTaskConfig,null,2));
-          const app = await createApp({root:directory,browserFactory,gradeFunction,coordinator,child:true,sharedProvidersFile});
-          const response = await fetch(app.url); const cookie = response.headers.get('set-cookie').split(';')[0];
-          const name = String(input.name || `任务 ${children.size+2}`).slice(0,80);
-          const childSettings=JSON.parse(fs.readFileSync(path.join(directory,'config.json'),'utf8'));childSettings.workspaceName=name;fs.writeFileSync(path.join(directory,'config.json'),JSON.stringify(childSettings,null,2));
-          fs.writeFileSync(path.join(directory,'workspace.json'),JSON.stringify({name}));
-          children.set(id,{app,cookie,name});
+          const id = await createTask(input.name);
           text(res,200,{ok:true,id}); return;
         }
         case '/api/provider-delete': {

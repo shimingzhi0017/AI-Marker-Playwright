@@ -46,8 +46,8 @@ function renderState() {
   $('start').disabled=state.running || state.starting || !state.browserOpen; $('pause').disabled=!(state.running || state.starting); $('diagnose').disabled=state.running || state.starting || !state.browserOpen; $('open').disabled=state.running || state.starting;
   for(const id of ['saveMode','savePreset','saveProvider','saveWorkflow','savePlatform','fetchModels','addPreset','addProvider','addWorkflow','bind','deletePreset','deleteProvider','deleteWorkflow','copyPreset','detectUnits','clearBlank','addModelId']) $(id).disabled=state.running||state.starting;
   $('importFile').disabled=state.running||state.starting;
-  $('deleteWorkspace').disabled=workspace==='default'||state.running||state.starting;
-  $('deleteWorkspace').title=workspace==='default'?'主任务保留，可重命名；新建的任务可删除':state.running||state.starting?'请先暂停此任务':'从任务列表移除，资料归档保留';
+  $('deleteWorkspace').disabled=state.running||state.starting;
+  $('deleteWorkspace').title=state.running||state.starting?'请先暂停此任务':'从任务列表移除，资料归档保留';
   for(const field of ['question','answer','rubric'])$(field+'Upload').disabled=state.running||state.starting;
   $('countdown').hidden=state.countdown === null; $('countdown').textContent=`${state.countdown} 秒后提交`;
   const r=state.record;
@@ -116,18 +116,18 @@ $('historySearch').oninput=()=>action(()=>renderHistory());$('historyFilter').on
 async function workspaceDialog(deleting=false) {
   const current=workspaces.find(w=>w.id===workspace),dialog=$('workspaceDialog');
   $('workspaceDialogTitle').textContent=deleting?'删除任务':'重命名任务';
-  $('workspaceDialogHint').textContent=deleting?`将“${current?.name}”从列表移除，并关闭它的阅卷浏览器。配置、登录目录和历史会归档保留。`:'修改名称后，任务列表会立即更新。';
+  $('workspaceDialogHint').textContent=deleting?`将“${current?.name}”从列表移除，并关闭它的阅卷浏览器。配置、登录目录和历史会归档保留。${workspaces.length===1?'删除最后一个任务后会创建空白新任务。':''}`:'修改名称后，任务列表会立即更新。';
   $('workspaceNameLabel').hidden=deleting;$('workspaceNameInput').required=!deleting;$('workspaceNameInput').value=current?.name||'';
   $('workspaceDialogSave').textContent=deleting?'删除任务':'保存';dialog.returnValue='';dialog.showModal();if(!deleting){$('workspaceNameInput').focus();$('workspaceNameInput').select();}
   return await new Promise(resolve=>dialog.addEventListener('close',()=>resolve(dialog.returnValue==='ok'?$('workspaceNameInput').value.trim():null),{once:true}));
 }
 $('renameWorkspace').onclick=()=>action(async()=>{const name=await workspaceDialog();if(name===null)return;if(!name)throw Error('任务名称不能为空');await api('/api/workspace-name',{name});config.workspaceName=name;await refreshWorkspaces();notice('任务已重命名',true);});
-$('deleteWorkspace').onclick=()=>action(async()=>{if(workspace==='default')throw Error('主任务保留，请选择新建的任务');if(await workspaceDialog(true)===null)return;await api('/api/workspaces',{action:'delete',id:workspace});dirty.clear();await switchWorkspace('default');await refreshWorkspaces();notice('任务已删除，原资料已归档保留',true);});
+$('deleteWorkspace').onclick=()=>action(async()=>{if(await workspaceDialog(true)===null)return;const deleted=await api('/api/workspaces',{action:'delete',id:workspace});dirty.clear();await switchWorkspace(deleted.nextId);await refreshWorkspaces();notice('任务已删除，原资料已归档保留',true);});
 function updateScoreTotal(){const inputs=[...document.querySelectorAll('[data-score]')];$('scoreTotal').textContent=inputs.length?inputs.reduce((sum,i)=>sum+(Number(i.value)||0),0)+' 分':'—';}
 document.querySelector('#unitRows').addEventListener('input',()=>{$('unitTotal').textContent='分项总分 '+[...document.querySelectorAll('[data-unit=maxScore]')].reduce((sum,i)=>sum+(Number(i.value)||0),0)+' 分';});
 document.querySelector('#resultPanel').addEventListener('input',e=>{updateScoreTotal();if(state.review&&state.countdown!==null)action(()=>api('/api/hold',{recordId:state.record.id}));});
 const adaptationUI=createAdaptationUI({getConfig:()=>config,api,action,notice,refresh:renderSettings,markDirty});
-try {config=await api('/api/settings');renderSettings();await poll();setInterval(poll,700);}catch(e){notice(e.message);}
+try {const initialTasks=await api('/api/workspaces');workspace=initialTasks[0]?.id || 'default';config=await api('/api/settings');renderSettings();await poll();setInterval(poll,700);}catch(e){notice(e.message);}
 
 for(const link of document.querySelectorAll('a[href*="/api/export"]')) link.onclick=event=>{event.preventDefault();action(async()=>{const format=new URL(link.href).searchParams.get('format');const result=await api('/api/export-file',{format});notice(`已导出任务“${result.taskName}”的 ${result.count} 条记录，文件保存在：${result.path}`,true);});};
 

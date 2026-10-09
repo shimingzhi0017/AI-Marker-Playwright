@@ -33,3 +33,33 @@ test('新任务恢复全部任务默认值，不复制来源配置或恢复已�
     await app.close();
   }
 });
+
+test('删除默认任务归档历史和登录目录，保留其他任务与全局接口，重启不恢复',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'marker-delete-default-'));
+  let app=await createApp({root});t.after(()=>app.close());
+  const request=async(url,body)=>{
+    const home=await fetch(app.url),cookie=home.headers.get('set-cookie').split(';')[0];
+    const response=await fetch(app.url+url,{headers:{cookie,origin:app.url,'Content-Type':'application/json'},...(body?{method:'POST',body:JSON.stringify(body)}:{})});
+    return {status:response.status,value:await response.json()};
+  };
+  const next=(await request('/api/workspaces',{name:'保留任务'})).value.id;
+  app.store.save({id:'archived-record',state:'submitted',result:{score:2}});
+  fs.mkdirSync(path.join(root,'browser-profile'));fs.writeFileSync(path.join(root,'browser-profile','fixture'),'login');
+  const providers=fs.readFileSync(path.join(root,'shared-providers.json'),'utf8');
+  app.state.running=true;assert.equal((await request('/api/workspaces',{action:'delete',id:'default'})).status,400);app.state.running=false;
+  const deleted=await request('/api/workspaces',{action:'delete',id:'default'});
+  assert.equal(deleted.status,200);assert.equal(deleted.value.nextId,next);
+  const archive=JSON.parse(fs.readFileSync(path.join(root,'default-task-deleted.json'),'utf8')).archive;
+  assert.ok(fs.existsSync(path.join(archive,'data','history.sqlite')));
+  const {Store}=await import('../src/store.mjs');const archived=new Store(path.join(archive,'data'));
+  assert.equal(archived.records()[0].id,'archived-record');archived.close();
+  assert.equal(fs.readFileSync(path.join(archive,'browser-profile','fixture'),'utf8'),'login');
+  assert.deepEqual(app.store.records(),[]);assert.equal(fs.readFileSync(path.join(root,'shared-providers.json'),'utf8'),providers);
+  assert.deepEqual((await request('/api/workspaces')).value.map(w=>w.id),[next]);
+  await app.close();app=await createApp({root});
+  assert.deepEqual((await request('/api/workspaces')).value.map(w=>w.id),[next]);
+  const last=await request('/api/workspaces',{action:'delete',id:next});assert.equal(last.status,200);
+  assert.notEqual(last.value.nextId,'default');assert.notEqual(last.value.nextId,next);
+  const empty=(await request('/api/settings?workspace='+last.value.nextId)).value;
+  assert.equal(empty.presets[empty.active].rubric,'');
+});
