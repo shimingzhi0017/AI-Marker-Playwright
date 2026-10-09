@@ -10,6 +10,7 @@ import { ZhixuePlatform } from './platform.mjs';
 import { validateConfig, validateResult } from './domain.mjs';
 import { exportHistory } from './export.mjs';
 import { blackRatio } from './blank.mjs';
+import { observeSubmissions } from './submission-observer.mjs';
 
 const defaultRoot = fileURLToPath(new URL('..', import.meta.url));
 const text = (res, status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
@@ -39,7 +40,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
   const store = new Store(data);
   coordinator.stores.add(store);
   const state = { running: false, phase: '待开始', reason: '请导入原插件配置，或在设置中填写方案和模型。', count: 0, record: null, snapshot: null, browserOpen: false, review: false, countdown: null };
-  let context, page, platform, runner, pendingReview, timer, runPromise, opening = false, generation = 0;
+  let context, page, platform, runner, pendingReview, timer, runPromise, submissionObserver, opening = false, generation = 0;
   const events = [];
   const note = message => { events.unshift({ time: new Date().toISOString(), message }); if (events.length > 80) events.pop(); };
   const originalSave = store.save.bind(store);
@@ -67,7 +68,8 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
       const target = new URL(cfg.browser?.url || 'https://www.zhixue.com/');
       if (!['http:', 'https:'].includes(target.protocol)) throw Error('阅卷地址必须是网页地址');
       context = await browserFactory({ profile: path.join(root, 'browser-profile'), launch: { headless: false, viewport: null } });
-      context.on('close', () => { context = page = platform = null; state.browserOpen = false; pause(); state.reason = '阅卷浏览器已关闭，请重新打开。'; });
+      submissionObserver = await observeSubmissions(context, { directory: path.join(data, 'diagnostics'), getPlatform: () => platform, getRecord: () => state.record, note });
+      context.on('close', () => { submissionObserver?.close(); context = page = platform = null; state.browserOpen = false; pause(); state.reason = '阅卷浏览器已关闭，请重新打开。'; });
       page = context.pages()[0] || await context.newPage();
       platform = new ZhixuePlatform(page, cfg, path.join(data, 'diagnostics'));
       state.browserOpen = true;
@@ -266,7 +268,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
     }
   }
   let closing;
-  return { url: origin, server, state, store, name:()=>settings().workspaceName||'任务', close: () => closing ||= (async () => { pause(); await Promise.all([...children.values()].map(c=>c.app.close())); await runPromise; await context?.close(); await new Promise(resolve => server.close(resolve)); coordinator.stores.delete(store); store.close(); })() };
+  return { url: origin, server, state, store, name:()=>settings().workspaceName||'任务', close: () => closing ||= (async () => { pause(); await Promise.all([...children.values()].map(c=>c.app.close())); await runPromise; await submissionObserver?.close(); await context?.close(); await new Promise(resolve => server.close(resolve)); coordinator.stores.delete(store); store.close(); })() };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const app = await createApp(); console.log(`可视化阅卷控制台：${app.url}\n关闭本窗口会停止控制台。`);

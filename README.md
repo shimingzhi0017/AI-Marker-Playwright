@@ -108,6 +108,8 @@ npm.cmd run tool -- run config.json
 
 ## 页面适配要求
 
+手动提交的后台证据可使用内置[提交诊断](手动提交诊断说明.md)记录。打开专用阅卷浏览器后自动启用，记录提交点击、相关请求/响应及换卷，文件保存在私人 `data/diagnostics/submission-observations.jsonl`；诊断本身不会确认成功或开启自动提交。
+
 默认选择器来自上游，实际页面可能不同。platform需配置：
 
 - frameUrlPattern：多阅卷区域时限定正确Frame。
