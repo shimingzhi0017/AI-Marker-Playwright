@@ -57,6 +57,14 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   assert.equal(await page.locator('aside #workspaceSelect').count(),1);
   assert.equal(await page.locator('aside [data-tab=models]').count(),1);
   assert.equal(await page.locator('.task-tabs [data-tab=workflows]').count(),1);
+  await page.locator('[data-tab=models]').click();
+  await page.locator('#workspaceSelect').focus();
+  // Keep the native select focused across several periodic refreshes.
+  await page.keyboard.press('ArrowUp');await page.waitForTimeout(1600);
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>document.querySelector('#workspaceSelect').value==='default' && document.querySelector('#grading').hidden===false);
+  await page.locator('#workspaceSelect').selectOption(b);
+  await page.waitForFunction(()=>document.querySelector('#workspaceSelect').value!== 'default' && document.querySelector('#phase').textContent==='已停止');
   await page.locator('[data-tab=history]').click();
   assert.equal(await page.locator('#exportWorkspace').count(),0);
   assert.equal(await page.locator('#workspaceSelect').inputValue(),b);
