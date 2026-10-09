@@ -28,6 +28,15 @@ test('详情显示同总分不同分项、仲裁依据、旧记录缺失和文�
   assert.match(rows[0],/0 分.*2 分.*0 分.*分数不一致/s);
   assert.ok(rows.slice(1).every(row=>row.includes('分数一致')));
   assert.ok(rows.every(row=>!row.includes('未提供')));
+  await page.evaluate(()=>{
+    const a={score:0,scoringDetails:['(1)第（1）问','(2)第（2）问','(3)第（3）问A空箱质量','(3)第（3）问B空箱质量'].map(label=>({label,score:0}))};
+    const b={score:4,scoringDetails:['①第 （1） 问','②第 （2） 问','③第 （3） 问A空箱质量','④第 （3） 问B空箱质量'].map((label,i)=>({label,score:i===1?4:0}))};
+    window.renderResultDetails(document.querySelector('#details'),{result:{...a,dualEval:{result:'arbitration',a,b,verdict:a}}},true);
+  });
+  assert.equal(await page.locator('tbody tr').count(),4);
+  const repeatedRows=await page.locator('tbody tr').allInnerTexts();
+  assert.match(repeatedRows[1],/0 分.*4 分.*0 分.*分数不一致/s);
+  assert.ok(repeatedRows.every(row=>!row.includes('未提供')));
   await page.evaluate(()=>window.renderResultDetails(document.querySelector('#details'),{result:{score:2,studentAnswer:'a=[无法辨认]',recognitionWarning:'书写识别存疑，请人工确认',recognition:{status:'uncertain',coverageChecked:true,notes:['旧答案划掉，替换内容位于横线上方'],issues:[{location:'图1第（1）问右侧',observed:'a=[无法辨认]',reason:'字迹与涂抹重叠'}]}}}));
   const reading=await page.locator('#details').innerText();
   assert.match(reading,/横线上方/);assert.match(reading,/图1第（1）问右侧/);assert.match(reading,/字迹与涂抹重叠/);assert.match(reading,/人工确认/);

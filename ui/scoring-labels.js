@@ -1,9 +1,11 @@
 // Normalize explicit question numbering, retaining all meaningful suffix text.
 export function scoringLabelKey(label) {
   const text = String(label ?? '').trim()
-    .replace(/^[①-⑳]\s*(?=第?[（(]\d+[）)]|第\d+问)/u, '')
-    .normalize('NFKC').trim();
-  const question = text.match(/^(?:第)?\((\d+)\)(?:问)?(.*)$/u) || text.match(/^第(\d+)问(.*)$/u);
+    .replace(/^[①-⑳]\s*(?=(?:第\s*)?[（(]\s*\d+\s*[）)]|第\s*\d+\s*问)/u, '')
+    .normalize('NFKC').trim()
+    // Strip an outer list index only when an explicit inner question remains.
+    .replace(/^\(\s*\d+\s*\)\s*(?=第\s*(?:\(\s*\d+\s*\)|\d+\s*问))/u, '');
+  const question = text.match(/^(?:第\s*)?\(\s*(\d+)\s*\)\s*(?:问\s*)?(.*)$/u) || text.match(/^第\s*(\d+)\s*问\s*(.*)$/u);
   return question ? `question:${question[1]}:${question[2].replace(/\s+/gu, '')}` : `literal:${text}`;
 }
 
