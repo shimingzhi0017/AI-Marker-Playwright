@@ -64,7 +64,10 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.locator('#start').click();await page.waitForFunction(()=>!document.querySelector('#fill').disabled);await page.locator('#pause').click();await page.waitForFunction(()=>document.querySelector('#phase').textContent==='已暂停');assert.ok(await page.locator('#fill').isDisabled());
   await page.locator('[data-tab=history]').click();await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===2);await page.locator('#historyRows button').first().click();assert.ok(await page.locator('#historyDetail').isVisible());
   const exported=await page.request.get(`${app.url}/api/export?format=json`);assert.equal(exported.status(),200);assert.equal((await exported.json()).length,2);
+  assert.equal(await page.getByRole('link',{name:'CSV',exact:true}).isVisible(),false);
+  await page.locator('#exportMenu > summary').click();
   await page.getByRole('link',{name:'CSV',exact:true}).click();
+  assert.equal(await page.locator('#exportMenu').evaluate(el=>el.open),false);
   await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('文件保存在'));
   const exportDir=path.join(root,'data','exports');
   const saved=fs.readdirSync(exportDir).find(f=>f.endsWith('.csv'));assert.ok(saved);

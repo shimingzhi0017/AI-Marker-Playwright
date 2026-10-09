@@ -2,6 +2,13 @@
 export function buildLayout() {
   const $ = id => document.getElementById(id);
   $('eyebrow').hidden = true;
+  const exportLinks=[...document.querySelectorAll('a[href*="/api/export"]')];
+  const exportMenu=document.createElement('details');exportMenu.id='exportMenu';exportMenu.className='export-menu';
+  const exportTitle=document.createElement('summary');exportTitle.textContent='导出';exportMenu.append(exportTitle);
+  const exportOptions=document.createElement('div');exportOptions.className='export-options';
+  exportLinks[0].before(exportMenu);exportLinks.forEach(link=>{exportOptions.append(link);link.addEventListener('click',()=>{exportMenu.open=false;});});exportMenu.append(exportOptions);
+  document.addEventListener('click',event=>{if(!exportMenu.contains(event.target))exportMenu.open=false;});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&exportMenu.open){exportMenu.open=false;exportTitle.focus();}});
   const workspaceNote = document.querySelector('.workspace-controls > .hint'); workspaceNote.remove();
   $('workspaceSelect').closest('label').firstChild.textContent = '当前任务';
   $('addWorkspace').textContent = '＋ 新建任务';

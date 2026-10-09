@@ -51,7 +51,10 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   const history=(await request('/api/history',undefined,b)).value;assert.equal(history[0].result.score,3);assert.equal(app.store.records()[0].state,'paused');
   await page.locator('[data-tab=history]').click();
   await page.locator('#exportWorkspace').selectOption(b);
+  assert.equal(await page.getByRole('link',{name:'CSV',exact:true}).isVisible(),false);
+  await page.locator('#exportMenu > summary').click();
   await page.getByRole('link',{name:'CSV',exact:true}).click();
+  assert.equal(await page.locator('#exportMenu').evaluate(el=>el.open),false);
   await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('已导出任务'));
   const exportedFiles=fs.readdirSync(path.join(root,'sessions',b,'data','exports'));
   assert.equal(exportedFiles.length,1);assert.match(exportedFiles[0],/并发任务 B/);
