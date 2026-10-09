@@ -63,6 +63,14 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   assert.equal(app.store.records()[0].result.comment,'教师调整评分依据');
   await page.locator('#start').click();await page.waitForFunction(()=>!document.querySelector('#fill').disabled);await page.locator('#pause').click();await page.waitForFunction(()=>document.querySelector('#phase').textContent==='已暂停');assert.ok(await page.locator('#fill').isDisabled());
   await page.locator('[data-tab=history]').click();await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===2);await page.locator('#historyRows button').first().click();assert.ok(await page.locator('#historyDetail').isVisible());
+  assert.equal(await page.locator('#historyDialog').evaluate(el=>el.open),true);
+  await page.keyboard.press('Escape');assert.equal(await page.locator('#historyDialog').evaluate(el=>el.open),false);
+  const arbitrationRecord=app.store.records().find(r=>r.state==='paused');
+  arbitrationRecord.result.dualEval={result:'arbitration',a:{score:4},b:{score:2}};app.store.save(arbitrationRecord);
+  await page.locator('#refreshHistory').click();await page.waitForFunction(()=>document.querySelectorAll('.arbitration-badge').length===1);
+  await page.locator('#arbitrationFilter').selectOption('arbitration');await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===1);
+  await page.locator('#historyRows button').click();assert.match(await page.locator('#historyDialogTitle').innerText(),/已仲裁/);
+  await page.locator('#closeHistory').click();await page.locator('#arbitrationFilter').selectOption('');await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===2);
   const exported=await page.request.get(`${app.url}/api/export?format=json`);assert.equal(exported.status(),200);assert.equal((await exported.json()).length,2);
   assert.equal(await page.getByRole('link',{name:'CSV',exact:true}).isVisible(),false);
   await page.locator('#exportMenu > summary').click();
