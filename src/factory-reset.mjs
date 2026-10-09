@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {fileURLToPath} from 'node:url';
 
-export const resetConfirmation='还原整个软件';
 // Call only after every database and browser profile has been closed.
 export function resetPersonalData(root,defaultConfig) {
   const workspace=fs.realpathSync(root);
@@ -28,4 +28,11 @@ export function resetPersonalData(root,defaultConfig) {
     }
     throw error;
   }
+}
+if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+  if(process.argv[2]!=='--confirmed')throw Error('请双击一键还原.cmd，查看范围并确认');
+  const root=fileURLToPath(new URL('..',import.meta.url));
+  const config=JSON.parse(fs.readFileSync(path.join(root,'config.example.json'),'utf8'));
+  console.log('还原完成。个人资料备份：'+resetPersonalData(root,config));
+  console.log('请双击“启动可视化.cmd”重新启动。');
 }

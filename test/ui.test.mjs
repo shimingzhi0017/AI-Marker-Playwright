@@ -212,9 +212,6 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.locator('#adaptTemplateAdd').click();await page.waitForFunction(()=>document.querySelector('#adaptStatus').textContent.includes('智学网内置方案'));
   assert.equal(await page.locator('#adaptCustomSteps').evaluate(el=>el.open),false);
   assert.equal(await page.locator('#adaptNew').isVisible(),true);
-  await page.locator('#factoryReset').click();assert.equal(await page.locator('#factoryResetDialog').isVisible(),true);
-  assert.equal(await page.locator('#factoryResetConfirm').isDisabled(),true);assert.match(await page.locator('#factoryResetDialog').innerText(),/保留.*智学网/s);
-  await page.locator('#factoryResetAgree').check();assert.equal(await page.locator('#factoryResetConfirm').isEnabled(),true);
-  await page.locator('#factoryResetCancel').click();assert.equal(await page.locator('#factoryResetDialog').isVisible(),false);
+  assert.equal(await page.locator('#factoryReset').count(),0);
   await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
 });

@@ -15,7 +15,6 @@ import { exportHistory, enrichStudents } from './export.mjs';
 import { chooseExportDirectory } from './export-folder.mjs';
 import { listModels } from './models.mjs';
 import {adaptationTemplates,createTemplateGroup} from './adaptation-templates.mjs';
-import {resetPersonalData,resetConfirmation} from './factory-reset.mjs';
 import { blackRatio } from './blank.mjs';
 import { observeSubmissions } from './submission-observer.mjs';
 import { trackZhixueTopics } from './zhixue-receipt.mjs';
@@ -32,7 +31,7 @@ function sanitizeSettings(settings) {
   if (!settings.presets[settings.active]) throw Error('请选择有效方案');
   return settings;
 }
-export async function createApp({ root = defaultRoot, browserFactory = opts => launchPersistentBrowser(opts.profile, opts.launch), gradeFunction, coordinator, child = false, sharedProvidersFile, exportDirectoryPicker = chooseExportDirectory, onFactoryReset } = {}) {
+export async function createApp({ root = defaultRoot, browserFactory = opts => launchPersistentBrowser(opts.profile, opts.launch), gradeFunction, coordinator, child = false, sharedProvidersFile, exportDirectoryPicker = chooseExportDirectory } = {}) {
   let lastExportDirectory;
   const children = new Map();
   const deletedDefaultFile = path.join(root,'default-task-deleted.json');
@@ -219,7 +218,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
         text(res, 200, [...(!defaultDeleted ? [{ id: 'default', name:settings().workspaceName || '任务 1', running: state.running, phase: state.phase, count: state.count,review:state.review }] : []), ...[...children].map(([id,c]) => ({ id, name:c.app.name(), running:c.app.state.running, phase:c.app.state.phase, count:c.app.state.count,review:c.app.state.review }))]); return;
       }
       const workspace = url.searchParams.get('workspace');
-      if (!child && workspace && workspace !== 'default' && url.pathname!=='/api/factory-reset') {
+      if (!child && workspace && workspace !== 'default') {
         const target = children.get(workspace);
         if (!target) throw Error('并发任务不存在，请重新选择');
         if (req.method !== 'GET' && (req.method !== 'POST' || req.headers.origin !== origin)) { text(res,403,{error:'请求来源无效'}); return; }
@@ -248,13 +247,6 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
       let body = ''; for await (const chunk of req) { body += chunk; if (body.length > 25 * 1024 * 1024) throw Error('文件过大'); }
       const input = body ? JSON.parse(body) : {};
       switch (url.pathname) {
-        case '/api/factory-reset': {
-          if(child||!onFactoryReset)throw Error('请通过桌面启动器打开软件后执行还原');
-          if(input.confirmation!==resetConfirmation)throw Error('请先确认整个软件的还原范围');
-          if(opening||state.running||state.starting||[...children.values()].some(c=>c.app.state.running||c.app.state.starting))throw Error('请先暂停全部任务，再还原软件');
-          text(res,200,{ok:true,message:'即将备份并还原，软件会关闭。完成后请重新启动。'});
-          setTimeout(()=>onFactoryReset(),500);return;
-        }
         case '/api/workspaces': {
           if (child) throw Error('只能在主控制台新建任务');
           if(input.action==='delete') {
@@ -433,18 +425,11 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
   return { url: origin, server, state, store, name:()=>settings().workspaceName||'任务', close: () => closing ||= (async () => { pause(); await Promise.all([...children.values()].map(c=>c.app.close())); await runPromise; adaptationDebug.stop();await submissionObserver?.close(); await context?.close(); await new Promise(resolve => server.close(resolve)); coordinator.stores.delete(store); store.close(); })() };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  let uiBrowser,resetting=false;
-  const app = await createApp({onFactoryReset:async()=>{
-    if(resetting)return;resetting=true;
-    try {
-      await app.close();await uiBrowser?.close();
-      const backup=resetPersonalData(defaultRoot,loadSettings(path.join(defaultRoot,'config.example.json')));
-      console.log('软件已还原。个人资料备份：'+backup+'。请重新启动软件。');process.exit(0);
-    }catch(error){console.error('还原未完成：'+error.message+'。原资料请检查本机backups目录。');process.exit(1);}
-  }}); console.log(`可视化阅卷控制台：${app.url}\n关闭本窗口会停止控制台。`);
+  const app = await createApp(); console.log(`可视化阅卷控制台：${app.url}\n关闭本窗口会停止控制台。`);
+  let uiBrowser;
   try {
     uiBrowser = await launchPersistentBrowser(path.join(defaultRoot, 'ui-profile'), { headless: false, viewport: null, args: [`--app=${app.url}`] });
-    uiBrowser.on('close', () => {if(!resetting)app.close().then(() => process.exit(0));});
+    uiBrowser.on('close', () => app.close().then(() => process.exit(0)));
   } catch (error) { console.log(`自动打开窗口失败：${error.message}\n请在浏览器中打开上面的本地地址，或按首次运行说明检查浏览器。`); }
   process.once('SIGINT', () => app.close().then(async () => { await uiBrowser?.close(); process.exit(0); }));
 }

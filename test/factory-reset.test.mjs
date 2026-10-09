@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {resetPersonalData,resetConfirmation} from '../src/factory-reset.mjs';
-import {createApp} from '../src/server.mjs';
+import {resetPersonalData} from '../src/factory-reset.mjs';
 
 test('整机还原保留功能文件、备份个人资料并生成空白默认配置',t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'marker-reset-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
@@ -17,14 +16,4 @@ test('整机还原保留功能文件、备份个人资料并生成空白默认�
   const config=JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8'));assert.deepEqual(config.presets,defaults.presets);assert.deepEqual(config.workflows,defaults.workflows);assert.equal(config.batchLimit,0);assert.equal(config.mode,'trial');
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,'shared-providers.json'),'utf8')),defaults.providers);
   assert.equal(fs.readFileSync(path.join(backup,'shared-providers.json'),'utf8'),'private');
-});
-
-test('还原入口必须确认，运行任务时拒绝，任意任务面板请求交给全局处理',async t=>{
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),'marker-reset-api-'));let called=0;
-  const app=await createApp({root,onFactoryReset:()=>called++});t.after(async()=>{await app.close();fs.rmSync(root,{recursive:true,force:true});});
-  const initial=await fetch(app.url);const cookie=initial.headers.get('set-cookie').split(';')[0];
-  const request=confirmation=>fetch(app.url+'/api/factory-reset?workspace=some-task',{method:'POST',headers:{cookie,origin:app.url,'Content-Type':'application/json'},body:JSON.stringify({confirmation})});
-  assert.equal((await request('wrong')).status,400);
-  app.state.running=true;assert.equal((await request(resetConfirmation)).status,400);app.state.running=false;
-  assert.equal((await request(resetConfirmation)).status,200);await new Promise(r=>setTimeout(r,550));assert.equal(called,1);
 });

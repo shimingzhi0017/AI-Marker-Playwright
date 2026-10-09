@@ -5,14 +5,6 @@ import {renderResultDetails} from './result-details.js';
 import {buildLayout,createEnhancements} from './enhancements.js';
 buildLayout();buildAdaptationUI();
 const $ = id => document.getElementById(id);
-$('factoryReset').onclick=()=>{ $('factoryResetAgree').checked=false;$('factoryResetConfirm').disabled=true;$('factoryResetMessage').textContent='';$('factoryResetDialog').showModal();};
-$('factoryResetAgree').onchange=()=>{$('factoryResetConfirm').disabled=!$('factoryResetAgree').checked;};
-$('factoryResetCancel').onclick=()=>$('factoryResetDialog').close();
-$('factoryResetConfirm').onclick=()=>action(async()=>{
-  if(!$('factoryResetAgree').checked)return;
-  const result=await api('/api/factory-reset',{confirmation:'还原整个软件'},'default');
-  $('factoryResetMessage').textContent=result.message;$('factoryResetConfirm').disabled=true;$('factoryResetCancel').disabled=true;
-});
 let config, state, history = [], selectedRecord, displayedRecord, currentTab = 'grading', busy = false;
 let workspace = 'default', workspaces = [], switching = false, pendingWorkspace = null;
 const dirty=new Set();
