@@ -21,7 +21,7 @@ function textField(value) { return typeof value === 'string' ? value : value?.te
 function updateField(value, text) { return value && typeof value === 'object' ? {...value,text} : text; }
 function renderSettings() {
   options($('presetSelect'), Object.keys(config.presets), config.active); options($('providerSelect'), Object.keys(config.providers)); options($('workflowSelect'), Object.keys(config.workflows), config.presets[config.active]?.workflowId);
-  $('mode').value = config.mode || 'trial'; $('batch').value = config.batchLimit || 10; $('batchEnabled').checked=config.batchLimit!==0; options($('runPreset'),Object.keys(config.presets),config.active);
+  $('mode').value = config.mode || 'trial'; $('batch').value = config.batchLimit || ''; $('batchEnabled').checked=(config.batchLimit || 0)>0;updateBatchLimit(); options($('runPreset'),Object.keys(config.presets),config.active);
   renderPreset(); renderProvider(); renderWorkflow();
   $('platformFields').replaceChildren();
   const fields = { 'browser.url':'阅卷网址',frameUrlPattern:'阅卷 Frame 地址匹配',paperIdSelector:'稳定答卷 ID 选择器',taskIdSelector:'任务 ID 选择器',completionSelector:'完成提示选择器',imageSelector:'答卷图片选择器',scoreSelector:'评分框选择器',submitSelector:'提交按钮选择器',submitResponseUrlPattern:'提交响应 URL 匹配',identityRequestField:'提交请求答卷ID字段（通用平台）',scoresRequestField:'提交请求分数字段（通用平台）',identityMode:'答卷标识模式（智学网填写zhixue-network）',successField:'业务成功字段',successValue:'业务成功值（JSON）' };
@@ -117,3 +117,6 @@ for(const link of document.querySelectorAll('a[href*="/api/export"]')) link.oncl
 
 function returnToTaskPage(){if(currentTab!=='models')return;currentTab='grading';document.querySelector('.task-tabs').hidden=false;document.querySelectorAll('.tab').forEach(el=>el.hidden=el.id!==currentTab);document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===currentTab));$('title').textContent=labels[currentTab];}
 $('workspaceSelect').addEventListener('pointerdown',returnToTaskPage);$('workspaceSelect').addEventListener('keydown',returnToTaskPage);
+
+function updateBatchLimit(){const enabled=$('batchEnabled').checked;$('batch').disabled=!enabled;$('batch').placeholder=enabled?'请输入份数':'无限制';if(!enabled)$('batch').value='';}
+$('batchEnabled').addEventListener('change',updateBatchLimit);

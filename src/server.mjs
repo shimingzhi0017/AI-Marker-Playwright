@@ -213,7 +213,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
             text(res,200,{ok:true,archived:true});return;
           }
           const id = crypto.randomUUID(), directory = path.join(root,'sessions',id);
-          fs.mkdirSync(directory,{recursive:true}); fs.copyFileSync(file,path.join(directory,'config.json'));
+          fs.mkdirSync(directory,{recursive:true}); fs.copyFileSync(file,path.join(directory,'config.json'));const newTaskConfig=loadSettings(path.join(directory,'config.json'));newTaskConfig.batchLimit=0;fs.writeFileSync(path.join(directory,'config.json'),JSON.stringify(newTaskConfig,null,2));
           const app = await createApp({root:directory,browserFactory,gradeFunction,coordinator,child:true,sharedProvidersFile});
           const response = await fetch(app.url); const cookie = response.headers.get('set-cookie').split(';')[0];
           const name = String(input.name || `任务 ${children.size+2}`).slice(0,80);

@@ -2,7 +2,7 @@
   "version": 1,
   "active": "我的方案",
   "mode": "trial",
-  "batchLimit": 10,
+  "batchLimit": 0,
   "requestBudget": 6,
   "browser": { "url": "https://www.zhixue.com/", "headless": false },
   "platform": {
