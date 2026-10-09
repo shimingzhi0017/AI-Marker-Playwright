@@ -50,8 +50,15 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.locator('#workspaceSelect').click();
   await page.keyboard.press('Escape');
   await page.locator('[data-tab=workflows]').click();
+  assert.equal(await page.locator('#recognitionPolicy').inputValue(),'manual');
+  await page.locator('#recognitionPolicy').selectOption('arbitration');
+  assert.ok(await page.locator('#arbitrationPanel').isVisible());
+  await page.locator('#saveWorkflow').click();
+  await page.waitForFunction(()=>document.querySelector('#notice').textContent==='工作流已保存');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).workflows['我的工作流'].recognitionPolicy,'arbitration');
+  await page.locator('#recognitionPolicy').selectOption('manual');
   await page.locator('#primaryModel').fill('fixture-model');await page.locator('#saveWorkflow').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent==='工作流已保存');
-  await page.getByText('输出与请求设置',{exact:true}).click();await page.locator('#outputLimit').check();await page.locator('#outputTokens').fill('2048');await page.locator('#primaryEffort').selectOption('high');await page.locator('#saveWorkflow').click();await page.waitForFunction(()=>document.querySelector('#dirtyBadge').hidden);assert.equal(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).workflows['我的工作流'].model.reasoningEffort,'high');
+  await page.getByText('输出与请求设置',{exact:true}).click();await page.locator('#outputLimit').check();await page.locator('#outputTokens').fill('2048');await page.locator('#primaryPanel summary').click();await page.locator('#primaryEffort').selectOption('high');await page.locator('#saveWorkflow').click();await page.waitForFunction(()=>document.querySelector('#dirtyBadge').hidden);assert.equal(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).workflows['我的工作流'].model.reasoningEffort,'high');
   await page.locator('[data-tab=models]').click();
   await page.locator('#viewProviderModels').click();await page.locator('#fetchModels').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent==='模型目录已更新');assert.match(await page.locator('#modelCatalog').innerText(),/fixture-model/);await page.locator('#closeProviderModels').click();
   await page.locator('#workspaceSelect').click();await page.keyboard.press('Escape');

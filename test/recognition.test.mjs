@@ -21,4 +21,8 @@ test('完整区域忠实转录规则及识别疑点必须进入人工确认', as
     assert.equal(mode,'trial'); assert.match(record.result.recognitionWarning,/存疑/); return 'stop';
   },async()=>({...result,recognitionWarning:recognitionWarning(result)}));
   await runner.run(); assert.equal(filled,false); assert.equal(records.at(-1).state,'paused');
+  const arbitrationRunner=new Runner(platform,store,{active:'p',presets:{p:config},mode:'normal'},async(record,mode)=>{
+    assert.equal(mode,'normal');assert.ok(record.result.recognitionWarning);return 'stop';
+  },async()=>({...result,recognitionWarning:recognitionWarning(result),recognitionDecision:'arbitration'}));
+  await arbitrationRunner.run();assert.equal(filled,false);
 });

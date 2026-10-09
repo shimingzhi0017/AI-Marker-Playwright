@@ -11,7 +11,7 @@ test('单总分框客观双阅逐项比较，任意分歧或缺失必须仲裁',
   const server = http.createServer(async (req, res) => {
     let body = ''; for await (const chunk of req) body += chunk;
     const request = JSON.parse(body); calls.push(request.model);
-    assert.match(request.messages[0].content[0].text, /scoringDetails/);
+    assert.match(request.messages[0].content[0].text, /scoringDetails|书写识别要求/);
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(replies[request.model]) } }] }));
   });
@@ -46,4 +46,16 @@ test('单总分框客观双阅逐项比较，任意分歧或缺失必须仲裁',
   calls = []; replies = { A: { ...response([1, 3]), score: 5, subScores: [{ label: '12', score: 5 }] }, B: response([2, 2]), C: response([2, 3]) };
   await assert.rejects(grade(config, settings, [], new AbortController().signal), /合计/);
   assert.equal(calls.includes('C'), false);
+  settings.workflows.w.recognitionPolicy='arbitration';
+  calls=[];replies={A:response([1,3]),B:response([1,3]),C:response([2,3])};
+  const uncertain=await grade(config,settings,[],new AbortController().signal);
+  assert.equal(uncertain.dualEval.result,'arbitration');assert.equal(uncertain.score,5);assert.equal(uncertain.recognitionDecision,'arbitration');assert.ok(uncertain.recognitionWarning);assert.ok(calls.includes('C'));
+  settings.workflows.w.dualEval.enabled=false;
+  calls=[];const single=await grade(config,settings,[],new AbortController().signal);
+  assert.deepEqual(calls,['A','C']);assert.equal(single.score,5);assert.equal(single.recognitionDecision,'arbitration');assert.ok(single.recognitionArbitration.primary);
+  replies.C={...response([2,3]),score:11};
+  await assert.rejects(grade(config,settings,[],new AbortController().signal),/越界|合计/);
+  settings.workflows.w.recognitionPolicy='manual';calls=[];
+  const manual=await grade(config,settings,[],new AbortController().signal);
+  assert.deepEqual(calls,['A']);assert.equal(manual.recognitionDecision,undefined);
 });

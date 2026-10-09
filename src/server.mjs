@@ -122,7 +122,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
     if (!snapshot) throw Error('平台已显示任务完成');
     const preset = cfg.presets[cfg.taskScopedConfig ? cfg.active : cfg.bindings?.[snapshot.taskId] || cfg.active]; validateConfig(preset);
     const workflow = cfg.workflows[preset.workflowId];
-    for (const entry of [workflow?.model, ...(workflow?.dualEval?.enabled ? [workflow.dualEval.secondary, workflow.dualEval.arbitration] : [])]) {
+    for (const entry of [workflow?.model, ...(workflow?.dualEval?.enabled ? [workflow.dualEval.secondary, workflow.dualEval.arbitration] : workflow?.recognitionPolicy === 'arbitration' ? [workflow.dualEval?.arbitration] : [])]) {
       const provider = cfg.providers[entry?.provider];
       if (!entry?.model || !provider?.endpoint || !(provider.apiKey || process.env[provider.apiKeyEnv || ''])) throw Error('请在“模型接口”中填写接口地址、密钥和工作流模型');
     }

@@ -21,6 +21,12 @@ export function renderResultDetails(container, record, history = false) {
   }
   paragraph(container,'模型总分 → 最终分数',`${value(result.rawScore ?? record.originalResult?.score ?? result.score)} → ${value(result.score)}`);
   readingDetails(container, result);
+  if (result.recognitionDecision === 'arbitration') paragraph(container, '存疑处理', '按当前任务设置采用仲裁分数；识别疑点仍保留，请结合原图审查。');
+  if (result.recognitionArbitration) {
+    for (const [title, r] of [['首次识别', result.recognitionArbitration.primary], ['识别仲裁', result.recognitionArbitration.verdict]]) {
+      const detail=node('details');detail.append(node('summary',`${title} · ${r?.model || '模型名未记录'} · ${value(r?.score)}`));readingDetails(detail,r);paragraph(detail,'评分依据',r?.comment);container.append(detail);
+    }
+  }
   const dual = result.dualEval;
   if(dual) {
     paragraph(container,'双阅判定',`${{consensus:'逐项一致',average:'主观题阈值内平均',arbitration:'已调用仲裁'}[dual.result] || dual.result}；主评 ${value(dual.a?.score)}，复评 ${value(dual.b?.score)}，总分差 ${value(Math.abs(dual.a?.score - dual.b?.score))}。总分差不代表各项一致。`);

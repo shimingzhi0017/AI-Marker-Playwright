@@ -78,7 +78,13 @@ export async function grade(config, settings, images, signal) {
     catch (error) { error.modelResponse = { model: entry.model, rawResponse: text }; throw error; }
   };
   const prompt = promptFor(config);
-  if (!workflow.dualEval?.enabled) return call(workflow.model, prompt);
+  const useArbitration = workflow.recognitionPolicy === 'arbitration';
+  if (!workflow.dualEval?.enabled) {
+    const primary = await call(workflow.model, prompt);
+    if (!primary.recognitionWarning || !useArbitration) return primary;
+    const verdict = await call(workflow.dualEval?.arbitration, `${prompt}\n首次识别存在疑点，请重新检查原图，忠实识别实际书写并独立评分，不得脑补。用户选择按仲裁有效分数继续，请保留全部无法确认内容及疑点。首次结果：${JSON.stringify(primary)}`);
+    return { ...verdict, recognitionWarning: [primary.recognitionWarning, verdict.recognitionWarning].filter(Boolean).join(' '), recognitionDecision: 'arbitration', recognitionArbitration: { primary, verdict } };
+  }
   const dual = workflow.dualEval;
   const objective = dual.questionType !== 'subjective';
   const needsDetails = objective && (config.scoring?.units?.length || 0) <= 1;
@@ -93,7 +99,7 @@ export async function grade(config, settings, images, signal) {
   const aItems = items(a), bItems = items(b);
   const match = sameScoringItems;
   const same = a.score === b.score && match(a.subScores || [], b.subScores || []) && aItems.length > 0 && match(aItems, bItems);
-  if (dual.questionType !== 'subjective' ? same : diff <= (dual.threshold ?? 2)) {
+  if (!(readingWarning && useArbitration) && (dual.questionType !== 'subjective' ? same : diff <= (dual.threshold ?? 2))) {
     if (dual.questionType !== 'subjective') return { ...a, recognitionWarning: readingWarning, formatWarning: a.formatWarning || b.formatWarning, dualEval: { result: 'consensus', a, b } };
     const subScores = (a.subScores || []).map((s, i) => ({ ...s, score: (s.score + b.subScores[i].score) / 2, comment: [s.comment, b.subScores[i].comment].filter(Boolean).join('\n') }));
     const result = { ...a, recognitionWarning: readingWarning, formatWarning: a.formatWarning || b.formatWarning, score: subScores.length ? subScores.reduce((s, u) => s + u.score, 0) : (a.score + b.score) / 2, subScores, comment: `${a.comment || ''}\n${b.comment || ''}`, dualEval: { result: 'average', a, b } };
@@ -104,5 +110,5 @@ export async function grade(config, settings, images, signal) {
     const error = Error('客观题仲裁模型未返回逐项评分明细，已停止；不能仅按总分继续');
     error.modelResponse = { model: dual.arbitration.model, rawResponse: verdict.rawResponse }; throw error;
   }
-  return { ...verdict, recognitionWarning: [readingWarning, verdict.recognitionWarning].filter(Boolean).join(' '), dualEval: { result: 'arbitration', a, b, verdict } };
+  return { ...verdict, recognitionWarning: [readingWarning, verdict.recognitionWarning].filter(Boolean).join(' '), recognitionDecision: useArbitration && (readingWarning || verdict.recognitionWarning) ? 'arbitration' : undefined, dualEval: { result: 'arbitration', a, b, verdict } };
 }
