@@ -4,7 +4,9 @@ import readline from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { launchPersistentBrowser } from './browser.mjs';
 import { Store, importSettings, loadSettings } from './store.mjs';
-import { ZhixuePlatform } from './platform.mjs';
+import { SuitePlatform as ZhixuePlatform } from './suite-platform.mjs';
+import {installSuiteAdapters} from './suite-adapters.mjs';
+import {trackZhixueTopics} from './zhixue-receipt.mjs';
 import { Runner } from './runner.mjs';
 import { exportHistory } from './export.mjs';
 import { validateResult } from './domain.mjs';
@@ -69,10 +71,11 @@ async function main() {
   const interrupt = () => { runner?.pause(); rl.close(); };
   process.on('SIGINT', interrupt);
   try {
+    const topicTracker=trackZhixueTopics(context);await installSuiteAdapters(context);
     await context.tracing.start({ screenshots: true, snapshots: true });
     await page.goto(settings.browser?.url || 'https://www.zhixue.com/', { waitUntil: 'domcontentloaded' });
     await rl.question('请在专用浏览器中登录并进入阅卷页面，准备好后按回车。');
-    const platform = new ZhixuePlatform(page, settings, path.join(dataDir, 'diagnostics'));
+    const platform = new ZhixuePlatform(page, settings, path.join(dataDir, 'diagnostics'));platform.topicTracker=topicTracker;
     if (command === 'login') { console.log('浏览器会话已保存。'); return; }
     if (command === 'diagnose') {
       try { console.log(JSON.stringify(await platform.snapshot(), null, 2)); } finally { await platform.diagnostic('只读诊断'); } return;

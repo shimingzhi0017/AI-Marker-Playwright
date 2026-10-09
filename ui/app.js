@@ -60,6 +60,8 @@ function renderState() {
   const builtinSubmit=r?.snapshot?.builtinAdapter==='zhixue'&&r?.snapshot?.networkTopic?.apiOrigin;
   const canSubmit=!!((builtinSubmit || config?.platform?.verified || (config?.platform?.manualSubmissionTest && config.mode === 'trial' && Number.isInteger(config.batchLimit) && config.batchLimit >= 0 && r?.snapshot?.networkTopic)) && r?.snapshot?.strongIdentity && (builtinSubmit || config?.platform?.submitResponseUrlPattern));
   for(const id of ['fill','stopReview']) $(id).disabled=!state.review;
+  const manualWebsiteFill=r?.snapshot?.submissionOnFill || r?.snapshot?.units?.some(u=>u.type==='click');
+  if(manualWebsiteFill){$('fill').disabled=true;$('fill').title='此网站给分可能直接提交，请在网站人工确认';}
   $('submit').disabled=!state.review || !canSubmit;
   $('submitHint').textContent=canSubmit ? (config.platform.manualSubmissionTest && !config.platform.verified ? `人工确认提交测试：每份人工确认并核验服务器回执，${config.batchLimit ? `达到本次设定的${config.batchLimit}份后自动停止。` : `本次未设置份数上限，可随时暂停。`}` : '确认提交后会等待平台响应，再处理下一份。') : '提交适配尚未实测：可只填分，再在阅卷网站手动提交。';
   for(const input of document.querySelectorAll('[data-score]')) input.disabled=!state.review;

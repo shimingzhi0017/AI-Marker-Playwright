@@ -1,0 +1,244 @@
+// ========== 五岳阅卷适配器 ==========
+// wylkyj.com — Vue3 + Element Plus
+
+const WuyueAdapter = {
+    name: '五岳阅卷',
+    id: 'wuyue',
+    urlPatterns: ['*://*.wylkyj.com/*'],
+    iconUrl: 'https://www.wylkyj.com/favicon.ico',
+
+    shouldInitialize() {
+        return window.location.hostname.includes('wylkyj.com');
+    },
+
+    async detectMarkingPage() {
+        console.log('🔎 [诊断] 五岳阅卷 — 开始检测批改页面...');
+        try {
+            const result = await Promise.race([
+                waitForElement(WUYUE_SELECTORS.PAGE_DETECT_IMAGE).then(() => 'answer-image'),
+                waitForElement(WUYUE_SELECTORS.PAGE_DETECT_INPUT).then(() => 'score-input'),
+                waitForElement(WUYUE_SELECTORS.PAGE_DETECT_SUBMIT).then(() => 'submit-btn'),
+            ]).catch(() => null);
+
+            if (result) {
+                console.log(`✅ [诊断] 检测到批改页面元素: ${result}`);
+                return true;
+            }
+
+            // 兜底检测
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            const hasImage = document.querySelector(WUYUE_SELECTORS.ANSWER_IMAGE);
+            const hasInput = document.querySelector(WUYUE_SELECTORS.SCORE_INPUT_SINGLE);
+            const hasBtn = document.querySelector(WUYUE_SELECTORS.SUBMIT_BUTTON);
+            const detected = !!(hasImage && hasInput && hasBtn);
+            console.log(`🔎 [诊断] 兜底检测 — 图片: ${!!hasImage}, 输入框: ${!!hasInput}, 提交: ${!!hasBtn}, 最终: ${detected}`);
+            return detected;
+        } catch (error) {
+            console.error('❌ [诊断] detectMarkingPage 异常:', error);
+            return false;
+        }
+    },
+
+    getTaskIdentifier() {
+        // 五岳阅卷是 SPA，使用 hash 路径
+        return window.location.href;
+    },
+
+    async gatherAnswerImages() {
+        // 等待图片加载
+        await new Promise(r => setTimeout(r, 1000));
+
+        // 获取当前可见的 outBox（不含 hideBox）
+        const activeBox = document.querySelector(WUYUE_SELECTORS.OUT_BOX_ACTIVE);
+        if (activeBox) {
+            // 获取该 outBox 内的所有答题卡图片（通常是2张：题目区+答题区）
+            const imgs = activeBox.querySelectorAll('.imgSection img');
+            if (imgs.length > 0) {
+                const urls = Array.from(imgs).map(img => img.src).filter(src => src);
+                console.log(`🖼️ [诊断] 找到当前答卷的 ${urls.length} 张答题卡图片`);
+                urls.forEach((url, i) => console.log(`  📷 图片${i + 1}: ${url.substring(0, 80)}...`));
+                return urls;
+            }
+        }
+
+        // 兜底：获取任意一张图片
+        const fallback = document.querySelector(WUYUE_SELECTORS.ANSWER_IMAGE_ALL);
+        if (fallback && fallback.src) {
+            console.log(`🖼️ [诊断] 兜底: 找到答题卡图片: ${fallback.src.substring(0, 60)}...`);
+            return [fallback.src];
+        }
+
+        console.warn('⚠️ [诊断] 未找到答题卡图片');
+        return [];
+    },
+
+    async fetchImageAsBase64(url) {
+        return fetchImageAsBase64(url);
+    },
+
+    fillScore(request) {
+        const { total, subScores } = request;
+
+        // 分小题填入
+        const subQuestions = this.detectSubQuestions();
+        if (subQuestions.length > 0 && subScores && subScores.length > 0) {
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            for (const sq of subScores) {
+                const target = subQuestions.find(d =>
+                    d.label === sq.label || sq.label.includes(d.label) || d.label.includes(sq.label)
+                );
+                if (target && sq.score !== null) {
+                    setter.call(target.element, sq.score);
+                    target.element.dispatchEvent(new Event('input', { bubbles: true }));
+                    target.element.dispatchEvent(new Event('change', { bubbles: true }));
+                    target.element.dispatchEvent(new Event('blur', { bubbles: true }));
+                    console.log(`✅ [诊断] 小题 ${sq.label} 分数 ${sq.score} 已填入`);
+                }
+            }
+            return true;
+        }
+
+        // 单题模式：填总分
+        const scoreInput = document.querySelector(WUYUE_SELECTORS.SCORE_INPUT_SINGLE);
+        console.log(`🔎 [诊断] 五岳阅卷 fillScore — 分数: ${total}, 输入框: ${!!scoreInput}`);
+
+        if (scoreInput) {
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            setter.call(scoreInput, total);
+            scoreInput.dispatchEvent(new Event('input', { bubbles: true }));
+            scoreInput.dispatchEvent(new Event('change', { bubbles: true }));
+            scoreInput.dispatchEvent(new Event('blur', { bubbles: true }));
+            console.log(`✅ [诊断] 分数已填入`);
+            return true;
+        }
+        console.warn('⚠️ [诊断] 未找到分数输入框');
+        return false;
+    },
+
+    submitGrade() {
+        const submitBtn = document.querySelector(WUYUE_SELECTORS.SUBMIT_BUTTON);
+        if (submitBtn) {
+            console.log(`✅ [诊断] 五岳阅卷 — 点击提交按钮`);
+            submitBtn.click();
+            return true;
+        }
+        console.warn('⚠️ [诊断] 未找到提交按钮');
+        return false;
+    },
+
+    async waitForNextPaper(oldImageUrl) {
+        let checkTimes = 0;
+        return new Promise((resolve) => {
+            const timer = setInterval(() => {
+                checkTimes++;
+
+                // 获取当前图片 URL
+                const currentImg = document.querySelector(WUYUE_SELECTORS.ANSWER_IMAGE);
+                const currentUrl = currentImg ? currentImg.src : null;
+
+                // 检测图片变化或输入框被清空
+                const input = document.querySelector(WUYUE_SELECTORS.SCORE_INPUT_SINGLE);
+                const inputCleared = input && (input.value === '' || input.value === '0');
+
+                if (oldImageUrl && currentUrl && currentUrl !== oldImageUrl) {
+                    clearInterval(timer);
+                    console.log('✅ 五岳阅卷 — 新试卷已加载（图片变化）');
+                    resolve(true);
+                } else if (inputCleared && checkTimes > 3) {
+                    clearInterval(timer);
+                    console.log('✅ 五岳阅卷 — 新试卷已加载（输入框清空）');
+                    resolve(true);
+                } else if (checkTimes > 50) {
+                    clearInterval(timer);
+                    console.warn('⚠️ 五岳阅卷 — 等待下一份试卷超时');
+                    resolve(false);
+                }
+            }, 200);
+        });
+    },
+
+    isRegradeMode() {
+        // 检查回评按钮是否存在且可见
+        const backUpBtn = document.querySelector(WUYUE_SELECTORS.BACK_UP_BUTTON);
+        return !!backUpBtn;
+    },
+
+    getScoreInputs() {
+        const inputs = [];
+
+        // 检测多小题模式
+        const computeItems = document.querySelectorAll(WUYUE_SELECTORS.SCORE_ITEM);
+        if (computeItems.length > 0) {
+            computeItems.forEach((item, i) => {
+                const numEl = item.querySelector('.num');
+                const inputEl = item.querySelector('.el-input__inner');
+                if (inputEl) {
+                    // 从 placeholder 提取满分（如 "满分7分" → 7）
+                    const placeholder = inputEl.placeholder || '';
+                    const maxScoreMatch = placeholder.match(/满分(\d+)分/);
+                    const maxScore = maxScoreMatch ? parseInt(maxScoreMatch[1]) : 0;
+                    // 从 .num 提取题号标签（如 "16(456)"）
+                    const label = numEl ? numEl.textContent.trim() : `第${i + 1}题`;
+                    inputs.push({ element: inputEl, label, index: i, maxScore });
+                }
+            });
+        } else {
+            // 单题模式
+            const singleInput = document.querySelector(WUYUE_SELECTORS.SCORE_INPUT_SINGLE);
+            if (singleInput) {
+                const placeholder = singleInput.placeholder || '';
+                const maxScoreMatch = placeholder.match(/满分(\d+)分/);
+                const maxScore = maxScoreMatch ? parseInt(maxScoreMatch[1]) : 0;
+                inputs.push({ element: singleInput, label: '总分', index: 0, maxScore });
+            }
+        }
+
+        return inputs;
+    },
+
+    fillScores(scores) {
+        const inputs = this.getScoreInputs();
+        if (inputs.length === 0) return false;
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        let successCount = 0;
+        for (let i = 0; i < Math.min(scores.length, inputs.length); i++) {
+            if (scores[i] === null || scores[i] === undefined) continue;
+            setter.call(inputs[i].element, scores[i]);
+            inputs[i].element.dispatchEvent(new Event('input', { bubbles: true }));
+            inputs[i].element.dispatchEvent(new Event('change', { bubbles: true }));
+            inputs[i].element.dispatchEvent(new Event('blur', { bubbles: true }));
+            successCount++;
+            console.log(`✅ [诊断] ${inputs[i].label} 分数 ${scores[i]} 已填入`);
+        }
+        return successCount > 0;
+    },
+
+    detectSubQuestions() {
+        const subs = [];
+        const computeItems = document.querySelectorAll(WUYUE_SELECTORS.SCORE_ITEM);
+
+        // 多小题模式
+        if (computeItems.length > 1) {
+            computeItems.forEach((item, i) => {
+                const numEl = item.querySelector('.num');
+                const inputEl = item.querySelector('.el-input__inner');
+                if (inputEl) {
+                    // 从 placeholder 提取满分
+                    const placeholder = inputEl.placeholder || '';
+                    const maxScoreMatch = placeholder.match(/满分(\d+)分/);
+                    const maxScore = maxScoreMatch ? parseInt(maxScoreMatch[1]) : 0;
+                    // 从 .num 提取题号标签
+                    const label = numEl ? numEl.textContent.trim() : `第${i + 1}题`;
+                    subs.push({ label, element: inputEl, index: i, maxScore });
+                }
+            });
+        }
+
+        return subs;
+    },
+};
+
+if (WuyueAdapter.shouldInitialize()) {
+    window.__AI_MARKER_ADAPTER__ = WuyueAdapter;
+}
+

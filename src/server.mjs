@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { launchPersistentBrowser } from './browser.mjs';
 import { Store, importSettings, loadSettings } from './store.mjs';
 import { Runner } from './runner.mjs';
-import { ZhixuePlatform } from './platform.mjs';
+import { SuitePlatform as ZhixuePlatform } from './suite-platform.mjs';
+import { installSuiteAdapters } from './suite-adapters.mjs';
 import { validateConfig, validateResult } from './domain.mjs';
 import { exportHistory, enrichStudents } from './export.mjs';
 import { blackRatio } from './blank.mjs';
@@ -116,6 +117,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
       if (!['http:', 'https:'].includes(target.protocol)) throw Error('阅卷地址必须是网页地址');
       context = await browserFactory({ profile: path.join(root, 'browser-profile'), launch: { headless: false, viewport: null } });
       topicTracker = trackZhixueTopics(context);
+      await installSuiteAdapters(context);
       await context.exposeBinding('__markerAdaptationPicked',async(source,picked)=>{if(picked.token!==pickerToken)return;if(picked.cancelled){state.adaptationPick={cancelled:true};return;}state.adaptationPick=picked;for(const frame of page.frames())await frame.evaluate(()=>window.__markerPickerCancel?.()).catch(()=>{});});
       submissionObserver = await observeSubmissions(context, { directory: path.join(data, 'diagnostics'), getPlatform: () => platform, getRecord: () => state.record, note });
       context.on('close', () => { submissionObserver?.close(); context = page = platform = null; state.browserOpen = false; pause(); state.reason = '阅卷浏览器已关闭，请重新打开。'; });
@@ -310,7 +312,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           await selectGradingPage();
           platform=new ZhixuePlatform(page,applyGroup(settings(),page.url()),path.join(data,'diagnostics'));platform.topicTracker=topicTracker;
           state.snapshot = await platform.snapshot();
-          state.phase = '页面已识别'; state.reason = `找到${state.snapshot.images.length}张图片、${state.snapshot.units.length}个评分框。${state.snapshot.strongIdentity ? '' : '尚未确认稳定答卷ID，可先评分并只填分。'}`;
+          state.phase = '页面已识别'; state.reason = `${state.snapshot.adapterName ? '已匹配'+state.snapshot.adapterName+'。' : ''}找到${state.snapshot.images.length}张图片、${state.snapshot.units.length}个评分框。${state.snapshot.strongIdentity ? '' : state.snapshot.submissionOnFill || state.snapshot.units.some(u=>u.type==='click') ? '此网站给分动作可能直接提交，可先评分，再在网站人工确认。' : '尚未确认稳定答卷ID，可先评分并只填分。'}`;
           await platform.diagnostic('可视化页面诊断'); note(state.reason); break;
         }
         case '/api/export-file': {
