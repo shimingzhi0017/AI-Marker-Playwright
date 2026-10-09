@@ -201,8 +201,8 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': `marker=${token}; HttpOnly; SameSite=Strict; Path=/`, 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" });
         res.end(fs.readFileSync(new URL('../ui/index.html', import.meta.url))); return;
       }
-      if (['/app.js', '/enhancements.js', '/result-details.js', '/scoring-labels.js', '/adaptation-ui.js', '/style.css', '/feedback.js', '/icon.svg'].includes(url.pathname) || /^\/katex\/(?:katex\.mjs|katex\.min\.css|fonts\/[A-Za-z0-9_-]+\.woff2)$/.test(url.pathname)) {
-        res.writeHead(200, { 'Content-Type': /\.m?js$/.test(url.pathname) ? 'text/javascript; charset=utf-8' : url.pathname.endsWith('.woff2') ? 'font/woff2' : url.pathname.endsWith('.svg') ? 'image/svg+xml' : 'text/css; charset=utf-8', 'Cache-Control': 'no-store' });
+      if (['/app.js', '/enhancements.js', '/result-details.js', '/scoring-labels.js', '/adaptation-ui.js', '/style.css', '/feedback.js', '/icon.svg', '/icon.ico', '/icon-256.png'].includes(url.pathname) || /^\/katex\/(?:katex\.mjs|katex\.min\.css|fonts\/[A-Za-z0-9_-]+\.woff2)$/.test(url.pathname)) {
+        res.writeHead(200, { 'Content-Type': /\.m?js$/.test(url.pathname) ? 'text/javascript; charset=utf-8' : url.pathname.endsWith('.woff2') ? 'font/woff2' : url.pathname.endsWith('.ico') ? 'image/x-icon' : url.pathname.endsWith('.png') ? 'image/png' : url.pathname.endsWith('.svg') ? 'image/svg+xml' : 'text/css; charset=utf-8', 'Cache-Control': 'no-store' });
         res.end(fs.readFileSync(new URL(`../ui${url.pathname}`, import.meta.url))); return;
       }
       if (!req.headers.cookie?.split(';').some(c => c.trim() === `marker=${token}`) || (req.headers.origin && req.headers.origin !== origin)) { text(res, 403, { error: '请从本地控制台操作' }); return; }
