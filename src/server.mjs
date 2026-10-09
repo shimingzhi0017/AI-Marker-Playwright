@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { launchPersistentBrowser } from './browser.mjs';
 import { Store, importSettings, loadSettings } from './store.mjs';
 import { Runner } from './runner.mjs';
 import { ZhixuePlatform } from './platform.mjs';
@@ -22,7 +22,7 @@ function sanitizeSettings(settings) {
   if (!settings.presets[settings.active]) throw Error('请选择有效方案');
   return settings;
 }
-export async function createApp({ root = defaultRoot, browserFactory = opts => chromium.launchPersistentContext(opts.profile, opts.launch), gradeFunction, coordinator, child = false } = {}) {
+export async function createApp({ root = defaultRoot, browserFactory = opts => launchPersistentBrowser(opts.profile, opts.launch), gradeFunction, coordinator, child = false } = {}) {
   const children = new Map();
   if (!coordinator) {
     const locks = new Map(), stores = new Set();
@@ -66,7 +66,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => c
       const cfg = settings();
       const target = new URL(cfg.browser?.url || 'https://www.zhixue.com/');
       if (!['http:', 'https:'].includes(target.protocol)) throw Error('阅卷地址必须是网页地址');
-      context = await browserFactory({ profile: path.join(root, 'browser-profile'), launch: { channel: 'chromium', headless: false, viewport: null } });
+      context = await browserFactory({ profile: path.join(root, 'browser-profile'), launch: { headless: false, viewport: null } });
       context.on('close', () => { context = page = platform = null; state.browserOpen = false; pause(); state.reason = '阅卷浏览器已关闭，请重新打开。'; });
       page = context.pages()[0] || await context.newPage();
       platform = new ZhixuePlatform(page, cfg, path.join(data, 'diagnostics'));
@@ -271,8 +271,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const app = await createApp(); console.log(`可视化阅卷控制台：${app.url}\n关闭本窗口会停止控制台。`);
   let uiBrowser;
   try {
-    uiBrowser = await chromium.launchPersistentContext(path.join(defaultRoot, 'ui-profile'), { channel: 'chromium', headless: false, viewport: null, args: [`--app=${app.url}`] });
+    uiBrowser = await launchPersistentBrowser(path.join(defaultRoot, 'ui-profile'), { headless: false, viewport: null, args: [`--app=${app.url}`] });
     uiBrowser.on('close', () => app.close().then(() => process.exit(0)));
-  } catch { console.log('自动打开窗口失败，请在浏览器中打开上面的本地地址。'); }
+  } catch (error) { console.log(`自动打开窗口失败：${error.message}\n请在浏览器中打开上面的本地地址，或按首次运行说明检查浏览器。`); }
   process.once('SIGINT', () => app.close().then(async () => { await uiBrowser?.close(); process.exit(0); }));
 }

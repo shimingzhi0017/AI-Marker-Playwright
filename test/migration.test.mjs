@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
-import { chromium } from 'playwright';
+import { launchBrowser } from '../src/browser.mjs';
 import { parseResult, calculate } from '../src/domain.mjs';
 import { grade, extractResponse, requestModel } from '../src/models.mjs';
 import { Store, importSettings } from '../src/store.mjs';
@@ -63,7 +63,7 @@ async function fixture(t, failSubmit = false, options = {}) {
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}`;
-  const browser = await chromium.launch({ headless: true, channel: 'chromium' });
+  const browser = await launchBrowser({ headless: true });
   const page = await browser.newPage(); await page.goto(url);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'marker-migration-'));
   const settings = { active: 'p', presets: { p: config }, providers: { local: { endpoint: url, apiKey: 'local-test' } }, workflows: { w: { model: { provider: 'local', model: 'A' } } }, mode: 'unattended', batchLimit: 1,

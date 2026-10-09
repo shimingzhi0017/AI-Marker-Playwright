@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import sharp from 'sharp';
-import {chromium} from 'playwright';
+import { launchBrowser } from '../src/browser.mjs';
 import {createApp} from '../src/server.mjs';
 async function until(predicate) { const deadline=Date.now()+10000; while(Date.now()<deadline){if(await predicate())return;await new Promise(r=>setTimeout(r,80));}throw Error('等待并发状态超时'); }
 
@@ -22,7 +22,7 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   config.browser.url=base+'/A';config.presets[config.active]={answer:'模拟规范',rubric:'模拟规范',workflowId:'我的工作流',scoring:{maxScore:4,units:[]}};
   config.providers['个人接口']={endpoint:base,apiKey:'fixture'};config.workflows['我的工作流'].model.model='fixture';config.platform={paperIdSelector:'#paper',taskIdSelector:'#task',loadTimeoutMs:1000};
   fs.writeFileSync(path.join(root,'config.json'),JSON.stringify(config));
-  const browser=await chromium.launch({headless:true,channel:'chromium'}),gradingPages=[],errors=[];
+  const browser=await launchBrowser({headless:true}),gradingPages=[],errors=[];
   let active=0,maxActive=0;
   const opts={root,browserFactory:async()=>{const context=await browser.newContext();gradingPages.push(await context.newPage());return context;},gradeFunction:async()=>{active++;maxActive=Math.max(active,maxActive);await new Promise(r=>setTimeout(r,350));active--;return {score:2,studentAnswer:'模拟内容',comment:'模拟依据',subScores:[]};}};
   let app=await createApp(opts);

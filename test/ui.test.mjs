@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import sharp from 'sharp';
-import { chromium } from 'playwright';
+import { launchBrowser } from '../src/browser.mjs';
 import { createApp } from '../src/server.mjs';
 
 test('可视化配置、评分改分、填分、暂停、历史和来源校验', {timeout:60000}, async t => {
@@ -20,7 +20,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   });
   await new Promise(resolve=>fixture.listen(0,'127.0.0.1',resolve));
   const fixtureUrl=`http://127.0.0.1:${fixture.address().port}`;
-  const browser=await chromium.launch({headless:true,channel:'chromium'});
+  const browser=await launchBrowser({headless:true});
   let gradingPage;
   const app=await createApp({root,browserFactory:async()=>{const context=await browser.newContext();gradingPage=await context.newPage();return context;},gradeFunction:async()=>({score:2,studentAnswer:'模拟识别内容',comment:'模拟评分依据',subScores:[]})});
   t.after(async()=>{await app.close();await browser.close();await new Promise(resolve=>fixture.close(resolve));});

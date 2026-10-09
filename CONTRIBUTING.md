@@ -1,6 +1,6 @@
 # 参与开发
 
-需要 Node.js 24+。安装依赖和 Chromium 后运行 npm test。
+需要 Node.js 24+。首次安装步骤见[首次运行说明](首次运行说明.md)。安装依赖和 Chromium 后运行 npm test；浏览器检查与应用共用启动逻辑，Windows 可在 Chromium 缺失或无法创建进程时尝试 Edge。CI 默认使用 Chromium。
 
 提交应说明用户遇到的问题、修改后的行为及验证方式。网页操作需保留答卷身份检查、填分读回和提交响应确认。新的平台适配必须有独立验证，不能只修改 verified 绕过验收。
 

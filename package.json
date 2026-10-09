@@ -4,6 +4,9 @@
   "private": true,
   "description": "智学网Playwright可视化阅卷工具；真实平台自动提交待验收",
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "check:browser": "node check-browser.mjs",
     "tool": "node src/cli.mjs",

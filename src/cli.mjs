@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { launchPersistentBrowser } from './browser.mjs';
 import { Store, importSettings, loadSettings } from './store.mjs';
 import { ZhixuePlatform } from './platform.mjs';
 import { Runner } from './runner.mjs';
@@ -61,7 +61,7 @@ async function main() {
   }
   if (!['login', 'diagnose', 'run'].includes(command)) throw Error(help);
   const settings = loadSettings(configFile);
-  const context = await chromium.launchPersistentContext(path.join(root, 'browser-profile'), { channel: 'chromium', headless: settings.browser?.headless ?? false, viewport: null });
+  const context = await launchPersistentBrowser(path.join(root, 'browser-profile'), { headless: settings.browser?.headless ?? false, viewport: null });
   const page = context.pages()[0] || await context.newPage();
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const store = new Store(dataDir);
