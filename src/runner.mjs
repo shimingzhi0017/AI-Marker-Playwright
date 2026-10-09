@@ -24,7 +24,7 @@ export class Runner {
         if (config.scoring?.units?.length && config.scoring.units.length !== snapshot.units.length) throw Error('方案评分单元与页面不一致');
         if (this.store.records().some(r => r.identity === snapshot.identity && r.state === 'submitted')) throw Error('当前答卷已提交过，禁止重复处理');
         release?.(); release = this.coordinator?.acquire(snapshot.identity, this.store);
-        record = { id: crypto.randomUUID(), identity: snapshot.identity, taskId: snapshot.taskId, presetName, configHash: crypto.createHash('sha256').update(JSON.stringify(config)).digest('hex'), snapshot, state: 'loading', time: new Date().toISOString() };
+        record = { id: crypto.randomUUID(), identity: snapshot.identity, taskId: snapshot.taskId, presetName, configHash: crypto.createHash('sha256').update(JSON.stringify(config)).digest('hex'), snapshot, mode: this.settings.mode || 'trial', state: 'loading', time: new Date().toISOString() };
         this.store.save(record); this.store.log('loading', { id: record.id });
         const images = await this.platform.images(snapshot, signal);
         record.imageFiles = await this.store.images(record.id, images);

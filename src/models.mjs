@@ -73,7 +73,7 @@ export async function grade(config, settings, images, signal) {
     const provider = settings.providers[entry?.provider];
     if (!provider || !entry.model) throw Error('工作流模型或供应商无效');
     const text = await requestModel({ ...provider, reasoningEffort: entry.reasoningEffort, maxOutputTokens: workflow.outputLimitEnabled === false ? undefined : workflow.maxOutputTokens || provider.maxOutputTokens }, entry.model, prompt, [...fieldImages(config), ...images], signal, budget);
-    try { return { ...parseResult(text, config), rawResponse: text }; }
+    try { return { ...parseResult(text, config), model: entry.model, rawResponse: text }; }
     catch (error) { error.modelResponse = { model: entry.model, rawResponse: text }; throw error; }
   };
   const prompt = promptFor(config);
@@ -81,7 +81,7 @@ export async function grade(config, settings, images, signal) {
   const dual = workflow.dualEval;
   const objective = dual.questionType !== 'subjective';
   const needsDetails = objective && (config.scoring?.units?.length || 0) <= 1;
-  const dualPrompt = needsDetails ? `${prompt}\n客观题双阅额外要求：必须返回scoringDetails数组，按评分标准中的每个小问或独立评分点逐项列出{label,score}，包括零分项，不得合并为整题总分。label使用评分标准原文中的编号和名称，顺序与标准一致。scoringDetails各项之和必须等于score。subScores仍只对应网页总分框。` : prompt;
+  const dualPrompt = needsDetails ? `${prompt}\n客观题双阅额外要求：必须返回scoringDetails数组，按评分标准中的每个小问或独立评分点逐项列出{label,score,maxScore,studentAnswer,reason}；reason说明对应评分规则、作答是否符合及给分或扣分原因，不得只有“正确/错误”，包括零分项，不得合并为整题总分。label使用评分标准原文中的编号和名称，顺序与标准一致。scoringDetails各项之和必须等于score。subScores仍只对应网页总分框。` : prompt;
   const settled = await Promise.allSettled([call(workflow.model, dualPrompt), call(dual.secondary, dualPrompt)]);
   const failed = settled.find(r => r.status === 'rejected'); if (failed) throw failed.reason;
   const [a, b] = settled.map(r => r.value);
@@ -101,5 +101,5 @@ export async function grade(config, settings, images, signal) {
     const error = Error('客观题仲裁模型未返回逐项评分明细，已停止；不能仅按总分继续');
     error.modelResponse = { model: dual.arbitration.model, rawResponse: verdict.rawResponse }; throw error;
   }
-  return { ...verdict, dualEval: { result: 'arbitration', a, b } };
+  return { ...verdict, dualEval: { result: 'arbitration', a, b, verdict } };
 }

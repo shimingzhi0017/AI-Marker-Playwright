@@ -28,7 +28,7 @@ export function promptFor(config) {
   const diligence = config.scoring?.diligence;
   const diligencePrompt = diligence?.enabled ? `\ndiligenceLevel为1到5的整数，参考标准：${diligence.criteria || '字数较多且书写较为工整'}；学生答案不超过15字或未作答时为1。` : '\ndiligenceLevel固定为0。';
   const unitPrompt = `\n网页评分框共${units.length}个，标签、满分和顺序为：${JSON.stringify(units.map(u => ({ label: u.label, maxScore: u.maxScore })))}。subScores对应网页评分框，不对应评分标准中的小问或评分点。${units.length === 1 ? `只有一个总分框时，subScores必须仅有一项，label固定为${JSON.stringify(units[0].label)}，score等于总分；小问明细写在comment里。` : ''}`;
-  return input + diligencePrompt + unitPrompt + `\n读取完整答题区，忽略明确划掉的旧内容，识别归属明确的替代内容；模糊内容不得猜测。严格按照评分标准评分。\n唯一输出格式为JSON对象，不要返回Markdown或【得分】等段落。score必须是JSON数字，不能是字符串、空值或“数值总分”等占位文字，范围为0到${maxScore(config)}。subScores按下列标签和顺序返回，分数之和必须等于score；无评分单元时返回空数组。示例中的0仅说明数字类型，不代表本份应得0分。\n` +
+  return input + diligencePrompt + unitPrompt + `\n读取完整答题区，忽略明确划掉的旧内容，识别归属明确的替代内容；模糊内容不得猜测。严格按照评分标准评分。comment按评分标准逐项写明满分、学生答案、给分或扣分依据和该项得分，最后列出总分计算；不得只给总分或笼统评价。\n唯一输出格式为JSON对象，不要返回Markdown或【得分】等段落。score必须是JSON数字，不能是字符串、空值或“数值总分”等占位文字，范围为0到${maxScore(config)}。subScores按下列标签和顺序返回，分数之和必须等于score；无评分单元时返回空数组。示例中的0仅说明数字类型，不代表本份应得0分。\n` +
     JSON.stringify({ studentAnswer: '实际识别内容', score: 0, comment: '逐项评分依据和分数计算', diligenceLevel: 0, subScores: units.map(u => ({ label: u.label, score: 0 })) });
 }
 export function validateResult(result, config) {

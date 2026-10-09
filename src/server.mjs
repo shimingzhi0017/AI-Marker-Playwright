@@ -138,7 +138,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': `marker=${token}; HttpOnly; SameSite=Strict; Path=/`, 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" });
         res.end(fs.readFileSync(new URL('../ui/index.html', import.meta.url))); return;
       }
-      if (['/app.js', '/enhancements.js', '/style.css'].includes(url.pathname)) {
+      if (['/app.js', '/enhancements.js', '/result-details.js', '/style.css'].includes(url.pathname)) {
         res.writeHead(200, { 'Content-Type': url.pathname.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8' });
         res.end(fs.readFileSync(new URL(`../ui${url.pathname}`, import.meta.url))); return;
       }
