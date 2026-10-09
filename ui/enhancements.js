@@ -22,8 +22,8 @@ export function buildLayout() {
   const toolbar = document.querySelector('.toolbar');
   toolbar.insertAdjacentHTML('afterbegin','<div id="readiness" class="readiness" aria-live="polite"></div>');
   const controls = toolbar.querySelector('.controls');
-  const details = document.createElement('details'); details.className='runtime-settings';
-  details.innerHTML='<summary>运行设置与方案绑定 <span id="runtimeSummary"></span></summary>';
+  const details = document.createElement('div'); details.className='runtime-settings';
+  details.innerHTML='<div class="runtime-heading">运行设置 <span id="runtimeSummary" hidden></span></div>';
   controls.before(details); details.append(controls);
   details.append($('bind'));
   controls.insertAdjacentHTML('afterbegin','<label>本任务使用方案<select id="runPreset"></select></label>');
@@ -80,7 +80,7 @@ export function buildLayout() {
   $('workflowSelect').closest('.controls').hidden=true;
   $('presetWorkflow').closest('label').hidden=true;
   $('runPreset').closest('label').hidden=true;$('bind').hidden=true;
-  document.querySelector('.runtime-settings summary').firstChild.textContent='运行设置 ';
+  
   $('presets').querySelector('h2').textContent='当前任务方案';
   $('workflows').querySelector('h2').textContent='当前任务评分工作流';
   const backupMenu=document.createElement('details');backupMenu.className='export-menu';backupMenu.innerHTML='<summary>配置备份</summary>';
