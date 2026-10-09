@@ -157,7 +157,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
     platform = new ZhixuePlatform(page, cfg, path.join(data, 'diagnostics')); platform.topicTracker = topicTracker;
     const snapshot = await platform.ready(undefined, undefined, cfg.mode !== 'trial');
     if (generation !== expectedGeneration) throw Error('启动已取消');
-    if (!snapshot) throw Error('平台已显示任务完成');
+    if (!snapshot) {state.phase='阅卷完成';state.reason='本题已全部阅完，请在网站选择留在当前题或切换下一题。';note(state.reason);return;}
     const preset = cfg.presets[cfg.taskScopedConfig ? cfg.active : cfg.bindings?.[snapshot.taskId] || cfg.active]; validateConfig(preset);
     const workflow = cfg.workflows[preset.workflowId];
     for (const entry of [workflow?.model, ...(workflow?.dualEval?.enabled ? [workflow.dualEval.secondary, workflow.dualEval.arbitration] : workflow?.recognitionPolicy === 'arbitration' ? [workflow.dualEval?.arbitration] : [])]) {
@@ -184,7 +184,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
     runner.review = (record, mode) => { state.liveRecord = record; return reviewFn(record, mode); };
     note('开始阅卷');
     runPromise = runner.run().then(result => {
-      state.running = false; state.count = result.count; state.reason = result.reason; state.phase = result.paused ? '已暂停' : '已停止';
+      state.running = false; state.count = result.count; state.reason = result.reason; state.phase = result.completed ? '阅卷完成' : result.paused ? '已暂停' : '已停止';
       note(result.reason); delete state.liveRecord; runner = null; finishReview('stop');
     }).catch(error => { state.running = false; state.phase = '已暂停'; state.reason = error.message; note(error.message); finishReview('stop'); });
     } finally { state.starting = false; }
@@ -312,6 +312,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           if (state.running) throw Error('请先暂停'); if (!platform) throw Error('请先打开阅卷浏览器');
           await selectGradingPage();
           platform=new ZhixuePlatform(page,applyGroup(settings(),page.url()),path.join(data,'diagnostics'));platform.topicTracker=topicTracker;
+          if(await platform.completed()){state.phase='阅卷完成';state.reason='本题已全部阅完，请在网站选择留在当前题或切换下一题。';note(state.reason);break;}
           state.snapshot = await platform.snapshot();
           state.phase = '页面已识别'; state.reason = `${state.snapshot.adapterName ? '已匹配'+state.snapshot.adapterName+'。' : ''}找到${state.snapshot.images.length}张图片、${state.snapshot.units.length}个评分框。${state.snapshot.strongIdentity ? '' : state.snapshot.submissionOnFill || state.snapshot.units.some(u=>u.type==='click') ? '此网站给分动作可能直接提交，可先评分，再在网站人工确认。' : '尚未确认稳定答卷ID，可先评分并只填分。'}`;
           await platform.diagnostic('可视化页面诊断'); note(state.reason); break;

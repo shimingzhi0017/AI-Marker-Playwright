@@ -15,7 +15,7 @@ export class Runner {
       if (this.store.records().some(r => r.state === 'submitting' || r.state === 'uncertain')) throw Error('存在提交状态不明的历史记录；先人工核对，不自动重交');
       while (!signal.aborted) {
         const snapshot = await this.platform.ready(previous, signal, this.settings.mode !== 'trial');
-        if (!snapshot) { this.store.log('completed'); return { count: this.count, reason: '平台明确显示任务完成' }; }
+        if (!snapshot) { this.store.log('completed'); return { count: this.count, completed:true, reason: '本题阅卷完成，请在网站选择留在当前题或切换下一题；切题后核对评分方案再开始。' }; }
         const presetName = this.settings.taskScopedConfig ? this.settings.active : this.settings.bindings?.[snapshot.taskId] || this.settings.active;
         if (previous && previous.taskId !== snapshot.taskId && (this.settings.taskScopedConfig || !this.settings.bindings?.[snapshot.taskId])) throw Error('任务已切换，尚未绑定适用方案，已暂停');
         const config = structuredClone(this.settings.presets[presetName]);

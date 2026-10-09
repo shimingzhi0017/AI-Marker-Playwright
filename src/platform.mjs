@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
-import { resolveZhixueOptions } from './zhixue-builtin.mjs';
+import { resolveZhixueOptions, isZhixuePage } from './zhixue-builtin.mjs';
 import { matchesTopic, verifyCommit, zhixueCommitUrl, matchesZhixueCommitUrl } from './zhixue-receipt.mjs';
 
 const hash = buffer => crypto.createHash('sha256').update(buffer).digest('hex');
@@ -80,9 +80,17 @@ export class ZhixuePlatform {
       identitySource: data.paperId ? 'configured-page-element' : 'image-resource-fallback', strongIdentity: !!data.paperId };
   }
   async completed() {
-    if (!this.options.completionSelector) return false;
     for (const frame of this.page.frames()) {
-      try { if (await frame.locator(this.options.completionSelector).isVisible()) return true; } catch { /* detached */ }
+      try {
+        if (this.options.completionSelector && await frame.locator(this.options.completionSelector).isVisible()) return true;
+        if ((isZhixuePage(frame.url()) || isZhixuePage(this.page.url?.())) && await frame.evaluate(()=>
+          [...document.querySelectorAll('body *')].some(el=>{
+            const text=el.textContent?.replace(/\s+/g,'').trim() || '';
+            if(!/^该题已全部阅完[，,。]?请选择留在当前题或切换到下一题[？?]?$/.test(text))return false;
+            const style=getComputedStyle(el),rect=el.getBoundingClientRect();
+            return rect.width>0 && rect.height>0 && style.visibility!=='hidden' && style.display!=='none' && !el.closest('[hidden],[aria-hidden="true"]');
+          }))) return true;
+      } catch { /* detached */ }
     }
     return false;
   }
