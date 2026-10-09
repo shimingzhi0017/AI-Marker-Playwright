@@ -108,3 +108,5 @@ function updateScoreTotal(){const inputs=[...document.querySelectorAll('[data-sc
 document.querySelector('#unitRows').addEventListener('input',()=>{$('unitTotal').textContent='分项总分 '+[...document.querySelectorAll('[data-unit=maxScore]')].reduce((sum,i)=>sum+(Number(i.value)||0),0)+' 分';});
 document.querySelector('#resultPanel').addEventListener('input',e=>{updateScoreTotal();if(state.review&&state.countdown!==null)action(()=>api('/api/hold',{recordId:state.record.id}));});
 try {config=await api('/api/settings');renderSettings();await poll();setInterval(poll,700);}catch(e){notice(e.message);}
+
+for(const link of document.querySelectorAll('a[href*="/api/export"]')) link.onclick=event=>{event.preventDefault();action(async()=>{const format=new URL(link.href).searchParams.get('format');const result=await api('/api/export-file',{format});notice(`已导出 ${result.count} 条记录，文件保存在：${result.path}`,true);});};

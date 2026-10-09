@@ -8,7 +8,7 @@ import { Store, importSettings, loadSettings } from './store.mjs';
 import { Runner } from './runner.mjs';
 import { ZhixuePlatform } from './platform.mjs';
 import { validateConfig, validateResult } from './domain.mjs';
-import { exportHistory } from './export.mjs';
+import { exportHistory, enrichStudents } from './export.mjs';
 import { blackRatio } from './blank.mjs';
 import { observeSubmissions } from './submission-observer.mjs';
 import { trackZhixueTopics } from './zhixue-receipt.mjs';
@@ -168,7 +168,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
         }
         if (url.pathname === '/api/export') {
           const format = url.searchParams.get('format'); if (!['json', 'csv', 'html'].includes(format)) throw Error('导出格式无效');
-          const destination = path.join(data, `export.${format}`); exportHistory(store.records(), destination);
+          const destination = path.join(data, `export.${format}`); exportHistory(enrichStudents(store.records(), path.join(data, 'diagnostics', 'submission-observations.jsonl')), destination);
           res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="history.${format}"` }); res.end(fs.readFileSync(destination)); return;
         }
       }
@@ -208,6 +208,13 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           state.snapshot = await platform.snapshot();
           state.phase = '页面已识别'; state.reason = `找到${state.snapshot.images.length}张图片、${state.snapshot.units.length}个评分框。${state.snapshot.strongIdentity ? '' : '尚未确认稳定答卷ID，可先评分并只填分。'}`;
           await platform.diagnostic('可视化页面诊断'); note(state.reason); break;
+        }
+        case '/api/export-file': {
+          if (!['json','csv','html'].includes(input.format)) throw Error('导出格式无效');
+          const records = enrichStudents(store.records(), path.join(data,'diagnostics','submission-observations.jsonl'));
+          const directory = path.join(data,'exports'); fs.mkdirSync(directory,{recursive:true});
+          const destination = path.join(directory, 'history-'+Date.now()+'.'+input.format);
+          exportHistory(records,destination); text(res,200,{path:destination,count:records.length}); return;
         }
         case '/api/start': await start(); break;
         case '/api/pause': pause(); break;

@@ -64,6 +64,11 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.locator('#start').click();await page.waitForFunction(()=>!document.querySelector('#fill').disabled);await page.locator('#pause').click();await page.waitForFunction(()=>document.querySelector('#phase').textContent==='已暂停');assert.ok(await page.locator('#fill').isDisabled());
   await page.locator('[data-tab=history]').click();await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===2);await page.locator('#historyRows button').first().click();assert.ok(await page.locator('#historyDetail').isVisible());
   const exported=await page.request.get(`${app.url}/api/export?format=json`);assert.equal(exported.status(),200);assert.equal((await exported.json()).length,2);
+  await page.getByRole('link',{name:'CSV',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('文件保存在'));
+  const exportDir=path.join(root,'data','exports');
+  const saved=fs.readdirSync(exportDir).find(f=>f.endsWith('.csv'));assert.ok(saved);
+  assert.match(fs.readFileSync(path.join(exportDir,saved),'utf8'),/学生编号/);
   await page.locator('#historyFilter').selectOption('filled');await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===1);await page.locator('#historySearch').fill('教师调整');await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===1);
   await page.locator('[data-tab=presets]').click();await page.locator('#detectUnits').click();await page.waitForFunction(()=>document.querySelectorAll('.unit-row').length===1);assert.equal(await page.locator('[data-unit=maxScore]').inputValue(),'4');await page.locator('[data-unit=roundStep]').fill('0.5');await page.locator('#savePreset').click();await page.waitForFunction(()=>document.querySelector('#dirtyBadge').hidden);assert.equal(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets['我的方案'].scoring.units[0].roundStep,0.5);
   await page.locator('#copyPreset').click();await page.waitForFunction(()=>document.querySelector('#presetSelect').options.length===2);page.once('dialog',d=>d.accept());await page.locator('#deletePreset').click();await page.waitForFunction(()=>document.querySelector('#presetSelect').options.length===1);

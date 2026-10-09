@@ -10,6 +10,7 @@ export function readTopic(json, field = 'topicInfo') {
   if (!detail?.scanRecordId || !detail.markingPaperId || !detail.topicImageIds?.length) return null;
   return { scanRecordId: detail.scanRecordId, markingPaperId: detail.markingPaperId, itemIds: ids,
     topicNumStr: topic.topicNumStr || json.data.topicNum,
+    student: { userId: topic.item?.userId || detail.userId || '', userCode: detail.userCode || topic.item?.userCode || '', name: detail.userName || '', classId: detail.classId || topic.item?.classId || '', schoolId: detail.schoolId || topic.item?.schoolId || '' },
     imageKeys: detail.topicImageIds.map(stableImageKey) };
 }
 
