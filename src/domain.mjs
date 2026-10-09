@@ -53,18 +53,24 @@ export function parseResult(text, config) {
   if (result && typeof result === 'object') {
     result.score = numeric(result.score);
     if (Array.isArray(result.subScores)) result.subScores.forEach(unit => { if (unit && typeof unit === 'object') unit.score = numeric(unit.score); });
+    if (Array.isArray(result.scoringDetails)) result.scoringDetails.forEach(unit => { if (unit && typeof unit === 'object') unit.score = numeric(unit.score); });
   }
+  if (result?.scoringDetails !== undefined) validateScoringDetails(result.scoringDetails, result.score, maxScore(config));
   const units = config.scoring?.units || [];
   if (units.length === 1 && Array.isArray(result?.subScores) && result.subScores.length > 1) {
     validateResult(result, { ...config, scoring: { ...config.scoring, units: [], maxScore: maxScore(config) } });
     const details = result.subScores;
-    if (details.some(s => !s || typeof s.label !== 'string' || !s.label.trim() || !Number.isFinite(s.score) || s.score < 0 || s.score > maxScore(config)) || new Set(details.map(s => s.label)).size !== details.length) throw Error('模型小问评分明细无效，无法汇总到总分框');
-    if (Math.abs(details.reduce((sum, s) => sum + s.score, 0) - result.score) > 1e-8) throw Error('模型总分与小问明细合计不一致，无法汇总');
+    validateScoringDetails(details, result.score, maxScore(config));
+    if (result.scoringDetails && JSON.stringify(result.scoringDetails.map(s => [s.label, s.score])) !== JSON.stringify(details.map(s => [s.label, s.score]))) throw Error('模型两组评分明细不一致，无法汇总');
     result.scoringDetails = structuredClone(details);
     result.subScores = [{ label: units[0].label, score: result.score }];
     result.formatWarning = `模型返回了${details.length}个小问明细，已核对合计并汇总到唯一的${units[0].label}总分框，请人工确认。`;
   }
   return validateResult(result, config);
+}
+export function validateScoringDetails(details, score, maximum) {
+  if (!Array.isArray(details) || !details.length || details.some(s => !s || typeof s.label !== 'string' || !s.label.trim() || !Number.isFinite(s.score) || s.score < 0 || s.score > maximum) || new Set(details.map(s => s.label)).size !== details.length) throw Error('模型小问评分明细无效，无法逐项核对');
+  if (Math.abs(details.reduce((sum, s) => sum + s.score, 0) - score) > 1e-8) throw Error('模型总分与小问明细合计不一致，无法汇总');
 }
 export function calculate(result, config) {
   const units = config.scoring?.units || [];
