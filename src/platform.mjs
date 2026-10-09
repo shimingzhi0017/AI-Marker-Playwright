@@ -94,12 +94,35 @@ export class ZhixuePlatform {
     }
     return false;
   }
-  async ready(previous, signal, requireIdentity = false) {
+  async continueQuota() {
+    for(const frame of this.page.frames()) {
+      if(!isZhixuePage(frame.url()) && !isZhixuePage(this.page.url?.()))continue;
+      try {
+        const handled=await frame.evaluate(()=>{
+          const visible=el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&!el.closest('[hidden],[aria-hidden="true"]');};
+          const prompt=[...document.querySelectorAll('body *')].find(el=>visible(el)&&/^您该题任务量已完成[，,。]?请选择继续多阅或切换到下一题[？?]?$/.test(el.textContent?.replace(/\s+/g,'') || ''));
+          if(!prompt)return false;
+          let parent=prompt;
+          while(parent && parent!==document.body){
+            const buttons=[...parent.querySelectorAll('button')].filter(visible);
+            const next=buttons.filter(b=>b.textContent.replace(/\s+/g,'')==='继续多阅'&&!b.disabled);
+            if(next.length===1 && buttons.some(b=>b.textContent.replace(/\s+/g,'')==='切换下一题')){next[0].click();return true;}
+            parent=parent.parentElement;
+          }
+          return false;
+        });
+        if(handled)return true;
+      } catch { /* frame detached */ }
+    }
+    return false;
+  }
+  async ready(previous, signal, requireIdentity = false, allowContinueQuota = false) {
     const deadline = Date.now() + (this.options.loadTimeoutMs || 20000);
     let lastError;
     while (Date.now() < deadline) {
       signal?.throwIfAborted();
       if (await this.completed()) return null;
+      if(allowContinueQuota && await this.continueQuota()){await sleep(200);continue;}
       try {
         const current = await this.snapshot();
         if (current.images.length && current.images.every(i => i.ready) && current.units.length && (!previous || current.identity !== previous.identity)) {

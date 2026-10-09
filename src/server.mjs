@@ -155,7 +155,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
     await selectGradingPage();
     const cfg = applyGroup(settings(), page.url());
     platform = new ZhixuePlatform(page, cfg, path.join(data, 'diagnostics')); platform.topicTracker = topicTracker;
-    const snapshot = await platform.ready(undefined, undefined, cfg.mode !== 'trial');
+    const snapshot = await platform.ready(undefined, undefined, cfg.mode !== 'trial', true);
     if (generation !== expectedGeneration) throw Error('启动已取消');
     if (!snapshot) {state.phase='阅卷完成';state.reason='本题已全部阅完，请在网站选择留在当前题或切换下一题。';note(state.reason);return;}
     const preset = cfg.presets[cfg.taskScopedConfig ? cfg.active : cfg.bindings?.[snapshot.taskId] || cfg.active]; validateConfig(preset);
