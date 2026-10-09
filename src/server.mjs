@@ -330,7 +330,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           if(input.openFolder===true){
             try {
               if(process.platform!=='win32')throw Error('此系统暂不支持自动打开文件夹');
-              await new Promise((resolve,reject)=>{const explorer=spawn('explorer.exe',['/select,',destination],{windowsHide:true,stdio:'ignore',detached:true});explorer.once('error',reject);explorer.once('spawn',()=>{explorer.unref();resolve();});});
+              await new Promise((resolve,reject)=>{const explorer=spawn('explorer.exe',[directory],{windowsHide:false,stdio:'ignore',detached:true});explorer.once('error',reject);explorer.once('spawn',()=>{explorer.unref();resolve();});});
               folderOpened=true;
             }catch(error){folderError=error.message;}
           }
