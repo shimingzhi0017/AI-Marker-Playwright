@@ -127,6 +127,18 @@ export function parseResult(text, config) {
     if (Array.isArray(result.subScores)) result.subScores.forEach(unit => { if (unit && typeof unit === 'object') unit.score = numeric(unit.score); });
     if (Array.isArray(result.scoringDetails)) result.scoringDetails.forEach(unit => { if (unit && typeof unit === 'object') unit.score = numeric(unit.score); });
   }
+  // Repair only a redundant total when independent structured totals agree.
+  const configuredUnits=config.scoring?.units || [];
+  if(scoringItemSchema(config).length && configuredUnits.length===1 && Array.isArray(result?.scoringDetails) && result.scoringDetails.length && Array.isArray(result.subScores) && result.subScores.length===1) {
+    const sum=result.scoringDetails.reduce((total,item)=>total+item.score,0);
+    if(Number.isFinite(result.score) && result.score>=0 && result.score<=maxScore(config) && result.score!==sum && result.subScores[0]?.label===configuredUnits[0].label && result.subScores[0]?.score===sum) {
+      validateScoringDetails(result.scoringDetails,sum,maxScore(config));
+      applyScoringItemSchema(result,config);
+      validateResult({...result,score:sum},config);
+      result.reportedScore=result.score;result.score=sum;
+      result.formatWarning=`模型总分字段为${result.reportedScore}，与完整分项合计及网页总分${sum}不一致；已按两者一致的合计修正，请人工确认。`;
+    }
+  }
   if (result?.scoringDetails !== undefined) validateScoringDetails(result.scoringDetails, result.score, maxScore(config));
   const units = config.scoring?.units || [];
   if (units.length === 1 && Array.isArray(result?.subScores) && result.subScores.length > 1) {

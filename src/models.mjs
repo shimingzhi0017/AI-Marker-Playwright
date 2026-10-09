@@ -147,5 +147,5 @@ async function gradeInternal(config, settings, images, signal, onProgress, contr
   const tripleSame = a.score === b.score && a.score === verdict.score &&
     match(a.subScores || [], b.subScores || []) && match(a.subScores || [], verdict.subScores || []) &&
     comparable(a).length > 0 && match(comparable(a), comparable(b)) && match(comparable(a), comparable(verdict));
-  return { ...verdict, recognitionWarning: [readingWarning, verdict.recognitionWarning].filter(Boolean).join(' '), recognitionDecision: tripleSame ? 'three-way-consensus' : useArbitration && (readingWarning || verdict.recognitionWarning) ? 'arbitration' : undefined, dualEval: { result: 'arbitration', threeWayConsensus: tripleSame, a, b, verdict } };
+  return { ...verdict, formatWarning:[a.formatWarning,b.formatWarning,verdict.formatWarning].filter(Boolean).join(' '), recognitionWarning: [readingWarning, verdict.recognitionWarning].filter(Boolean).join(' '), recognitionDecision: tripleSame ? 'three-way-consensus' : useArbitration && (readingWarning || verdict.recognitionWarning) ? 'arbitration' : undefined, dualEval: { result: 'arbitration', threeWayConsensus: tripleSame, a, b, verdict } };
 }

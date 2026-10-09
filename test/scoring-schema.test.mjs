@@ -62,3 +62,12 @@ test('Markdown小问标题与明确给分规则生成固定编号，兼容大题
     assert.equal(scoringItemSchema({...cfg,rubric:rubric.replace('- 2分：正确。','每错一次扣2分。')}).length,0);
   }
 });
+
+test('完整分项与唯一网页总分一致才能修正冗余总分，留下人工确认警告',()=>{
+ const cfg={rubric:'内容：2分\n表达：2分',scoring:{units:[{label:'12',maxScore:4}]}};
+ const raw={score:2,subScores:[{label:'12',score:4}],scoringDetails:[{id:'scoring-item-1',label:'内容',score:2},{id:'scoring-item-2',label:'表达',score:2}]};
+ const parsed=parseResult(JSON.stringify(raw),cfg);assert.equal(parsed.score,4);assert.equal(parsed.reportedScore,2);assert.match(parsed.formatWarning,/人工确认/);
+ assert.throws(()=>parseResult(JSON.stringify({...raw,subScores:[{label:'12',score:2}]}),cfg),/合计/);
+ assert.throws(()=>parseResult(JSON.stringify({...raw,scoringDetails:[raw.scoringDetails[0]]}),cfg),/合计|不完整/);
+ assert.throws(()=>parseResult(JSON.stringify({...raw,scoringDetails:raw.scoringDetails.map(x=>({...x,id:'wrong'}))}),cfg),/编号/);
+});
