@@ -12,6 +12,11 @@ test('单总分框客观双阅逐项比较，任意分歧或缺失必须仲裁',
     let body = ''; for await (const chunk of req) body += chunk;
     const request = JSON.parse(body); calls.push(request.model);
     assert.match(request.messages[0].content[0].text, /scoringDetails|书写识别要求/);
+    if(request.model==='C'){
+      const prompt=request.messages[0].content[0].text;
+      assert.match(prompt,/仅依据原始答卷图片/);
+      assert.doesNotMatch(prompt,/第一评：|第二评：|首次结果：|PRIVATE_PRIOR/);
+    }
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(replies[request.model]) } }] }));
   });
@@ -20,6 +25,7 @@ test('单总分框客观双阅逐项比较，任意分歧或缺失必须仲裁',
   const entry = model => ({ provider: 'local', model });
   const settings = { providers: { local: { endpoint: `http://127.0.0.1:${server.address().port}`, apiKey: 'fixture' } }, workflows: { w: { model: entry('A'), dualEval: { enabled: true, questionType: 'objective', threshold: 99, secondary: entry('B'), arbitration: entry('C') } } } };
   const scenarios = [
+    { a: {...response([1,3]),studentAnswer:'PRIVATE_PRIOR_A',comment:'PRIVATE_PRIOR_COMMENT'}, b: {...response([2,2]),studentAnswer:'PRIVATE_PRIOR_B'}, expected:'arbitration' },
     { a: labeled(['①第（1）问','②第（2）问'],[1,3]), b: labeled(['（2）','（1）'],[3,1]), expected: 'consensus' },
     { a: labeled(['①第（1）问','②第（2）问'],[1,3]), b: labeled(['（1）','（2）'],[2,2]), expected: 'arbitration' },
     { a: labeled(['③第（3）问A空箱质量','④第（3）问B空箱质量'],[1,3]), b: labeled(['（3）A空箱质量','（3）B空箱质量'],[3,1]), expected: 'arbitration' },

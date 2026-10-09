@@ -102,7 +102,7 @@ export async function grade(config, settings, images, signal) {
   if (!workflow.dualEval?.enabled) {
     const primary = await call(workflow.model, prompt);
     if (!primary.recognitionWarning || !useArbitration) return primary;
-    const verdict = await call(workflow.dualEval?.arbitration, `${prompt}\n首次识别存在疑点，请重新检查原图，忠实识别实际书写并独立评分，不得脑补。用户选择按仲裁有效分数继续，请保留全部无法确认内容及疑点。首次结果：${JSON.stringify(primary)}`);
+    const verdict = await call(workflow.dualEval?.arbitration, `${prompt}\n首次识别存在疑点，请重新检查原图，忠实识别实际书写并独立评分，不得脑补。本次为独立仲裁，请仅依据原始答卷图片、题目及评分标准重新识别和逐项评分，合计你自己的总分，不得平均或推测其他模型评分。保留全部无法确认内容及疑点。`);
     return { ...verdict, recognitionWarning: [primary.recognitionWarning, verdict.recognitionWarning].filter(Boolean).join(' '), recognitionDecision: 'arbitration', recognitionArbitration: { primary, verdict } };
   }
   const dual = workflow.dualEval;
@@ -125,7 +125,7 @@ export async function grade(config, settings, images, signal) {
     const result = { ...a, recognitionWarning: readingWarning, formatWarning: a.formatWarning || b.formatWarning, score: subScores.length ? subScores.reduce((s, u) => s + u.score, 0) : (a.score + b.score) / 2, subScores, comment: `${a.comment || ''}\n${b.comment || ''}`, dualEval: { result: 'average', a, b } };
     return validateResult(result, config);
   }
-  const verdict = await call(dual.arbitration, `${dualPrompt}\n两份评分存在识别疑点、逐项分歧或明细缺失，请重新独立仲裁，逐项评分后合计总分，不得平均。第一评：${JSON.stringify(a)}\n第二评：${JSON.stringify(b)}`);
+  const verdict = await call(dual.arbitration, `${dualPrompt}\n本次触发原因：${readingWarning ? '识别存疑' : '评分分歧或评分明细不完整'}。请仅依据原始答卷图片、题目及评分标准独立重新识别和逐项评分，合计你自己的总分，不得平均或推测其他模型评分。`);
   if (needsDetails && !verdict.scoringDetails?.length) {
     const error = Error('客观题仲裁模型未返回逐项评分明细，已停止；不能仅按总分继续');
     error.modelResponse = { model: dual.arbitration.model, rawResponse: verdict.rawResponse }; throw error;
