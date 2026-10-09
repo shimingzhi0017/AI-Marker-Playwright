@@ -37,6 +37,7 @@ export function trackZhixueTopics(page) {
   let current = null;
   const candidates = new Map();
   const pending = new Set();
+  const origins = new WeakMap();
   const handler = response => {
     const url = new URL(response.url());
     const prefetch = url.pathname === '/marking/marking/personal/preLoadScanrecorddetail/';
@@ -44,8 +45,11 @@ export function trackZhixueTopics(page) {
     const promise = (async () => { try {
       const topic = readTopic(await response.json(), prefetch ? 'nextTopicInfo' : 'topicInfo');
       if (topic) {
+        try { origins.set(topic, response.request().frame().page()); } catch {}
         if (!prefetch) current = topic;
-        candidates.set(`${topic.markingPaperId}:${topic.scanRecordId}:${JSON.stringify(topic.itemIds)}`, topic);
+        const source = origins.get(topic);
+        const sourceIndex = source ? page.pages?.().indexOf(source) ?? 0 : 0;
+        candidates.set(`${sourceIndex}:${topic.markingPaperId}:${topic.scanRecordId}:${JSON.stringify(topic.itemIds)}`, topic);
         if (candidates.size > 20) candidates.delete(candidates.keys().next().value);
       }
     } catch {} })();
@@ -54,9 +58,9 @@ export function trackZhixueTopics(page) {
   page.on('response', handler);
   return {
     async current() { await Promise.allSettled([...pending]); return current; },
-    async match(imageKeys, markingPaperId) {
+    async match(imageKeys, markingPaperId, targetPage) {
       await Promise.allSettled([...pending]);
-      const matches = [...candidates.values()].filter(topic => matchesTopic(topic, imageKeys, markingPaperId));
+      const matches = [...candidates.values()].filter(topic => (!targetPage || origins.get(topic) === targetPage) && matchesTopic(topic, imageKeys, markingPaperId));
       return matches.length === 1 ? matches[0] : null;
     },
     close() { page.off('response', handler); }

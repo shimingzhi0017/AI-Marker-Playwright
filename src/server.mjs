@@ -92,12 +92,12 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
       const target = new URL(cfg.browser?.url || 'https://www.zhixue.com/');
       if (!['http:', 'https:'].includes(target.protocol)) throw Error('阅卷地址必须是网页地址');
       context = await browserFactory({ profile: path.join(root, 'browser-profile'), launch: { headless: false, viewport: null } });
+      topicTracker = trackZhixueTopics(context);
       await context.exposeBinding('__markerAdaptationPicked',async(source,picked)=>{if(picked.token!==pickerToken)return;if(picked.cancelled){state.adaptationPick={cancelled:true};return;}state.adaptationPick=picked;for(const frame of page.frames())await frame.evaluate(()=>window.__markerPickerCancel?.()).catch(()=>{});});
       submissionObserver = await observeSubmissions(context, { directory: path.join(data, 'diagnostics'), getPlatform: () => platform, getRecord: () => state.record, note });
       context.on('close', () => { submissionObserver?.close(); context = page = platform = null; state.browserOpen = false; pause(); state.reason = '阅卷浏览器已关闭，请重新打开。'; });
       page = context.pages()[0] || await context.newPage();
       await context.addInitScript(installImageProvenance);
-      topicTracker = trackZhixueTopics(page);
       platform = new ZhixuePlatform(page, applyGroup(cfg,target.href), path.join(data, 'diagnostics'));
       platform.topicTracker = topicTracker;
       state.browserOpen = true;
@@ -110,11 +110,23 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
     const resolve = pendingReview; pendingReview = null; resolve?.(decision);
   }
   function pause() { generation++; runner?.pause(); finishReview('stop'); note('已请求暂停'); }
+  async function selectGradingPage() {
+    const matches = [];
+    for (const candidate of context?.pages() || []) {
+      try {
+        const probe = new ZhixuePlatform(candidate, applyGroup(settings(), candidate.url()), path.join(data, 'diagnostics'));
+        await probe.frame(); matches.push({ candidate, probe });
+      } catch {}
+    }
+    if (matches.length > 1) throw Error('此任务浏览器打开了多个阅卷页面，请只保留一个再检查，避免混用答卷编号');
+    if (matches.length === 1) { page = matches[0].candidate; platform = matches[0].probe; platform.topicTracker = topicTracker; }
+  }
   async function start() {
     if (state.running || state.starting) throw Error('阅卷正在进行');
     state.starting = true; const expectedGeneration = generation;
     try {
     if (!platform) throw Error('请先打开阅卷浏览器');
+    await selectGradingPage();
     const cfg = applyGroup(settings(), page.url());
     platform = new ZhixuePlatform(page, cfg, path.join(data, 'diagnostics')); platform.topicTracker = topicTracker;
     const snapshot = await platform.ready(undefined, undefined, cfg.mode !== 'trial');
@@ -259,6 +271,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
         }
         case '/api/diagnose': {
           if (state.running) throw Error('请先暂停'); if (!platform) throw Error('请先打开阅卷浏览器');
+          await selectGradingPage();
           platform=new ZhixuePlatform(page,applyGroup(settings(),page.url()),path.join(data,'diagnostics'));platform.topicTracker=topicTracker;
           state.snapshot = await platform.snapshot();
           state.phase = '页面已识别'; state.reason = `找到${state.snapshot.images.length}张图片、${state.snapshot.units.length}个评分框。${state.snapshot.strongIdentity ? '' : '尚未确认稳定答卷ID，可先评分并只填分。'}`;

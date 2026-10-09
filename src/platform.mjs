@@ -58,7 +58,7 @@ export class ZhixuePlatform {
     const legacyTaskId = data.taskId || data.url.replace(/([?&])_t=[^&]+/g, '');
     const taskId = context.examId || context.markingPaperId ? `${context.examId}:${context.markingPaperId}:${legacyTaskId}` : legacyTaskId;
     const imageKeys = data.images.map(i => stableImageKey(i.sourceUrl || i.url));
-    const networkTopic = this.options.identityMode === 'zhixue-network' ? await this.topicTracker?.match(imageKeys, context.markingPaperId) : null;
+    const networkTopic = this.options.identityMode === 'zhixue-network' ? await this.topicTracker?.match(imageKeys, context.markingPaperId, this.page) : null;
     if (matchesTopic(networkTopic, imageKeys, context.markingPaperId)) {
       data.paperId = networkTopic.scanRecordId;
       return { ...data, taskId, legacyTaskId, pageContext: context, units, imageKeys, networkTopic,

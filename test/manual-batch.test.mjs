@@ -50,6 +50,16 @@ test('预取答卷只有实际显示对应图片时才匹配，歧义及未知�
   tracker.close();
 });
 
+test('新任务浏览器新标签页的编号可匹配，其他标签页编号不能混用',async()=>{
+  const context=new EventEmitter(),first={},second={};context.pages=()=>[first,second];
+  const tracker=trackZhixueTopics(context);
+  const emit=(page,scan)=>context.emit('response',{url:()=> 'https://pt-ali-bj-re.zhixue.com/marking/marking/personal/scanrecorddetail/',request:()=>({method:()=> 'POST',frame:()=>({page:()=>page})}),json:async()=>({code:200,data:{topicInfo:{detail:{scanRecordId:scan,markingPaperId:'paper',topicImageIds:['https://fixture.test/image']},item:{id:'["item"]'}}}})});
+  emit(first,'first');emit(second,'second');
+  assert.equal((await tracker.match(['https://fixture.test/image'],'paper',second)).scanRecordId,'second');
+  assert.equal((await tracker.match(['https://fixture.test/image'],'paper',first)).scanRecordId,'first');
+  assert.equal(await tracker.match(['https://fixture.test/image'],'paper',{}),null);tracker.close();
+});
+
 test('真实浏览器记录图片经画布增强后的原始来源，混合图片不映射', {timeout:30000}, async t => {
   const browser = await launchBrowser({headless:true}); t.after(()=>browser.close());
   const context = await browser.newContext(); await context.addInitScript(installImageProvenance);
