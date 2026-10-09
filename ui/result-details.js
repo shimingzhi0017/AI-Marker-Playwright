@@ -6,6 +6,48 @@ function paragraph(container, title, text) {
   if(text === undefined || text === null || text === '') return;
   container.append(node('h3', title), node('p', String(text)));
 }
+function historySection(container, title, text) {
+  const section=node('section');section.className='review-section';section.append(node('h3',title));
+  const content=node('div',text);content.className='review-content';section.append(content);container.append(section);return content;
+}
+function reviewCard(container,title,result,arbitration=false) {
+  const card=node('div');card.className='review-score-card'+(arbitration?' review-arbitration':'');
+  card.append(node('h4',title));
+  const row=node('div');row.className='review-score-row';row.append(node('span',arbitration?'仲裁得分':'得分'),node('strong',value(result?.score)));card.append(row);
+  if(result?.model) {const model=node('p',result.model);model.className='review-model';card.append(model);}
+  const evidence=node('details');evidence.append(node('summary','查看识别与评分依据'));
+  paragraph(evidence,'识别答案',result?.studentAnswer || '未提供');paragraph(evidence,'评分依据',result?.comment || '未提供');
+  card.append(evidence);container.append(card);
+}
+function historyOverview(container,record) {
+  const result=record.result,grid=node('div');grid.className='review-overview';
+  for(const [label,text,large] of [
+    ['时间',record.time?new Date(record.time).toLocaleString('zh-CN'):'未记录'],
+    ['方案 / 模式',`${record.presetName || '未记录'} · ${{trial:'人工确认',normal:'5秒倒计时提交',unattended:'无人值守'}[record.mode] || '旧记录未保存模式'}`],
+    ['AI评分',result.rawScore ?? record.originalResult?.score ?? result.score,true],['最终分数',result.score,true]
+  ]) {const item=node('div');item.append(node('span',label));const display=node('div',text);display.className=large?'review-score':'review-meta';item.append(display);grid.append(item);}
+  container.append(grid);
+  const dual=result.dualEval;
+  if(dual) {
+    const section=node('section');section.className='review-section';section.append(node('h3','双评结果'));
+    const summary=node('div');summary.className='review-score-card';
+    const delta=node('div');delta.className='review-score-row';delta.append(node('span','分差'),node('strong',value(Math.abs(dual.a?.score-dual.b?.score))));
+    const status=node('div');status.className='review-score-row';status.append(node('span','判定结果'));
+    const badge=node('strong',({consensus:'逐项一致',average:'阈值内平均',arbitration:'⚠ 三评仲裁'})[dual.result]||dual.result);if(dual.result==='arbitration')badge.className='review-arbitration-text';status.append(badge);
+    summary.append(delta,status);section.append(summary);
+    reviewCard(section,'老师A 评分',dual.a);reviewCard(section,'老师B 评分',dual.b);
+    if(dual.result==='arbitration')reviewCard(section,'仲裁结果',dual.verdict || result,true);
+    container.append(section);
+  } else if(result.recognitionArbitration) {
+    const section=node('section');section.className='review-section';section.append(node('h3','识别复核'));
+    reviewCard(section,'首次评分',result.recognitionArbitration.primary);reviewCard(section,'仲裁结果',result.recognitionArbitration.verdict,true);container.append(section);
+  }
+  historySection(container,'识别答案',result.studentAnswer || '未能识别');
+  historySection(container,'AI评语',result.comment || '无');
+  if(record.correctionReason)historySection(container,'人工改分原因',record.correctionReason);
+  const audit=node('details');audit.className='review-audit';audit.append(node('summary','逐项对照、书写检查与提交状态'));
+  const body=node('div');renderResultDetails(body,record,false);audit.append(body);container.append(audit);
+}
 function readingDetails(container, result) {
   paragraph(container, '书写识别检查', result?.recognitionWarning || ((result?.recognition?.status === 'clear' || result?.recognitionWarning === '') && result.recognition?.coverageChecked ? '模型报告已检查完整答题区域，未报告影响评分的识别疑点。' : '此结果未记录完整的书写识别检查。'));
   paragraph(container, '学生实际作答', result?.studentAnswer);
@@ -16,6 +58,7 @@ export function renderResultDetails(container, record, history = false) {
   container.replaceChildren(); const result = record.result;
   if(record.modelRequestFailure) paragraph(container,'模型请求失败',`${record.modelRequestFailure.provider || '供应商未记录'} · ${record.modelRequestFailure.model || '模型未记录'} · ${record.modelRequestFailure.type || '请求失败'}${record.modelRequestFailure.attempts ? ` · 请求${record.modelRequestFailure.attempts}次` : ''}`);
   if(!result) { paragraph(container,'异常说明',record.error); return; }
+  if(history) { historyOverview(container,record); return; }
   if(history) {
     paragraph(container,'方案 / 运行模式',`${record.presetName || '未记录'} / ${{trial:'人工确认',normal:'5秒倒计时提交',unattended:'无人值守'}[record.mode] || '旧记录未保存模式'}`);
     paragraph(container,'评分时间',record.time ? new Date(record.time).toLocaleString('zh-CN') : undefined);

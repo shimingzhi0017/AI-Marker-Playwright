@@ -109,6 +109,9 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.locator('#start').click();await page.waitForFunction(()=>!document.querySelector('#fill').disabled);await page.locator('#pause').click();await page.waitForFunction(()=>document.querySelector('#phase').textContent==='已暂停');assert.ok(await page.locator('#fill').isDisabled());
   await page.locator('[data-tab=history]').click();await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===2);await page.locator('#historyRows button').first().click();assert.ok(await page.locator('#historyDetail').isVisible());
   assert.equal(await page.locator('#historyDialog').evaluate(el=>el.open),true);
+  assert.match(await page.locator('#historyDialogTitle').innerText(),/评阅详情/);assert.equal(await page.locator('#historyImages img').count(),1);
+  assert.equal(await page.locator('#historyDetail').evaluate(el=>el.querySelector('#historyReadable').compareDocumentPosition(el.querySelector('#historyImages')) & Node.DOCUMENT_POSITION_FOLLOWING),4);
+  if(process.env.MARKER_DETAIL_PREVIEW)await page.screenshot({path:process.env.MARKER_DETAIL_PREVIEW});
   await page.keyboard.press('Escape');assert.equal(await page.locator('#historyDialog').evaluate(el=>el.open),false);
   const arbitrationRecord=app.store.records().find(r=>r.state==='paused');
   arbitrationRecord.result.dualEval={result:'arbitration',a:{score:4},b:{score:2}};app.store.save(arbitrationRecord);

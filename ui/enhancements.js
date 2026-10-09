@@ -58,8 +58,9 @@ export function buildLayout() {
   $('historyJson').insertAdjacentHTML('beforebegin','<div id="historyReadable" class="history-readable"></div>');
   const rawDetails=document.createElement('details');rawDetails.innerHTML='<summary>技术记录</summary>';$('historyJson').before(rawDetails);rawDetails.append($('historyJson'));
   const historyDialog=document.createElement('dialog');historyDialog.id='historyDialog';historyDialog.setAttribute('aria-labelledby','historyDialogTitle');
-  historyDialog.innerHTML='<div class="history-dialog-heading"><h2 id="historyDialogTitle">记录详情</h2><button id="closeHistory" aria-label="关闭记录详情">关闭</button></div>';
+  historyDialog.innerHTML='<div class="history-dialog-heading"><h2 id="historyDialogTitle">评阅详情</h2><button id="closeHistory" aria-label="关闭评阅详情">×</button></div>';
   document.body.append(historyDialog);$('historyDetail').querySelector('h2').remove();historyDialog.append($('historyDetail'));
+  $('historyImages').before($('historyReadable'));$('historyImages').before(Object.assign(document.createElement('h3'),{textContent:'题目 / 答卷图片',className:'review-images-title'}));
   $('closeHistory').onclick=()=>historyDialog.close();
   historyDialog.addEventListener('click',event=>{if(event.target===historyDialog){const rect=historyDialog.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)historyDialog.close();}});
   $('historyFilter').closest('label').insertAdjacentHTML('afterend','<label>仲裁审查<select id="arbitrationFilter"><option value="">全部记录</option><option value="arbitration">只看仲裁记录</option></select></label>');
