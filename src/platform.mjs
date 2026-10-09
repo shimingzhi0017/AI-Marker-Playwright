@@ -1,3 +1,4 @@
+import { verifyManualResponse } from './adaptation.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,7 +31,7 @@ export function pageContext(value) {
   } catch { return { examId: '', markingPaperId: '' }; }
 }
 export class ZhixuePlatform {
-  constructor(page, settings, diagnosticsDir) { this.page = page; this.options = settings.platform || {}; this.dir = diagnosticsDir; }
+  constructor(page, settings, diagnosticsDir) { this.scope = settings.adaptationScope;this.page = page; this.options = settings.platform || {}; this.dir = diagnosticsDir; }
   async frame() {
     const matches = [];
     for (const frame of this.page.frames()) {
@@ -48,7 +49,7 @@ export class ZhixuePlatform {
     const frame = await this.frame();
     const data = await frame.evaluate(options => {
       const images = [...document.querySelectorAll(options.imageSelector || 'div[name="topicImg"] img, img.enhance-definition-bright')].map(img => ({ url: img.currentSrc || img.src, sourceUrl: window.__aiMarkerImageSources?.get(img.currentSrc || img.src) || img.currentSrc || img.src, ready: img.complete && img.naturalWidth > 0 }));
-      const read = selector => selector ? document.querySelector(selector)?.getAttribute('data-paper-id') || document.querySelector(selector)?.textContent?.trim() || '' : '';
+      const read = selector => selector ? document.querySelector(selector)?.getAttribute('data-paper-id') || document.querySelector(selector)?.value || document.querySelector(selector)?.textContent?.trim() || '' : '';
       return { images, paperId: read(options.paperIdSelector), taskId: read(options.taskIdSelector || '#currentTopicIndex'), url: location.href };
     }, this.options);
     const inputs = frame.locator(this.inputSelector());
@@ -146,6 +147,7 @@ export class ZhixuePlatform {
         const body = Object.fromEntries(new URLSearchParams(request.postData() || ''));
         return { status: response.status(), ...verifyCommit(body, json, snapshot.networkTopic, scores) };
       }
+      if(this.options.identityRequestField && this.options.scoresRequestField) return {status:response.status(),...verifyManualResponse(this.options,snapshot,scores,{url:response.url(),status:response.status(),requestBody:(()=>{try{return JSON.parse(response.request().postData());}catch{return Object.fromEntries(new URLSearchParams(response.request().postData()||''));}})(),responseBody:json})};
       const value = (this.options.successField || 'success').split('.').reduce((o, key) => o?.[key], json);
       if (value !== (this.options.successValue ?? true)) throw Error('平台未明确确认保存成功');
       return { status: response.status(), confirmed: true };

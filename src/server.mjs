@@ -1,3 +1,4 @@
+import { migrateGroups, applyGroup, fingerprint, inspectPage, installPicker, AdaptationDebugger } from './adaptation.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -55,10 +56,12 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
   }
   if(!localConfig.sharedProvidersMigrated){fs.copyFileSync(file,file+'.before-shared-providers');localConfig.sharedProvidersMigrated=true;fs.writeFileSync(file,JSON.stringify(localConfig,null,2));}
   if(migrated)fs.writeFileSync(sharedProvidersFile,JSON.stringify(sharedProviders,null,2));
+  const adaptationConfig=loadSettings(file);if(!adaptationConfig.adaptationGroups){fs.copyFileSync(file,file+'.before-adaptation-groups');migrateGroups(adaptationConfig);fs.writeFileSync(file,JSON.stringify(adaptationConfig,null,2));}
   const store = new Store(data);
   coordinator.stores.add(store);
   const state = { running: false, phase: '待开始', reason: '请导入原插件配置，或在设置中填写方案和模型。', count: 0, record: null, snapshot: null, browserOpen: false, review: false, countdown: null };
   let context, page, platform, runner, pendingReview, timer, runPromise, submissionObserver, topicTracker, opening = false, generation = 0;
+  let pickerToken;const adaptationDebug=new AdaptationDebugger(()=>platform);
   const events = [];
   const note = message => { events.unshift({ time: new Date().toISOString(), message }); if (events.length > 80) events.pop(); };
   const originalSave = store.save.bind(store);
@@ -70,13 +73,15 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
       if (record.state === 'submitted') state.count++;
     }
   };
-  function settings() { const cfg=loadSettings(file);cfg.taskScopedConfig=true;cfg.providers=JSON.parse(fs.readFileSync(sharedProvidersFile,'utf8'));return cfg; }
+  function settings() { const cfg=loadSettings(file);cfg.taskScopedConfig=true;migrateGroups(cfg);cfg.providers=JSON.parse(fs.readFileSync(sharedProvidersFile,'utf8'));return cfg; }
   function writeSettings(value) {
     if (state.running || state.starting) throw Error('请先暂停阅卷，再修改配置');
     sanitizeSettings(value);
-    value.providers=settings().providers;
+    const previous=settings();value.providers=previous.providers;
+    if(value.adaptationGroups)for(const group of value.adaptationGroups){const old=previous.adaptationGroups.find(g=>g.id===group.id);group.platform.verified=!!old?.platform?.verified&&old.url===group.url&&fingerprint(old.platform)===fingerprint(group.platform);}
+    adaptationDebug.reset();
     fs.writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2)); fs.renameSync(`${file}.tmp`, file);
-    if (page) { platform = new ZhixuePlatform(page, value, path.join(data, 'diagnostics')); platform.topicTracker = topicTracker; }
+    if (page) { platform = new ZhixuePlatform(page, applyGroup(value,page.url()), path.join(data, 'diagnostics')); platform.topicTracker = topicTracker; }
     note('设置已保存');
   }
   async function openBrowser() {
@@ -87,12 +92,13 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
       const target = new URL(cfg.browser?.url || 'https://www.zhixue.com/');
       if (!['http:', 'https:'].includes(target.protocol)) throw Error('阅卷地址必须是网页地址');
       context = await browserFactory({ profile: path.join(root, 'browser-profile'), launch: { headless: false, viewport: null } });
+      await context.exposeBinding('__markerAdaptationPicked',async(source,picked)=>{if(picked.token!==pickerToken)return;if(picked.cancelled){state.adaptationPick={cancelled:true};return;}state.adaptationPick=picked;for(const frame of page.frames())await frame.evaluate(()=>window.__markerPickerCancel?.()).catch(()=>{});});
       submissionObserver = await observeSubmissions(context, { directory: path.join(data, 'diagnostics'), getPlatform: () => platform, getRecord: () => state.record, note });
       context.on('close', () => { submissionObserver?.close(); context = page = platform = null; state.browserOpen = false; pause(); state.reason = '阅卷浏览器已关闭，请重新打开。'; });
       page = context.pages()[0] || await context.newPage();
       await context.addInitScript(installImageProvenance);
       topicTracker = trackZhixueTopics(page);
-      platform = new ZhixuePlatform(page, cfg, path.join(data, 'diagnostics'));
+      platform = new ZhixuePlatform(page, applyGroup(cfg,target.href), path.join(data, 'diagnostics'));
       platform.topicTracker = topicTracker;
       state.browserOpen = true;
       await page.goto(target.href, { waitUntil: 'domcontentloaded', timeout: 45000 });
@@ -155,7 +161,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': `marker=${token}; HttpOnly; SameSite=Strict; Path=/`, 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" });
         res.end(fs.readFileSync(new URL('../ui/index.html', import.meta.url))); return;
       }
-      if (['/app.js', '/enhancements.js', '/result-details.js', '/style.css'].includes(url.pathname)) {
+      if (['/app.js', '/enhancements.js', '/result-details.js', '/adaptation-ui.js', '/style.css'].includes(url.pathname)) {
         res.writeHead(200, { 'Content-Type': url.pathname.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8' });
         res.end(fs.readFileSync(new URL(`../ui${url.pathname}`, import.meta.url))); return;
       }
@@ -225,8 +231,25 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
         case '/api/workspace-name': { const cfg=settings();cfg.workspaceName=String(input.name||'').trim().slice(0,80);if(!cfg.workspaceName)throw Error('任务名称不能为空');fs.writeFileSync(file,JSON.stringify(cfg,null,2));break; }
         case '/api/import': {const imported=importSettings(input);sanitizeSettings(imported);fs.writeFileSync(sharedProvidersFile,JSON.stringify(imported.providers,null,2));writeSettings(imported);break;}
         case '/api/open': await openBrowser(); break;
+        case '/api/adaptation': {
+          if(state.running||state.starting)throw Error('请先暂停阅卷再调试');
+          const cfg=settings();
+          if(input.action==='save'){const existing=cfg.adaptationGroups.find(g=>g.id===input.group.id);const group={...input.group,platform:{...input.group.platform,verified:!!existing?.platform.verified&&existing.url===input.group.url&&fingerprint(existing.platform)===fingerprint(input.group.platform)}};if(!['http:','https:'].includes(new URL(group.url).protocol))throw Error('分组网址必须是http或https');if(existing)cfg.adaptationGroups[cfg.adaptationGroups.indexOf(existing)]=group;else cfg.adaptationGroups.push(group);cfg.browser.url=group.url;cfg.platform=group.platform;writeSettings(cfg);text(res,200,{groups:settings().adaptationGroups});return;}
+          if(input.action==='delete'){cfg.adaptationGroups=cfg.adaptationGroups.filter(g=>g.id!==input.id);writeSettings(cfg);text(res,200,{groups:cfg.adaptationGroups});return;}
+          if(!page)throw Error('请先打开阅卷浏览器并进入目标页面');
+          const group=cfg.adaptationGroups.find(g=>g.id===input.id);if(!group)throw Error('请选择网址分组');
+          platform=new ZhixuePlatform(page,{...cfg,platform:group.platform},path.join(data,'diagnostics'));platform.topicTracker=topicTracker;
+          if(input.action==='inspect'){text(res,200,{...await inspectPage(page),snapshot:await platform.snapshot().catch(error=>({error:error.message}))});return;}
+          if(input.action==='pick'){pickerToken=crypto.randomUUID();state.adaptationPick=null;for(const frame of page.frames())await frame.evaluate(installPicker,{key:input.key,token:pickerToken}).catch(()=>{});await page.bringToFront();text(res,200,{message:'请到阅卷网页点击目标元素'});return;}
+          if(input.action==='fill'){text(res,200,await adaptationDebug.fill(input.scores));return;}
+          if(input.action==='record'){text(res,200,await adaptationDebug.record());return;}
+          if(input.action==='status'){text(res,200,adaptationDebug.status);return;}
+          if(input.action==='verify'){const result=await adaptationDebug.verify(input.index);group.platform.submitResponseUrlPattern=result.endpoint;group.platform.verified=true;group.platform.acceptance={time:new Date().toISOString(),receipt:result.receipt};cfg.platform=group.platform;platform.options=group.platform;fs.writeFileSync(file,JSON.stringify(cfg,null,2));text(res,200,{message:'分组已通过实测核验',group});return;}
+          throw Error('调试操作无效');
+        }
         case '/api/diagnose': {
           if (state.running) throw Error('请先暂停'); if (!platform) throw Error('请先打开阅卷浏览器');
+          platform=new ZhixuePlatform(page,applyGroup(settings(),page.url()),path.join(data,'diagnostics'));platform.topicTracker=topicTracker;
           state.snapshot = await platform.snapshot();
           state.phase = '页面已识别'; state.reason = `找到${state.snapshot.images.length}张图片、${state.snapshot.units.length}个评分框。${state.snapshot.strongIdentity ? '' : '尚未确认稳定答卷ID，可先评分并只填分。'}`;
           await platform.diagnostic('可视化页面诊断'); note(state.reason); break;
@@ -250,7 +273,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           if (!state.review || !state.liveRecord || !pendingReview) throw Error('当前没有待确认评分');
           if (input.recordId && input.recordId !== state.liveRecord.id) throw Error('评分记录已变化，请确认当前答卷');
           if (!['fill', 'submit', 'stop'].includes(input.decision)) throw Error('操作无效');
-          if (input.decision === 'submit' && ((!settings().platform?.verified && !(settings().platform?.manualSubmissionTest && runner.settings.mode === 'trial' && Number.isInteger(runner.settings.batchLimit) && runner.settings.batchLimit >= 0 && state.liveRecord.snapshot.networkTopic)) || !state.liveRecord.snapshot.strongIdentity || !settings().platform?.submitResponseUrlPattern)) throw Error('自动提交尚未验收，请点击“只填分”，再在网站手动提交。');
+          if (input.decision === 'submit' && ((!platform.options?.verified && !(platform.options?.manualSubmissionTest && runner.settings.mode === 'trial' && Number.isInteger(runner.settings.batchLimit) && runner.settings.batchLimit >= 0 && state.liveRecord.snapshot.networkTopic)) || !state.liveRecord.snapshot.strongIdentity || !platform.options?.submitResponseUrlPattern)) throw Error('自动提交尚未验收，请点击“只填分”，再在网站手动提交。');
           const record = state.liveRecord;
           if(input.comment!==undefined&&(typeof input.comment!=='string'||input.comment.length>100000))throw Error('评分依据格式无效');
           if (input.scores) {
@@ -298,13 +321,13 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
       if (!/^[a-f0-9-]{36}$/.test(id)) continue;
       const directory = path.join(root,'sessions',id), metadata = path.join(directory,'workspace.json');
       if (!fs.existsSync(metadata)) continue;
-      const app = await createApp({root:directory,browserFactory,gradeFunction,coordinator,child:true});
+      const app = await createApp({root:directory,browserFactory,gradeFunction,coordinator,child:true,sharedProvidersFile});
       const response = await fetch(app.url), cookie = response.headers.get('set-cookie').split(';')[0];
       children.set(id,{app,cookie,name:JSON.parse(fs.readFileSync(metadata,'utf8')).name});
     }
   }
   let closing;
-  return { url: origin, server, state, store, name:()=>settings().workspaceName||'任务', close: () => closing ||= (async () => { pause(); await Promise.all([...children.values()].map(c=>c.app.close())); await runPromise; await submissionObserver?.close(); await context?.close(); await new Promise(resolve => server.close(resolve)); coordinator.stores.delete(store); store.close(); })() };
+  return { url: origin, server, state, store, name:()=>settings().workspaceName||'任务', close: () => closing ||= (async () => { pause(); await Promise.all([...children.values()].map(c=>c.app.close())); await runPromise; adaptationDebug.stop();await submissionObserver?.close(); await context?.close(); await new Promise(resolve => server.close(resolve)); coordinator.stores.delete(store); store.close(); })() };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const app = await createApp(); console.log(`可视化阅卷控制台：${app.url}\n关闭本窗口会停止控制台。`);
