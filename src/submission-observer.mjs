@@ -38,7 +38,7 @@ export async function observeSubmissions(context, { directory, getPlatform, getR
     clickId = crypto.randomUUID(); windowUntil = Date.now() + 30000; changed = false;
     const record = getRecord(); before = record?.snapshot;
     write({ type: 'submit-click', clickId, recordId: record?.id, recordState: record?.state, clicked });
-    note('已记录网页提交点击，正在记录响应及换卷；尚未验证服务器保存成功。');
+    note('已记录网页提交点击，正在等待服务器响应及换卷。');
   });
   await context.addInitScript(() => {
     document.addEventListener('click', event => {
@@ -86,7 +86,8 @@ export async function observeSubmissions(context, { directory, getPlatform, getR
       const snapshot = await platform.snapshot();
       if (before && snapshot.identity !== before.identity && snapshot.images.length && snapshot.images.every(i => i.ready)) {
         changed = true; write({ type: 'next-answer-observed', clickId, previousIdentity: before.identity, snapshot });
-        note('已记录提交后换卷。请求及响应保存在提交诊断文件；尚未自动认定提交成功。');
+        const record = getRecord();
+        note(record?.state === 'submitted' && record.receipt?.confirmed ? '服务器已确认提交成功，答卷编号和分数核验通过，已切换到下一份。' : '已记录提交后换卷，后台请求已保存；提交结果以正式回执核验为准。');
       }
     } catch {} finally { busy = false; }
   }, intervalMs);
