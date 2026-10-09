@@ -29,7 +29,7 @@ test('详情显示同总分不同分项、仲裁依据、旧记录缺失和文�
   assert.ok(rows.slice(1).every(row=>row.includes('分数一致')));
   assert.ok(rows.every(row=>!row.includes('未提供')));
   await page.evaluate(()=>{
-    const a={score:0,scoringDetails:['(1)第（1）问','(2)第（2）问','(3)第（3）问A空箱质量','(3)第（3）问B空箱质量'].map(label=>({label,score:0}))};
+    const a={score:0,scoringDetails:['(1)第（1）问','(2)第（2）问','第(3)问A质量','第(3)问B质量'].map(label=>({label,score:0}))};
     const b={score:4,scoringDetails:['①第 （1） 问','②第 （2） 问','③第 （3） 问A空箱质量','④第 （3） 问B空箱质量'].map((label,i)=>({label,score:i===1?4:0}))};
     window.renderResultDetails(document.querySelector('#details'),{result:{...a,dualEval:{result:'arbitration',a,b,verdict:a}}},true);
   });

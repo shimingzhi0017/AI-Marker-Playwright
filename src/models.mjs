@@ -108,7 +108,7 @@ export async function grade(config, settings, images, signal) {
   const dual = workflow.dualEval;
   const objective = dual.questionType !== 'subjective';
   const needsDetails = objective && (config.scoring?.units?.length || 0) <= 1;
-  const dualPrompt = (config.scoring?.units?.length || 0) <= 1 ? `${prompt}\n双阅额外要求：必须返回scoringDetails数组，按评分标准中的每个小问或独立评分点逐项列出{label,score,maxScore,studentAnswer,reason}；reason说明对应评分规则、作答是否符合及给分或扣分原因，不得只有“正确/错误”，包括零分项，不得合并为整题总分。label使用评分标准原文中的编号和名称，顺序与标准一致。scoringDetails各项之和必须等于score。subScores仍只对应网页总分框。` : prompt;
+  const dualPrompt = (config.scoring?.units?.length || 0) <= 1 ? `${prompt}\n双阅额外要求：必须返回scoringDetails数组，按评分标准中的每个小问或独立评分点逐项列出{label,score,maxScore,studentAnswer,reason}；reason说明对应评分规则、作答是否符合及给分或扣分原因，不得只有“正确/错误”，包括零分项，不得合并为整题总分。若提示包含固定评分项清单，id、label、maxScore及顺序必须严格按该清单返回；否则label使用评分标准原文中的编号和名称，顺序与标准一致。scoringDetails各项之和必须等于score。subScores仍只对应网页总分框。` : prompt;
   const settled = await Promise.allSettled([call(workflow.model, dualPrompt), call(dual.secondary, dualPrompt)]);
   const failed = settled.find(r => r.status === 'rejected'); if (failed) throw failed.reason;
   const [a, b] = settled.map(r => r.value);
