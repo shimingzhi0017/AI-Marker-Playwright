@@ -34,3 +34,5 @@ aside .task-overview{width:100%;margin:0 0 8px}aside .task-overview-heading{alig
 .formatted-feedback p{margin:0 0 14px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere}.formatted-feedback p:last-child{margin-bottom:0}.formatted-feedback math{font-size:1.12em}#commentPreview{padding:16px;background:#f6f8f6;border-radius:10px}#commentEditor{margin:12px 0}
 
 .brand .logo{padding:0;background:transparent;display:block;flex-shrink:0}.brand .logo img{display:block;width:44px;height:44px}
+
+aside nav button[data-tab="models"]{text-align:center}
