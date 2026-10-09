@@ -109,7 +109,7 @@ $('closeWorkflowModels').onclick=()=>$('workflowModelDialog').close();
 
 $('importFile').onchange=()=>action(async()=>{const file=$('importFile').files[0];if(!file)return;if(!confirm('导入将替换当前配置，是否继续？'))return;await api('/api/import',JSON.parse(await file.text()));config=await api('/api/settings');renderSettings();notice('导入成功，请核对方案及模型后开始',true);$('importFile').value='';});
 $('workspaceSelect').onchange=()=>{const selected=$('workspaceSelect').value;if(busy){$('workspaceSelect').value=workspace;notice('当前操作完成后再切换任务');return;}action(()=>switchWorkspace(selected));};
-$('addWorkspace').onclick=()=>action(async()=>{const result=await api('/api/workspaces',{});await refreshWorkspaces();await switchWorkspace(result.id);notice('新任务已创建，配置已复制。请在自己的浏览器登录并选择阅卷页面。',true);});
+$('addWorkspace').onclick=()=>action(async()=>{const result=await api('/api/workspaces',{});await refreshWorkspaces();await switchWorkspace(result.id);const name=await workspaceDialog();if(name!==null){if(!name)throw Error('任务名称不能为空');await api('/api/workspace-name',{name});config.workspaceName=name;await refreshWorkspaces();}notice('新任务已创建，配置已复制。请在自己的浏览器登录并选择阅卷页面。',true);});
 $('pauseAll').onclick=()=>action(async()=>{await refreshWorkspaces();await Promise.all(workspaces.map(w=>api('/api/pause',{},w.id)));notice('已请求暂停全部任务',true);});
 const enhancements=createEnhancements({getConfig:()=>config,save,action,markDirty,renderPreset,renderProvider,renderWorkflow,getSnapshot:()=>state.snapshot,api,refreshSettings:renderSettings,notice});
 $('historySearch').oninput=()=>action(()=>renderHistory());$('historyFilter').onchange=()=>action(()=>renderHistory());$('arbitrationFilter').onchange=()=>action(()=>renderHistory());

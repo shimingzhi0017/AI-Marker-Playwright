@@ -34,6 +34,12 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
     return {status:response.status,value:await response.json()};
   },{url,body,id});
   await page.waitForFunction(()=>document.querySelector('#phase').textContent==='待开始');await page.locator('#addWorkspace').click();await page.waitForFunction(()=>document.querySelector('#workspaceSelect').options.length===2 && document.querySelector('#workspaceSelect').value!=='default' && document.querySelector('#workspaceSelect').value);const b=await page.locator('#workspaceSelect').inputValue();
+  await page.waitForFunction(()=>document.querySelector('#workspaceDialog').open);
+  assert.equal(await page.locator('#workspaceDialogTitle').innerText(),'重命名任务');
+  assert.equal(await page.locator('#workspaceNameInput').evaluate(el=>document.activeElement===el&&el.selectionStart===0&&el.selectionEnd===el.value.length),true);
+  await page.locator('#workspaceNameInput').fill('新建任务 B');await page.locator('#workspaceDialogSave').click();
+  await page.waitForFunction(()=>document.querySelector('#workspaceSelect').selectedOptions[0].textContent.includes('新建任务 B'));
+  assert.equal((await request('/api/settings',undefined,b)).value.workspaceName,'新建任务 B');
   const cfgB=structuredClone(config);cfgB.browser.url=base+'/B';cfgB.presets[cfgB.active].rubric='第二任务规范';
   await request('/api/settings',cfgB,b);
   await page.locator('#renameWorkspace').click();await page.locator('#workspaceNameInput').fill('并发任务 B');await page.locator('#workspaceDialogSave').click();await page.waitForFunction(()=>document.querySelector('#workspaceSelect').selectedOptions[0].textContent.includes('并发任务 B'));
