@@ -11,6 +11,7 @@ import { validateConfig, validateResult } from './domain.mjs';
 import { exportHistory } from './export.mjs';
 import { blackRatio } from './blank.mjs';
 import { observeSubmissions } from './submission-observer.mjs';
+import { trackZhixueTopics } from './zhixue-receipt.mjs';
 
 const defaultRoot = fileURLToPath(new URL('..', import.meta.url));
 const text = (res, status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
@@ -40,7 +41,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
   const store = new Store(data);
   coordinator.stores.add(store);
   const state = { running: false, phase: '待开始', reason: '请导入原插件配置，或在设置中填写方案和模型。', count: 0, record: null, snapshot: null, browserOpen: false, review: false, countdown: null };
-  let context, page, platform, runner, pendingReview, timer, runPromise, submissionObserver, opening = false, generation = 0;
+  let context, page, platform, runner, pendingReview, timer, runPromise, submissionObserver, topicTracker, opening = false, generation = 0;
   const events = [];
   const note = message => { events.unshift({ time: new Date().toISOString(), message }); if (events.length > 80) events.pop(); };
   const originalSave = store.save.bind(store);
@@ -57,7 +58,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
     if (state.running || state.starting) throw Error('请先暂停阅卷，再修改配置');
     sanitizeSettings(value);
     fs.writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2)); fs.renameSync(`${file}.tmp`, file);
-    if (page) platform = new ZhixuePlatform(page, value, path.join(data, 'diagnostics'));
+    if (page) { platform = new ZhixuePlatform(page, value, path.join(data, 'diagnostics')); platform.topicTracker = topicTracker; }
     note('设置已保存');
   }
   async function openBrowser() {
@@ -71,7 +72,9 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
       submissionObserver = await observeSubmissions(context, { directory: path.join(data, 'diagnostics'), getPlatform: () => platform, getRecord: () => state.record, note });
       context.on('close', () => { submissionObserver?.close(); context = page = platform = null; state.browserOpen = false; pause(); state.reason = '阅卷浏览器已关闭，请重新打开。'; });
       page = context.pages()[0] || await context.newPage();
+      topicTracker = trackZhixueTopics(page);
       platform = new ZhixuePlatform(page, cfg, path.join(data, 'diagnostics'));
+      platform.topicTracker = topicTracker;
       state.browserOpen = true;
       await page.goto(target.href, { waitUntil: 'domcontentloaded', timeout: 45000 });
       state.reason = '请在阅卷浏览器中登录并进入阅卷页面，然后点击“检查页面”。'; note('阅卷浏览器已打开');

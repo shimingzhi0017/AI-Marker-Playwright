@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
+import { matchesTopic, verifyCommit } from './zhixue-receipt.mjs';
 
 const hash = buffer => crypto.createHash('sha256').update(buffer).digest('hex');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -56,6 +57,12 @@ export class ZhixuePlatform {
     const legacyTaskId = data.taskId || data.url.replace(/([?&])_t=[^&]+/g, '');
     const taskId = context.examId || context.markingPaperId ? `${context.examId}:${context.markingPaperId}:${legacyTaskId}` : legacyTaskId;
     const imageKeys = data.images.map(i => stableImageKey(i.url));
+    const networkTopic = this.options.identityMode === 'zhixue-network' ? await this.topicTracker?.current() : null;
+    if (matchesTopic(networkTopic, imageKeys, context.markingPaperId)) {
+      data.paperId = networkTopic.scanRecordId;
+      return { ...data, taskId, legacyTaskId, pageContext: context, units, imageKeys, networkTopic,
+        identity: `${taskId}:${data.paperId}`, identitySource: 'matched-scanrecorddetail', strongIdentity: true };
+    }
     return { ...data, taskId, legacyTaskId, pageContext: context, units, imageKeys,
       identity: data.paperId ? `${taskId}:${data.paperId}` : `${taskId}:${imageKeys.join('|')}`,
       identitySource: data.paperId ? 'configured-page-element' : 'image-resource-fallback', strongIdentity: !!data.paperId };
@@ -120,7 +127,7 @@ export class ZhixuePlatform {
     await this.assertCurrent(snapshot);
   }
   async submit(snapshot, scores) {
-    if (!this.options.verified || !this.options.paperIdSelector || !this.options.submitResponseUrlPattern) throw Error('平台尚未完成实测配置，禁止自动提交');
+    if (!this.options.verified || (!this.options.paperIdSelector && !snapshot.networkTopic) || !this.options.submitResponseUrlPattern) throw Error('平台尚未完成实测配置，禁止自动提交');
     await this.assertCurrent(snapshot);
     const frame = await this.frame();
     const inputs = frame.locator(this.inputSelector());
@@ -132,6 +139,13 @@ export class ZhixuePlatform {
       const response = await responsePromise;
       if (!response.ok()) throw Error(`平台提交HTTP ${response.status()}`);
       const json = await response.json();
+      if (snapshot.networkTopic) {
+        const request = response.request();
+        const url = new URL(request.url());
+        if (url.hostname !== 'pt-ali-bj-re.zhixue.com' || url.pathname !== '/marking/marking/commitTopic/') throw Error('提交响应地址不匹配');
+        const body = Object.fromEntries(new URLSearchParams(request.postData() || ''));
+        return { status: response.status(), ...verifyCommit(body, json, snapshot.networkTopic, scores) };
+      }
       const value = (this.options.successField || 'success').split('.').reduce((o, key) => o?.[key], json);
       if (value !== (this.options.successValue ?? true)) throw Error('平台未明确确认保存成功');
       return { status: response.status(), confirmed: true };
