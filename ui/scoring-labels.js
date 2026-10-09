@@ -3,6 +3,7 @@ export function scoringLabelKey(label) {
   const text = String(label ?? '').trim()
     .replace(/^[①-⑳]\s*(?=(?:第\s*)?[（(]\s*\d+\s*[）)]|第\s*\d+\s*问)/u, '')
     .normalize('NFKC').trim()
+    .replace(/^\d+\s*(?=\(\s*\d+\s*\))/u, '')
     // Strip an outer list index only when an explicit inner question remains.
     .replace(/^\(\s*\d+\s*\)\s*(?=第\s*(?:\(\s*\d+\s*\)|\d+\s*问))/u, '');
   const question = text.match(/^(?:第\s*)?\(\s*(\d+)\s*\)\s*(?:问\s*)?(.*)$/u) || text.match(/^第\s*(\d+)\s*问\s*(.*)$/u);

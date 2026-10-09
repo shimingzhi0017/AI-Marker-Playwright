@@ -21,6 +21,19 @@ function rubricScoringItems(config) {
     const heading=/^\s*(?:[一二三四五六七八九十]+、|[①-⑳]\s*)?((?:第\s*)?[（(]\d+[）)]\s*(?:问)?[^\n：:]*)[：:]\s*(?:只能给|只给|得分为)\s*0\s*分\s*(?:或|或者|、)\s*(\d+(?:\.\d+)?)\s*分[。.]?\s*$/gmu;
     items=[...fieldText(config.rubric).matchAll(heading)].map((m,i)=>({id:`scoring-item-${i+1}`,label:m[1].trim(),maxScore:Number(m[2])}));
   }
+  if(!valid(items)) {
+    // Markdown rubric sections have explicit awarded scores within each numbered heading.
+    const sections=[...fieldText(config.rubric).matchAll(/^\s*#{1,6}\s+([^\n]+)\s*$/gmu)];
+    items=[];
+    for(let i=0;i<sections.length;i++) {
+      const label=sections[i][1].trim();
+      if(!/^(?:第\s*)?[（(]\d+[）)]/u.test(label))continue;
+      const body=fieldText(config.rubric).slice(sections[i].index+sections[i][0].length,sections[i+1]?.index);
+      const awards=[...body.matchAll(/^\s*[-*]\s*(\d+(?:\.\d+)?)\s*分\s*[：:]/gmu)].map(m=>Number(m[1]));
+      if(!awards.length){items=[];break;}
+      items.push({id:`scoring-item-${items.length+1}`,label,maxScore:Math.max(...awards)});
+    }
+  }
   return items.length && items.every(item=>item.maxScore>0) &&
     new Set(items.map(item=>scoringLabelKey(item.label))).size===items.length &&
     Math.abs(items.reduce((sum,item)=>sum+item.maxScore,0)-maxScore(config))<1e-8 ? items : [];
@@ -69,7 +82,7 @@ export function promptFor(config) {
   const input = original.split('===== 输出要求 =====')[0];
   const diligence = config.scoring?.diligence;
   const diligencePrompt = diligence?.enabled ? `\ndiligenceLevel为1到5的整数，参考标准：${diligence.criteria || '字数较多且书写较为工整'}；学生答案不超过15字或未作答时为1。` : '\ndiligenceLevel固定为0。';
-  const unitPrompt = `\n网页评分框共${units.length}个，标签、满分和顺序为：${JSON.stringify(units.map(u => ({ label: u.label, maxScore: u.maxScore })))}。subScores对应网页评分框，不对应评分标准中的小问或评分点。${units.length === 1 ? `只有一个总分框时，subScores必须仅有一项，label固定为${JSON.stringify(units[0].label)}，score等于总分；小问明细写在comment里。` : ''}`;
+  const unitPrompt = `\n网页评分框共${units.length}个，标签、满分和顺序为：${JSON.stringify(units.map(u => ({ label: u.label, maxScore: u.maxScore })))}。subScores对应网页评分框，不对应评分标准中的小问或评分点。${units.length === 1 ? `只有一个总分框时，subScores必须仅有一项，label固定为${JSON.stringify(units[0].label)}，score等于总分；小问明细写在scoringDetails里，comment只补充说明。` : ''}`;
   const readingPrompt = `\n书写识别要求：仅检查提供的学生答题图片范围，逐张扫描整个区域，包括横线上方、右侧、边缘、涂抹旁和箭头指向的位置，不得只读取预设填空位置；不扩大答题范围。先忠实转录学生实际保留的书写，再对照参考答案评分。明确删除的旧内容不得计入；归属明确的替代答案必须保留。不得根据参考答案、常见公式或语义补齐、纠正、改写学生的字词、数字、符号或缺失步骤。无法辨认处写[无法辨认]，不得当成空白或自行猜测；无法确定答案归属、是否删除或替换且可能影响得分时必须报告疑点。判定采用适度宽松标准：可辨认的潦草字、位置偏移、横线上方或右侧作答、明确划掉的旧答案、清楚的箭头或替换关系，只写入notes，不属于评分疑点。明确写错、漏步骤或未作答，按标准给分或扣分，不因答案不正确而报告识别疑点。局部看不清但不参与计分、且不影响任何评分点结论时只记录说明；只有无法确认的有效答案、关键数字或符号可能改变得分时才报告评分疑点，不要求每个笔画都完美清晰。禁止利用参考答案猜测仍然适用。\n必须返回recognition对象：{status:"clear"或"uncertain",coverageChecked:true或false,notes:[实际观察到的涂改或位置说明],issues:[{location:图片序号及区域或小问位置,observed:实际可见内容,reason:无法确认的原因,affectsScore:true或false,impactReason:对具体评分点的影响说明}]}。仅在完整检查了所有题图区域且没有影响评分的识别疑点时status为clear、coverageChecked为true；有影响评分的疑点时status为uncertain，issues逐项列出；affectsScore为false必须具体说明为什么不影响任何评分点，不得把关键答案看不清标为无影响。studentAnswer仅记录可见的有效作答及无法辨认标记；评分疑点交由程序根据三评一致性及用户的人工/仲裁设置处理，不得为普通书写差异机械报告uncertain。`;
   const schema = scoringItemSchema(config);
   const schemaPrompt = schema.length ? `\n当前任务评分标准确定的评分项共${schema.length}项：${JSON.stringify(schema)}。scoringDetails必须逐项返回{id,label,score,maxScore,studentAnswer,reason}，id严格复制清单固定编号，一项一次不得遗漏，不得自创新编号；label只用于展示，禁止改名。主评、复评、仲裁共用同一清单，按清单顺序返回。` : '\nscoringDetails必须根据当前评分标准的独立计分项逐项返回{label,score,maxScore,studentAnswer,reason}。数量由当前评分标准决定，没有固定数量；不得沿用其他题目的分项，不得擅自合并或拆分评分点。每项满分依照标准，总分为各项得分之和。网页评分框数量不决定评分明细数量。';

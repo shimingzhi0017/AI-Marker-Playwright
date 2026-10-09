@@ -49,3 +49,16 @@ test('任意数量及常见编号格式随当前评分标准生成，覆盖旧�
   assert.equal(scoringItemSchema(free).length,0);assert.match(promptFor(free),/数量由当前评分标准决定/);
   assert.equal(scoringItemSchema({...free,rubric:'①步骤一：2分\n②步骤二：3分'}).length,0);
 });
+
+
+test('Markdown小问标题与明确给分规则生成固定编号，兼容大题号前缀',()=>{
+  for(const count of [2,4,5]) {
+    const rubric=Array.from({length:count},(_,i)=>`#### （${i+1}）评分点${i+1}\n\n- 2分：正确。\n- 0分：错误。`).join('\n\n');
+    const cfg={answer:'fixture',rubric,scoring:{units:[{label:'12',maxScore:count*2}]}};
+    const schema=scoringItemSchema(cfg);assert.equal(schema.length,count);assert.match(promptFor(cfg),/scoring-item-1/);
+    const result={score:count*2,subScores:[{label:'12',score:count*2}],scoringDetails:schema.map((item,i)=>({label:`12(${i+1})`,score:2,maxScore:2}))};
+    const parsed=parseResult(JSON.stringify(result),cfg);assert.deepEqual(parsed.scoringDetails.map(x=>x.id),schema.map(x=>x.id));
+    assert.equal(sameScoringItems(result.scoringDetails,schema.map(({id,...item})=>({...item,score:2}))),true);
+    assert.equal(scoringItemSchema({...cfg,rubric:rubric.replace('- 2分：正确。','每错一次扣2分。')}).length,0);
+  }
+});
