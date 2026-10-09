@@ -50,7 +50,8 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   assert.equal(await gradingPages[1].locator('input').inputValue(),'3');assert.equal(await gradingPages[0].locator('input').inputValue(),'');
   const history=(await request('/api/history',undefined,b)).value;assert.equal(history[0].result.score,3);assert.equal(app.store.records()[0].state,'paused');
   await page.locator('[data-tab=history]').click();
-  await page.locator('#exportWorkspace').selectOption(b);
+  assert.equal(await page.locator('#exportWorkspace').count(),0);
+  assert.equal(await page.locator('#workspaceSelect').inputValue(),b);
   assert.equal(await page.getByRole('link',{name:'CSV',exact:true}).isVisible(),false);
   await page.locator('#exportMenu > summary').click();
   await page.getByRole('link',{name:'CSV',exact:true}).click();
@@ -61,6 +62,12 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   const exportedText=fs.readFileSync(path.join(root,'sessions',b,'data','exports',exportedFiles[0]),'utf8');
   assert.match(exportedText,/所属任务/);assert.match(exportedText,/并发任务 B/);
   assert.ok(!fs.existsSync(path.join(root,'data','exports')));
+  await page.locator('#workspaceSelect').selectOption('default');
+  await page.waitForFunction(()=>document.querySelector('#workspaceSelect').value==='default' && document.querySelector('#phase').textContent==='已暂停');
+  await page.locator('#exportMenu > summary').click();await page.getByRole('link',{name:'CSV',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('文件保存在'));
+  assert.equal(fs.readdirSync(path.join(root,'data','exports')).length,1);
+  assert.equal(fs.readdirSync(path.join(root,'sessions',b,'data','exports')).length,1);
   // Both pages now expose the exact same answer identity. Only one can reach review.
   await gradingPages[1].goto(base+'/A');
   await Promise.all([request('/api/start',{},'default'),request('/api/start',{},b)]);
