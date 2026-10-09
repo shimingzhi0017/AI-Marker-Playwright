@@ -12,6 +12,7 @@ import { exportHistory } from './export.mjs';
 import { blackRatio } from './blank.mjs';
 import { observeSubmissions } from './submission-observer.mjs';
 import { trackZhixueTopics } from './zhixue-receipt.mjs';
+import { installImageProvenance } from './image-provenance.mjs';
 
 const defaultRoot = fileURLToPath(new URL('..', import.meta.url));
 const text = (res, status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
@@ -72,6 +73,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
       submissionObserver = await observeSubmissions(context, { directory: path.join(data, 'diagnostics'), getPlatform: () => platform, getRecord: () => state.record, note });
       context.on('close', () => { submissionObserver?.close(); context = page = platform = null; state.browserOpen = false; pause(); state.reason = '阅卷浏览器已关闭，请重新打开。'; });
       page = context.pages()[0] || await context.newPage();
+      await context.addInitScript(installImageProvenance);
       topicTracker = trackZhixueTopics(page);
       platform = new ZhixuePlatform(page, cfg, path.join(data, 'diagnostics'));
       platform.topicTracker = topicTracker;
@@ -217,7 +219,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           if (!state.review || !state.liveRecord || !pendingReview) throw Error('当前没有待确认评分');
           if (input.recordId && input.recordId !== state.liveRecord.id) throw Error('评分记录已变化，请确认当前答卷');
           if (!['fill', 'submit', 'stop'].includes(input.decision)) throw Error('操作无效');
-          if (input.decision === 'submit' && ((!settings().platform?.verified && !(settings().platform?.manualSubmissionTest && runner.settings.mode === 'trial' && runner.settings.batchLimit === 1 && state.liveRecord.snapshot.networkTopic)) || !state.liveRecord.snapshot.strongIdentity || !settings().platform?.submitResponseUrlPattern)) throw Error('自动提交尚未验收，请点击“只填分”，再在网站手动提交。');
+          if (input.decision === 'submit' && ((!settings().platform?.verified && !(settings().platform?.manualSubmissionTest && runner.settings.mode === 'trial' && Number.isInteger(runner.settings.batchLimit) && runner.settings.batchLimit >= 1 && runner.settings.batchLimit <= 3 && state.liveRecord.snapshot.networkTopic)) || !state.liveRecord.snapshot.strongIdentity || !settings().platform?.submitResponseUrlPattern)) throw Error('自动提交尚未验收，请点击“只填分”，再在网站手动提交。');
           const record = state.liveRecord;
           if(input.comment!==undefined&&(typeof input.comment!=='string'||input.comment.length>100000))throw Error('评分依据格式无效');
           if (input.scores) {

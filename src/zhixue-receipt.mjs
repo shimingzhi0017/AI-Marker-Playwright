@@ -1,8 +1,8 @@
 import { stableImageKey } from './platform.mjs';
 
-export function readTopic(json) {
+export function readTopic(json, field = 'topicInfo') {
   if (json?.code !== 200) return null;
-  const topic = json.data?.topicInfo;
+  const topic = json.data?.[field];
   const detail = topic?.detail;
   let ids;
   try { ids = JSON.parse(topic?.item?.id); } catch { return null; }
@@ -34,13 +34,30 @@ export function verifyCommit(requestBody, json, topic, scores) {
 
 export function trackZhixueTopics(page) {
   let current = null;
+  const candidates = new Map();
   const pending = new Set();
   const handler = response => {
     const url = new URL(response.url());
-    if (url.hostname !== 'pt-ali-bj-re.zhixue.com' || url.pathname !== '/marking/marking/personal/scanrecorddetail/' || response.request().method() !== 'POST') return;
-    const promise = (async () => { try { const topic = readTopic(await response.json()); if (topic) current = topic; } catch {} })();
+    const prefetch = url.pathname === '/marking/marking/personal/preLoadScanrecorddetail/';
+    if (url.hostname !== 'pt-ali-bj-re.zhixue.com' || (!prefetch && url.pathname !== '/marking/marking/personal/scanrecorddetail/') || response.request().method() !== 'POST') return;
+    const promise = (async () => { try {
+      const topic = readTopic(await response.json(), prefetch ? 'nextTopicInfo' : 'topicInfo');
+      if (topic) {
+        if (!prefetch) current = topic;
+        candidates.set(`${topic.markingPaperId}:${topic.scanRecordId}:${JSON.stringify(topic.itemIds)}`, topic);
+        if (candidates.size > 20) candidates.delete(candidates.keys().next().value);
+      }
+    } catch {} })();
     pending.add(promise); promise.finally(() => pending.delete(promise));
   };
   page.on('response', handler);
-  return { async current() { await Promise.allSettled([...pending]); return current; }, close() { page.off('response', handler); } };
+  return {
+    async current() { await Promise.allSettled([...pending]); return current; },
+    async match(imageKeys, markingPaperId) {
+      await Promise.allSettled([...pending]);
+      const matches = [...candidates.values()].filter(topic => matchesTopic(topic, imageKeys, markingPaperId));
+      return matches.length === 1 ? matches[0] : null;
+    },
+    close() { page.off('response', handler); }
+  };
 }

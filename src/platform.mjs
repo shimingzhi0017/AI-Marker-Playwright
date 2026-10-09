@@ -47,7 +47,7 @@ export class ZhixuePlatform {
   async snapshot() {
     const frame = await this.frame();
     const data = await frame.evaluate(options => {
-      const images = [...document.querySelectorAll(options.imageSelector || 'div[name="topicImg"] img, img.enhance-definition-bright')].map(img => ({ url: img.currentSrc || img.src, ready: img.complete && img.naturalWidth > 0 }));
+      const images = [...document.querySelectorAll(options.imageSelector || 'div[name="topicImg"] img, img.enhance-definition-bright')].map(img => ({ url: img.currentSrc || img.src, sourceUrl: window.__aiMarkerImageSources?.get(img.currentSrc || img.src) || img.currentSrc || img.src, ready: img.complete && img.naturalWidth > 0 }));
       const read = selector => selector ? document.querySelector(selector)?.getAttribute('data-paper-id') || document.querySelector(selector)?.textContent?.trim() || '' : '';
       return { images, paperId: read(options.paperIdSelector), taskId: read(options.taskIdSelector || '#currentTopicIndex'), url: location.href };
     }, this.options);
@@ -56,8 +56,8 @@ export class ZhixuePlatform {
     const context = pageContext(data.url);
     const legacyTaskId = data.taskId || data.url.replace(/([?&])_t=[^&]+/g, '');
     const taskId = context.examId || context.markingPaperId ? `${context.examId}:${context.markingPaperId}:${legacyTaskId}` : legacyTaskId;
-    const imageKeys = data.images.map(i => stableImageKey(i.url));
-    const networkTopic = this.options.identityMode === 'zhixue-network' ? await this.topicTracker?.current() : null;
+    const imageKeys = data.images.map(i => stableImageKey(i.sourceUrl || i.url));
+    const networkTopic = this.options.identityMode === 'zhixue-network' ? await this.topicTracker?.match(imageKeys, context.markingPaperId) : null;
     if (matchesTopic(networkTopic, imageKeys, context.markingPaperId)) {
       data.paperId = networkTopic.scanRecordId;
       return { ...data, taskId, legacyTaskId, pageContext: context, units, imageKeys, networkTopic,
