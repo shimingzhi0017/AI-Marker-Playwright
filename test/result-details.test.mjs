@@ -5,7 +5,7 @@ import {launchBrowser} from '../src/browser.mjs';
 
 test('详情显示同总分不同分项、仲裁依据、旧记录缺失和文本安全', {timeout:30000}, async t=>{
   const browser=await launchBrowser({headless:true});t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:390,height:844}});
-  await page.route('https://fixture.test/**',route=>route.fulfill({contentType:route.request().url().endsWith('.js')?'text/javascript':'text/html',body:route.request().url().endsWith('.js')?fs.readFileSync(new URL(`../ui${new URL(route.request().url()).pathname}`,import.meta.url),'utf8'):'<div id="details"></div>'}));
+  await page.route('https://fixture.test/**',route=>route.fulfill({contentType:route.request().url().match(/\.m?js$/)?'text/javascript':'text/html',body:route.request().url().match(/\.m?js$/)?fs.readFileSync(new URL(`../ui${new URL(route.request().url()).pathname}`,import.meta.url),'utf8'):'<!doctype html><div id="details"></div>'}));
   await page.goto('https://fixture.test/');
   await page.evaluate(async()=>{
     const {renderResultDetails}=await import('/result-details.js');window.renderResultDetails=renderResultDetails;
@@ -14,6 +14,15 @@ test('详情显示同总分不同分项、仲裁依据、旧记录缺失和文�
     const verdict={score:2,model:'仲裁模型',comment:'<script>window.injected=true</script>有效数字不足扣分',scoringDetails:[{label:'第一空',score:2,reason:'有效数字不足'},{label:'第二空',score:0}]};
     renderResultDetails(document.querySelector('#details'),{mode:'unattended',presetName:'方案',state:'submitted',result:{...verdict,dualEval:{result:'arbitration',a,b,verdict}},receipt:{confirmed:true,scores:[2]}},true);
   });
+  await page.evaluate(async()=>{
+    const {renderFeedback}=await import('/feedback.js');const probe=document.createElement('div');probe.id='formulaProbe';document.body.append(probe);
+    renderFeedback(probe,String.raw`第（1）问：速度为 $\frac{x_2}{2T}$，得2分。 第（2）问：加速度 $a^2$，得0分。 总分=2分。旧写法 x_2/(2T)。`);
+  });
+  assert.equal(await page.locator('#formulaProbe > p').count(),3);
+  assert.equal(await page.locator('#formulaProbe math').count(),3);
+  assert.equal(await page.locator('#formulaProbe mfrac').count(),2);
+  assert.equal(await page.locator('#formulaProbe msub').count(),2);
+  await page.locator('#formulaProbe').evaluate(el=>el.remove());
   assert.equal(await page.locator('.review-overview .review-score').count(),2);assert.equal(await page.locator('.review-score-card').count(),4);
   assert.match(await page.locator('#details').innerText(),/老师A 评分/);assert.match(await page.locator('#details').innerText(),/三评仲裁/);
   await page.locator('.review-audit > summary').click();

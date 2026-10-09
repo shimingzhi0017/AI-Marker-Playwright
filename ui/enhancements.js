@@ -31,7 +31,7 @@ export function buildLayout() {
   controls.insertAdjacentHTML('afterbegin','<label>本任务使用方案<select id="runPreset"></select></label>');
   controls.insertAdjacentHTML('beforeend','<label class="check"><input id="batchEnabled" type="checkbox">限制本次份数</label>');
   toolbar.querySelector('p.hint').remove();
-  const comment=$('comment');const textarea=document.createElement('textarea');textarea.id='comment';textarea.rows=4;textarea.setAttribute('aria-label','评分依据');comment.replaceWith(textarea);
+  const comment=$('comment');const textarea=document.createElement('textarea');textarea.id='comment';textarea.rows=4;textarea.setAttribute('aria-label','评分依据');comment.replaceWith(textarea);textarea.insertAdjacentHTML('beforebegin','<div id="commentPreview" class="review-content"></div><details id="commentEditor"><summary>编辑评语</summary></details>');$('commentEditor').append(textarea);
   $('scores').insertAdjacentHTML('afterend','<div class="score-total"><span>分数合计</span><strong id="scoreTotal">—</strong></div><div id="dualSummary" class="hint" hidden></div>');
   $('rawResult').closest('details').before($('resultPanel').querySelector('.review-actions'));
   $('answerImages').closest('.card').classList.add('answer-card');$('resultPanel').closest('.card').classList.add('result-card');

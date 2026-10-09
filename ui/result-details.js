@@ -1,14 +1,15 @@
+import {renderFeedback} from './feedback.js';
 import { alignScoringItems } from './scoring-labels.js';
 const items = result => result?.scoringDetails?.length ? result.scoringDetails : result?.subScores || [];
 const value = score => Number.isFinite(score) ? `${score} 分` : '未提供';
 function node(tag, text) { const el = document.createElement(tag); if(text !== undefined) el.textContent = text; return el; }
 function paragraph(container, title, text) {
   if(text === undefined || text === null || text === '') return;
-  container.append(node('h3', title), node('p', String(text)));
+  const content=node('div');renderFeedback(content,text);container.append(node('h3',title),content);
 }
 function historySection(container, title, text) {
   const section=node('section');section.className='review-section';section.append(node('h3',title));
-  const content=node('div',text);content.className='review-content';section.append(content);container.append(section);return content;
+  const content=node('div');content.className='review-content';renderFeedback(content,text);section.append(content);container.append(section);return content;
 }
 function reviewCard(container,title,result,arbitration=false) {
   const card=node('div');card.className='review-score-card'+(arbitration?' review-arbitration':'');

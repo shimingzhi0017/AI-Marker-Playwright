@@ -145,6 +145,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.locator('#start').click();await page.waitForFunction(()=>!document.querySelector('#fill').disabled);assert.ok(await page.locator('#submit').isDisabled());
   app.state.countdown=5;
   await page.waitForFunction(()=>!document.querySelector('#countdown').hidden);
+  await page.locator('#commentEditor > summary').click();
   await page.locator('#comment').fill('开始编辑');
   await page.waitForFunction(()=>document.querySelector('#countdown').hidden);assert.equal(app.state.countdown,null);
   await page.locator('#answerImages img').click();assert.ok(await page.locator('#imageDialog').isVisible());await page.locator('#closeImage').click();

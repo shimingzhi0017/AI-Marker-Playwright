@@ -1,3 +1,4 @@
+import {renderFeedback} from './feedback.js';
 import {buildAdaptationUI,createAdaptationUI} from './adaptation-ui.js';
 import {renderResultDetails} from './result-details.js';
 import {buildLayout,createEnhancements} from './enhancements.js';
@@ -57,7 +58,7 @@ function renderState() {
   if(!r && displayedRecord) { displayedRecord=null; $('answerImages').replaceChildren(); $('resultEmpty').hidden=false; $('resultPanel').hidden=true; $('presetLabel').textContent=''; }
   if(r && displayedRecord !== `${r.id}:${!!r.result}:${r.imageFiles?.length}`) {
     displayedRecord=`${r.id}:${!!r.result}:${r.imageFiles?.length}`; renderImages($('answerImages'),r); $('presetLabel').textContent=r.presetName; $('resultEmpty').hidden=!!r.result; $('resultPanel').hidden=!r.result;
-    if(r.result) { $('scores').replaceChildren(); const values=r.result.subScores?.length ? r.result.subScores : [{label:'总分',score:r.result.score}]; for(const [i,s] of values.entries()) { const label=document.createElement('label'); label.textContent=s.label; const input=document.createElement('input'); input.type='number'; input.step=p?.scoring?.units?.[i]?.roundStep||p?.scoring?.roundStep||0.5; input.min=0;input.max=p?.scoring?.units?.[i]?.maxScore||p?.scoring?.maxScore||''; input.value=s.score; input.dataset.score='true'; label.append(input); $('scores').append(label); } $('ocr').textContent=r.result.studentAnswer || '无识别文本'; $('comment').value=r.result.comment || ''; $('correction').value=''; $('rawResult').textContent=JSON.stringify(r.result,null,2);renderResultDetails($('resultDetails'),r);$('dualSummary').hidden=!r.result.dualEval;$('dualSummary').textContent=r.result.dualEval?`双评：${{consensus:'一致',average:'阈值内平均',arbitration:'仲裁'}[r.result.dualEval.result]} · 主评 ${r.result.dualEval.a.score} / 复评 ${r.result.dualEval.b.score}`:''; }
+    if(r.result) { $('scores').replaceChildren(); const values=r.result.subScores?.length ? r.result.subScores : [{label:'总分',score:r.result.score}]; for(const [i,s] of values.entries()) { const label=document.createElement('label'); label.textContent=s.label; const input=document.createElement('input'); input.type='number'; input.step=p?.scoring?.units?.[i]?.roundStep||p?.scoring?.roundStep||0.5; input.min=0;input.max=p?.scoring?.units?.[i]?.maxScore||p?.scoring?.maxScore||''; input.value=s.score; input.dataset.score='true'; label.append(input); $('scores').append(label); } $('ocr').textContent=r.result.studentAnswer || '无识别文本'; $('comment').value=r.result.comment || '';renderFeedback($('commentPreview'),r.result.comment || '无评语'); $('correction').value=''; $('rawResult').textContent=JSON.stringify(r.result,null,2);renderResultDetails($('resultDetails'),r);$('dualSummary').hidden=!r.result.dualEval;$('dualSummary').textContent=r.result.dualEval?`双评：${{consensus:'一致',average:'阈值内平均',arbitration:'仲裁'}[r.result.dualEval.result]} · 主评 ${r.result.dualEval.a.score} / 复评 ${r.result.dualEval.b.score}`:''; }
   }
   const builtinSubmit=r?.snapshot?.builtinAdapter==='zhixue'&&r?.snapshot?.networkTopic?.apiOrigin;
   const canSubmit=!!((builtinSubmit || config?.platform?.verified || (config?.platform?.manualSubmissionTest && config.mode === 'trial' && Number.isInteger(config.batchLimit) && config.batchLimit >= 0 && r?.snapshot?.networkTopic)) && r?.snapshot?.strongIdentity && (builtinSubmit || config?.platform?.submitResponseUrlPattern));
@@ -158,3 +159,5 @@ for(const link of document.querySelectorAll('a[href*="/api/export"]')) link.oncl
 
 function updateBatchLimit(){const enabled=$('batchEnabled').checked;$('batch').disabled=!enabled;$('batch').placeholder=enabled?'请输入份数':'无限制';if(!enabled)$('batch').value='';}
 $('batchEnabled').addEventListener('change',updateBatchLimit);
+
+$('comment').addEventListener('input',()=>renderFeedback($('commentPreview'),$('comment').value));
