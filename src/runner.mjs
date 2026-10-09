@@ -57,6 +57,7 @@ export class Runner {
         if (this.settings.batchLimit && this.count >= this.settings.batchLimit) return { count: this.count, reason: '达到本次批阅数量限制' };
       }
     } catch (error) {
+      if (record && error.modelResponse) record.modelResponse = error.modelResponse;
       if (record) { record.state = record.state === 'submitting' ? 'uncertain' : record.state === 'submitted' ? 'submitted' : 'paused'; record.error = error.message; this.store.save(record); }
       this.store.log('paused', { reason: error.message });
       await this.platform.diagnostic(error.message);

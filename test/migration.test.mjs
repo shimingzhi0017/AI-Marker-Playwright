@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
 import { launchBrowser } from '../src/browser.mjs';
-import { parseResult, calculate } from '../src/domain.mjs';
+import { parseResult, calculate, promptFor } from '../src/domain.mjs';
 import { grade, extractResponse, requestModel } from '../src/models.mjs';
 import { Store, importSettings } from '../src/store.mjs';
 import { ZhixuePlatform, stableImageKey, pageContext } from '../src/platform.mjs';
@@ -16,6 +16,32 @@ import { exportHistory } from '../src/export.mjs';
 
 const config = { answer: 'test reference', rubric: 'test criterion', workflowId: 'w', scoring: { units: [{ label: 'a', maxScore: 2 }, { label: 'b', maxScore: 2 }], roundStep: 0.5, roundMethod: 'round' } };
 const result = scores => ({ score: scores.reduce((a, b) => a + b, 0), studentAnswer: 'test', comment: 'test', subScores: scores.map((s, i) => ({ label: ['a', 'b'][i], score: s })) });
+
+test('JSON评分要求无旧格式冲突，数字字符串兼容但空值和越界仍拒绝', () => {
+  for (const units of [[], [{ label: '12', maxScore: 10 }], config.scoring.units]) {
+    const preset = { ...config, scoring: { maxScore: 10, units } };
+    const prompt = promptFor(preset);
+    assert.doesNotMatch(prompt, /必须使用【】|必须严格按照以下格式|"score":"数值/);
+    assert.match(prompt, /"score":0/);
+    const response = { studentAnswer: 'test', score: String(units.length || 0), subScores: units.map(u => ({ label: u.label, score: '1' })) };
+    assert.equal(parseResult(JSON.stringify(response), preset).score, units.length);
+    for (const score of ['', null, '8分', '数值总分', undefined]) assert.throws(() => parseResult(JSON.stringify({ ...response, score }), preset), /总分无效/);
+    assert.throws(() => parseResult(JSON.stringify({ ...response, score: 11 }), preset), /越界.*11/);
+  }
+});
+
+test('模型评分校验失败保留原文并且不填分或提交', async t => {
+  const f = await fixture(t);
+  const rawResponse = '{"score":"not-a-number"}';
+  const outcome = await new Runner(f.platform, f.store, f.settings, async () => { throw Error('不应进入确认'); }, async () => {
+    const error = Error('模型总分无效'); error.modelResponse = { model: 'fixture', rawResponse }; throw error;
+  }).run();
+  assert.equal(outcome.paused, true);
+  assert.equal(f.store.records()[0].modelResponse.rawResponse, rawResponse);
+  assert.equal(f.submits(), 0);
+  const frame = await f.platform.frame();
+  assert.equal(await frame.locator('input').first().inputValue(), '');
+});
 test('OSS签名更新不产生新答卷标识，裁剪与资源路径仍参与标识', () => {
   const base = 'https://example.oss-cn-hangzhou.aliyuncs.com/scan.jpg';
   const first = `${base}?Expires=1&Signature=a&OSSAccessKeyId=b&x-oss-process=image%2Fcrop%2Cx_1`;

@@ -24,11 +24,15 @@ export function promptFor(config) {
   const units = config.scoring?.units || [];
   const cfg = { ...config, maxScore: maxScore(config), subQuestions: units.map((u, i) => ({ ...u, id: String(i) })) };
   const original = units.length > 1 ? context.buildSubQuestionPrompt(cfg) : context.buildStructuredPrompt(cfg);
-  return original + '\n读取完整答题区，忽略明确划掉的旧内容，识别归属明确的替代内容；模糊内容不得猜测。\n最终只返回JSON对象，不要返回Markdown：' +
-    JSON.stringify({ studentAnswer: '实际识别内容', score: '数值总分', comment: '评分依据', diligenceLevel: 0, subScores: units.map(u => ({ label: u.label, score: '数值分数' })) });
+  const input = original.split('===== 输出要求 =====')[0];
+  const diligence = config.scoring?.diligence;
+  const diligencePrompt = diligence?.enabled ? `\ndiligenceLevel为1到5的整数，参考标准：${diligence.criteria || '字数较多且书写较为工整'}；学生答案不超过15字或未作答时为1。` : '\ndiligenceLevel固定为0。';
+  return input + diligencePrompt + `\n读取完整答题区，忽略明确划掉的旧内容，识别归属明确的替代内容；模糊内容不得猜测。严格按照评分标准评分。\n唯一输出格式为JSON对象，不要返回Markdown或【得分】等段落。score必须是JSON数字，不能是字符串、空值或“数值总分”等占位文字，范围为0到${maxScore(config)}。subScores按下列标签和顺序返回，分数之和必须等于score；无评分单元时返回空数组。示例中的0仅说明数字类型，不代表本份应得0分。\n` +
+    JSON.stringify({ studentAnswer: '实际识别内容', score: 0, comment: '逐项评分依据和分数计算', diligenceLevel: 0, subScores: units.map(u => ({ label: u.label, score: 0 })) });
 }
 export function validateResult(result, config) {
-  if (!result || !Number.isFinite(result.score) || result.score < 0 || result.score > maxScore(config)) throw Error('模型总分无效或越界');
+  if (!result || !Number.isFinite(result.score)) throw Error(`模型总分无效：score必须是数字，收到${result?.score === undefined ? '缺失字段' : JSON.stringify(result.score)}；本题满分${maxScore(config)}。`);
+  if (result.score < 0 || result.score > maxScore(config)) throw Error(`模型总分越界：收到${result.score}，允许范围0到${maxScore(config)}。`);
   const units = config.scoring?.units || [];
   if (units.length) {
     if (!Array.isArray(result.subScores) || result.subScores.length !== units.length) throw Error('模型评分单元不完整');
@@ -43,6 +47,12 @@ export function parseResult(text, config) {
   const clean = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   let result;
   try { result = JSON.parse(clean); } catch { throw Error('模型没有返回完整JSON评分结果'); }
+  // Some compatible endpoints return numbers as strings. Accept only an entire numeric literal.
+  const numeric = value => typeof value === 'string' && /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? Number(value.trim()) : value;
+  if (result && typeof result === 'object') {
+    result.score = numeric(result.score);
+    if (Array.isArray(result.subScores)) result.subScores.forEach(unit => { if (unit && typeof unit === 'object') unit.score = numeric(unit.score); });
+  }
   return validateResult(result, config);
 }
 export function calculate(result, config) {

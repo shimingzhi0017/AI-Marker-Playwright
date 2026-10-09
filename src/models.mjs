@@ -73,7 +73,8 @@ export async function grade(config, settings, images, signal) {
     const provider = settings.providers[entry?.provider];
     if (!provider || !entry.model) throw Error('工作流模型或供应商无效');
     const text = await requestModel({ ...provider, reasoningEffort: entry.reasoningEffort, maxOutputTokens: workflow.outputLimitEnabled === false ? undefined : workflow.maxOutputTokens || provider.maxOutputTokens }, entry.model, prompt, [...fieldImages(config), ...images], signal, budget);
-    return { ...parseResult(text, config), rawResponse: text };
+    try { return { ...parseResult(text, config), rawResponse: text }; }
+    catch (error) { error.modelResponse = { model: entry.model, rawResponse: text }; throw error; }
   };
   const prompt = promptFor(config);
   if (!workflow.dualEval?.enabled) return call(workflow.model, prompt);
