@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { redact } from './submission-observer.mjs';
 import { verifyCommit, matchesZhixueCommitUrl } from './zhixue-receipt.mjs';
 import { resolveZhixueOptions } from './zhixue-builtin.mjs';
+import {templateMatches} from './adaptation-templates.mjs';
 
 export function urlScope(value) {
   const url = new URL(value);
@@ -11,8 +12,9 @@ export function urlScope(value) {
 export function matchingGroup(groups, value) {
   const target = urlScope(value);
   const matches = (groups || []).filter(g => {
-    try { const scope = urlScope(g.url); return scope.origin === target.origin && target.path.startsWith(scope.path); } catch { return false; }
+    try { if(g.templateId&&!['imageSelector','scoreSelector','submitSelector','paperIdSelector','identityRequestField','scoresRequestField'].some(key=>g.platform?.[key]))return templateMatches(g.templateId,value);const scope = urlScope(g.url); return scope.origin === target.origin && target.path.startsWith(scope.path); } catch { return false; }
   }).sort((a,b) => urlScope(b.url).path.length - urlScope(a.url).path.length);
+  if(matches.some(g=>g.templateId)&&matches.some(g=>!g.templateId))return matchingGroup(matches.filter(g=>!g.templateId),value);
   if (matches.length > 1 && urlScope(matches[0].url).path.length === urlScope(matches[1].url).path.length) throw Error('多个网址分组同时匹配，请修改分组网址范围');
   return matches[0] || null;
 }

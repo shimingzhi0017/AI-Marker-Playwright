@@ -3,13 +3,13 @@ export function buildAdaptationUI() {
   const advanced=document.createElement('details');advanced.innerHTML='<summary>高级规则：选择器与提交字段</summary>';
   const heading=document.createElement('h2');heading.textContent='页面适配与调试';card.prepend(heading);
   const root=document.createElement('div');root.id='adaptationWizard';root.innerHTML=`
-  <p class="hint">按网址分组保存适配规则。先识别和点选，再测试填分，最后记录一次手动提交完成验证。</p>
-  <div class="controls"><label>网址分组<select id="adaptGroup"></select></label><button id="adaptNew">新建分组</button><button id="adaptDelete">删除分组</button></div>
+  <p class="hint">选择内置网站方案即可带入整套适配规则；也可添加自定义方案，按步骤自行调试。</p>
+  <div class="controls"><label>网站方案<select id="adaptGroup"></select></label><button id="adaptTemplate">从内置方案添加</button><button id="adaptNew">新建自定义方案</button><button id="adaptDelete">删除方案</button></div>
   <div class="form-grid"><label>分组名称<input id="adaptName"></label><label>匹配网址<input id="adaptUrl" placeholder="https://网站/阅卷路径"></label></div>
   <p class="hint">相同域名按路径及#路由前缀匹配，优先使用更具体的分组。考试参数不参与匹配。</p>
   <div class="actions"><button id="adaptSave" class="primary">保存分组</button><button id="adaptInspect">1. 检查页面</button></div>
   <div class="adapt-status" id="adaptStatus">尚未检查页面</div>
-  <h3>2. 点选修正</h3><div class="actions">
+  <details id="adaptCustomSteps"><summary>自行调试与修正规则</summary><h3>2. 点选修正</h3><div class="actions">
   <button data-adapt-pick="imageSelector">选答卷图片</button><button data-adapt-pick="scoreSelector">选评分框</button><button data-adapt-pick="submitSelector">选提交按钮</button><button data-adapt-pick="paperIdSelector">选答卷编号</button><button data-adapt-pick="taskIdSelector">选题号</button><button data-adapt-pick="completionSelector">选完成提示</button></div>
   <p class="hint">点选后切到阅卷网页点击对应位置。程序只选取元素，不触发网页按钮。相同评分框可在高级规则中扩大选择范围。</p>
   <h3>3. 填分测试</h3><label>测试分数（多个评分框用逗号分隔）<input id="adaptScores" placeholder="例如：2 或 2,3"></label><div class="actions"><button id="adaptFill">只填测试分数</button></div>
@@ -18,13 +18,19 @@ export function buildAdaptationUI() {
   <label>选择提交接口<select id="adaptCandidate"></select></label>
   <details><summary>查看接口记录（常见凭据已遮盖）</summary><pre id="adaptNetwork"></pre></details>
   <div class="actions"><button id="adaptVerify">核验提交并启用此分组</button></div>
-  <details><summary>页面识别报告</summary><pre id="adaptReport"></pre></details>`;
+  <details><summary>页面识别报告</summary><pre id="adaptReport"></pre></details></details>`;
+  document.body.insertAdjacentHTML('beforeend','<dialog id="adaptTemplateDialog"><h2>添加网站适配方案</h2><label>网站<select id="adaptTemplateSelect"></select></label><p id="adaptTemplateStatus" class="hint"></p><label>实际阅卷网址<input id="adaptTemplateUrl" type="url" placeholder="填写网站或内网部署地址"></label><div class="footer-actions"><button id="adaptTemplateCancel">取消</button><button id="adaptTemplateAdd" class="primary">添加方案</button></div></dialog>');
   card.append(root);advanced.append(fields,document.getElementById('verified').closest('label'));card.append(advanced);
   document.getElementById('verified').disabled=true;
   document.getElementById('savePlatform').hidden=true;advanced.append(document.getElementById('savePlatform'));details.remove();
 }
 export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirty}) {
   const $=id=>document.getElementById(id);let selected,lastPick,inspection;
+  let templates=[];
+  function templatePreview(){const template=templates.find(t=>t.id===$('adaptTemplateSelect').value);$('adaptTemplateStatus').textContent=template?.status || '';$('adaptTemplateUrl').value=template?.url || '';}
+  $('adaptTemplate').onclick=()=>action(async()=>{templates=(await api('/api/adaptation',{action:'templates'})).templates;$('adaptTemplateSelect').replaceChildren(...templates.map(t=>{const o=document.createElement('option');o.value=t.id;o.textContent=t.name;return o;}));templatePreview();$('adaptTemplateDialog').showModal();});
+  $('adaptTemplateSelect').onchange=templatePreview;$('adaptTemplateCancel').onclick=()=>$('adaptTemplateDialog').close();
+  $('adaptTemplateAdd').onclick=()=>action(async()=>{const result=await api('/api/adaptation',{action:'template',templateId:$('adaptTemplateSelect').value,url:$('adaptTemplateUrl').value});getConfig().adaptationGroups=result.groups;selected=result.selected;$('adaptTemplateDialog').close();refresh();render();notice('网站方案已添加，打开阅卷浏览器后检查页面即可',true);});
   function groups(){return getConfig().adaptationGroups || [];}
   function current(){return groups().find(g=>g.id===selected);}
   function render() {
@@ -33,9 +39,9 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
     const group=current();$('adaptName').value=group?.name || '';$('adaptUrl').value=group?.url || '';
     for(const input of document.querySelectorAll('[data-platform]')){const key=input.dataset.platform;const value=key==='browser.url'?group?.url:group?.platform?.[key];input.value=key==='successValue'?JSON.stringify(value??true):value || '';}
     $('verified').checked=!!group?.platform?.verified;
-    $('adaptStatus').textContent=group?.platform?.verified?'此分组已核验；修改规则后需要重新验证。':'未完成提交验证：可检查页面和只填分。';
+    $('adaptStatus').textContent=group?.platform?.verified?'此方案已核验；修改规则后需要重新验证。':group?.templateId==='zhixue'?'智学网内置方案已调通，自动识别当前答卷和提交回执；无需按任务重复调试。':group?.templateId?'使用内置网站适配，自动提交尚需实测；可展开自行调试。':'自定义方案：可检查页面、点选修正和测试填分。';
   }
-  function read(){const old=current();const platform={...(old?.platform || {})};for(const input of document.querySelectorAll('[data-platform]')){const key=input.dataset.platform;if(key!=='browser.url')platform[key]=key==='successValue'?JSON.parse(input.value):input.value;}return {id:selected || crypto.randomUUID(),name:$('adaptName').value.trim()||'新分组',url:$('adaptUrl').value.trim(),platform};}
+  function read(){const old=current();const platform={...(old?.platform || {})};for(const input of document.querySelectorAll('[data-platform]')){const key=input.dataset.platform;if(key!=='browser.url')platform[key]=key==='successValue'?JSON.parse(input.value):input.value;}return {id:selected || crypto.randomUUID(),name:$('adaptName').value.trim()||'新分组',url:$('adaptUrl').value.trim(),...(old?.templateId?{templateId:old.templateId}:{}),platform};}
   async function save(){const group=read();const result=await api('/api/adaptation',{action:'save',group});getConfig().adaptationGroups=result.groups;getConfig().platform=result.groups.find(g=>g.id===group.id).platform;selected=group.id;refresh();render();return group;}
   const run=fn=>action(async()=>{await fn();});
   $('adaptGroup').onchange=()=>{selected=$('adaptGroup').value;render();};

@@ -14,6 +14,7 @@ import { validateConfig, validateResult } from './domain.mjs';
 import { exportHistory, enrichStudents } from './export.mjs';
 import { chooseExportDirectory } from './export-folder.mjs';
 import { listModels } from './models.mjs';
+import {adaptationTemplates,createTemplateGroup} from './adaptation-templates.mjs';
 import { blackRatio } from './blank.mjs';
 import { observeSubmissions } from './submission-observer.mjs';
 import { trackZhixueTopics } from './zhixue-receipt.mjs';
@@ -302,6 +303,15 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
         case '/api/adaptation': {
           if(state.running||state.starting)throw Error('请先暂停阅卷再调试');
           const cfg=settings();
+          if(input.action==='templates'){text(res,200,{templates:adaptationTemplates});return;}
+          if(input.action==='template'){
+            const group=createTemplateGroup(input.templateId,input.url,crypto.randomUUID());
+            // Reuse an existing set instead of creating overlapping website defaults.
+            const existing=cfg.adaptationGroups.find(g=>g.templateId===group.templateId);
+            if(existing){text(res,200,{groups:cfg.adaptationGroups,selected:existing.id});return;}
+            cfg.adaptationGroups.push(group);cfg.browser.url=group.url;cfg.platform=group.platform;writeSettings(cfg);
+            text(res,200,{groups:settings().adaptationGroups,selected:group.id});return;
+          }
           if(input.action==='save'){const existing=cfg.adaptationGroups.find(g=>g.id===input.group.id);const group={...input.group,platform:{...input.group.platform,verified:!!existing?.platform.verified&&existing.url===input.group.url&&fingerprint(existing.platform)===fingerprint(input.group.platform)}};if(!['http:','https:'].includes(new URL(group.url).protocol))throw Error('分组网址必须是http或https');if(existing)cfg.adaptationGroups[cfg.adaptationGroups.indexOf(existing)]=group;else cfg.adaptationGroups.push(group);cfg.browser.url=group.url;cfg.platform=group.platform;writeSettings(cfg);text(res,200,{groups:settings().adaptationGroups});return;}
           if(input.action==='delete'){cfg.adaptationGroups=cfg.adaptationGroups.filter(g=>g.id!==input.id);writeSettings(cfg);text(res,200,{groups:cfg.adaptationGroups});return;}
           if(!page)throw Error('请先打开阅卷浏览器并进入目标页面');

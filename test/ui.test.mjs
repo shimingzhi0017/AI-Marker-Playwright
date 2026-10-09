@@ -206,5 +206,11 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   assert.match(await page.locator('#manualModelList').innerText(),/doubao-seed/);
   await page.locator('#closeProviderModels').click();
   assert.ok((await page.request.get(app.url+'/provider-templates.js')).ok());
+  await page.locator('.workspace-card.active').click();await page.locator('[data-tab=presets]').click();await page.locator('#adaptTemplate').click();
+  await page.locator('#adaptTemplateSelect').selectOption('zhixue');
+  assert.match(await page.locator('#adaptTemplateStatus').innerText(),/已调通/);
+  await page.locator('#adaptTemplateAdd').click();await page.waitForFunction(()=>document.querySelector('#adaptStatus').textContent.includes('智学网内置方案'));
+  assert.equal(await page.locator('#adaptCustomSteps').evaluate(el=>el.open),false);
+  assert.equal(await page.locator('#adaptNew').isVisible(),true);
   await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
 });
