@@ -42,6 +42,21 @@ test('模型评分校验失败保留原文并且不填分或提交', async t => 
   const frame = await f.platform.frame();
   assert.equal(await frame.locator('input').first().inputValue(), '');
 });
+
+test('单个网页总分框允许合计一致的小问明细，多框与错误合计仍拒绝', () => {
+  const preset = { ...config, scoring: { units: [{ label: '12', maxScore: 10 }], roundStep: 1 } };
+  for (const scores of [[0, 0, 0, 0], [1, 2, 3, 1]]) {
+    const response = { score: scores.reduce((sum, s) => sum + s, 0), studentAnswer: 'fixture', subScores: scores.map((score, i) => ({ label: `part-${i}`, score })) };
+    const parsed = parseResult(JSON.stringify(response), preset);
+    assert.deepEqual(parsed.subScores, [{ label: '12', score: response.score }]);
+    assert.deepEqual(parsed.scoringDetails, response.subScores);
+    assert.match(parsed.formatWarning, /人工确认/);
+    assert.equal(calculate(parsed, preset).score, response.score);
+    assert.throws(() => parseResult(JSON.stringify({ ...response, score: response.score + 1 }), preset), /合计/);
+    assert.throws(() => parseResult(JSON.stringify(response), config));
+  }
+  assert.match(promptFor(preset), /只有一个总分框/);
+});
 test('OSS签名更新不产生新答卷标识，裁剪与资源路径仍参与标识', () => {
   const base = 'https://example.oss-cn-hangzhou.aliyuncs.com/scan.jpg';
   const first = `${base}?Expires=1&Signature=a&OSSAccessKeyId=b&x-oss-process=image%2Fcrop%2Cx_1`;

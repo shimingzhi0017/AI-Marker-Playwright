@@ -85,9 +85,9 @@ export async function grade(config, settings, images, signal) {
   const diff = Math.abs(a.score - b.score);
   const same = a.score === b.score && (a.subScores || []).every((s, i) => s.score === b.subScores?.[i]?.score);
   if (dual.questionType !== 'subjective' ? same : diff <= (dual.threshold ?? 2)) {
-    if (dual.questionType !== 'subjective') return { ...a, dualEval: { result: 'consensus', a, b } };
+    if (dual.questionType !== 'subjective') return { ...a, formatWarning: a.formatWarning || b.formatWarning, dualEval: { result: 'consensus', a, b } };
     const subScores = (a.subScores || []).map((s, i) => ({ ...s, score: (s.score + b.subScores[i].score) / 2, comment: [s.comment, b.subScores[i].comment].filter(Boolean).join('\n') }));
-    const result = { ...a, score: subScores.length ? subScores.reduce((s, u) => s + u.score, 0) : (a.score + b.score) / 2, subScores, comment: `${a.comment || ''}\n${b.comment || ''}`, dualEval: { result: 'average', a, b } };
+    const result = { ...a, formatWarning: a.formatWarning || b.formatWarning, score: subScores.length ? subScores.reduce((s, u) => s + u.score, 0) : (a.score + b.score) / 2, subScores, comment: `${a.comment || ''}\n${b.comment || ''}`, dualEval: { result: 'average', a, b } };
     return validateResult(result, config);
   }
   const verdict = await call(dual.arbitration, `${prompt}\n请重新独立仲裁，不得平均。第一评：${JSON.stringify(a)}\n第二评：${JSON.stringify(b)}`);

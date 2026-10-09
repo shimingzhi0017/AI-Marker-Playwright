@@ -27,7 +27,8 @@ export function promptFor(config) {
   const input = original.split('===== 输出要求 =====')[0];
   const diligence = config.scoring?.diligence;
   const diligencePrompt = diligence?.enabled ? `\ndiligenceLevel为1到5的整数，参考标准：${diligence.criteria || '字数较多且书写较为工整'}；学生答案不超过15字或未作答时为1。` : '\ndiligenceLevel固定为0。';
-  return input + diligencePrompt + `\n读取完整答题区，忽略明确划掉的旧内容，识别归属明确的替代内容；模糊内容不得猜测。严格按照评分标准评分。\n唯一输出格式为JSON对象，不要返回Markdown或【得分】等段落。score必须是JSON数字，不能是字符串、空值或“数值总分”等占位文字，范围为0到${maxScore(config)}。subScores按下列标签和顺序返回，分数之和必须等于score；无评分单元时返回空数组。示例中的0仅说明数字类型，不代表本份应得0分。\n` +
+  const unitPrompt = `\n网页评分框共${units.length}个，标签、满分和顺序为：${JSON.stringify(units.map(u => ({ label: u.label, maxScore: u.maxScore })))}。subScores对应网页评分框，不对应评分标准中的小问或评分点。${units.length === 1 ? `只有一个总分框时，subScores必须仅有一项，label固定为${JSON.stringify(units[0].label)}，score等于总分；小问明细写在comment里。` : ''}`;
+  return input + diligencePrompt + unitPrompt + `\n读取完整答题区，忽略明确划掉的旧内容，识别归属明确的替代内容；模糊内容不得猜测。严格按照评分标准评分。\n唯一输出格式为JSON对象，不要返回Markdown或【得分】等段落。score必须是JSON数字，不能是字符串、空值或“数值总分”等占位文字，范围为0到${maxScore(config)}。subScores按下列标签和顺序返回，分数之和必须等于score；无评分单元时返回空数组。示例中的0仅说明数字类型，不代表本份应得0分。\n` +
     JSON.stringify({ studentAnswer: '实际识别内容', score: 0, comment: '逐项评分依据和分数计算', diligenceLevel: 0, subScores: units.map(u => ({ label: u.label, score: 0 })) });
 }
 export function validateResult(result, config) {
@@ -35,7 +36,7 @@ export function validateResult(result, config) {
   if (result.score < 0 || result.score > maxScore(config)) throw Error(`模型总分越界：收到${result.score}，允许范围0到${maxScore(config)}。`);
   const units = config.scoring?.units || [];
   if (units.length) {
-    if (!Array.isArray(result.subScores) || result.subScores.length !== units.length) throw Error('模型评分单元不完整');
+    if (!Array.isArray(result.subScores) || result.subScores.length !== units.length) throw Error(`模型评分单元不完整：网页需要${units.length}项，模型返回${Array.isArray(result.subScores) ? result.subScores.length : 0}项。`);
     result.subScores.forEach((s, i) => {
       if (s.label !== units[i].label || !Number.isFinite(s.score) || s.score < 0 || s.score > units[i].maxScore) throw Error('评分单元名称、顺序或分数无效');
     });
@@ -52,6 +53,16 @@ export function parseResult(text, config) {
   if (result && typeof result === 'object') {
     result.score = numeric(result.score);
     if (Array.isArray(result.subScores)) result.subScores.forEach(unit => { if (unit && typeof unit === 'object') unit.score = numeric(unit.score); });
+  }
+  const units = config.scoring?.units || [];
+  if (units.length === 1 && Array.isArray(result?.subScores) && result.subScores.length > 1) {
+    validateResult(result, { ...config, scoring: { ...config.scoring, units: [], maxScore: maxScore(config) } });
+    const details = result.subScores;
+    if (details.some(s => !s || typeof s.label !== 'string' || !s.label.trim() || !Number.isFinite(s.score) || s.score < 0 || s.score > maxScore(config)) || new Set(details.map(s => s.label)).size !== details.length) throw Error('模型小问评分明细无效，无法汇总到总分框');
+    if (Math.abs(details.reduce((sum, s) => sum + s.score, 0) - result.score) > 1e-8) throw Error('模型总分与小问明细合计不一致，无法汇总');
+    result.scoringDetails = structuredClone(details);
+    result.subScores = [{ label: units[0].label, score: result.score }];
+    result.formatWarning = `模型返回了${details.length}个小问明细，已核对合计并汇总到唯一的${units[0].label}总分框，请人工确认。`;
   }
   return validateResult(result, config);
 }
