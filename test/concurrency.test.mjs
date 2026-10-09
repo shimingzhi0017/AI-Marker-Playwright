@@ -62,7 +62,6 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   await until(async()=>(await Promise.all(['default',b].map(id=>request('/api/state',undefined,id)))).every(s=>s.value.review));
   assert.equal(maxActive,2);
   await page.waitForFunction(()=>document.querySelectorAll('#workspaceCards .workspace-card').length===2 && document.querySelectorAll('#workspaceCards .review').length===2);
-  await page.locator('#workspaceSelect').focus();
   await request('/api/workspace-name',{name:'实时任务 A'},'default');
   await page.waitForFunction(()=>[...document.querySelectorAll('.workspace-card-name')].some(el=>el.textContent==='实时任务 A'));
   await page.locator('.workspace-card[data-workspace="default"]').click();
@@ -70,9 +69,9 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   assert.equal(await page.locator('#ocr').innerText(),'模拟内容');
 
   const activeDeletion=await request('/api/workspaces',{action:'delete',id:b});assert.equal(activeDeletion.status,400);
-  await page.locator('#workspaceSelect').selectOption('default');await page.waitForFunction(()=>document.querySelector('#ocr').textContent==='模拟内容');
+  await page.locator('.workspace-card[data-workspace="default"]').click();await page.waitForFunction(()=>document.querySelector('#ocr').textContent==='模拟内容');
   await page.locator('#pause').click();await page.waitForFunction(()=>document.querySelector('#phase').textContent==='已暂停');assert.equal((await request('/api/state',undefined,b)).value.review,true);
-  await page.locator('#workspaceSelect').selectOption(b);await page.waitForFunction(()=>!document.querySelector('#fill').disabled);
+  await page.locator(`.workspace-card[data-workspace="${b}"]`).click();await page.waitForFunction(()=>!document.querySelector('#fill').disabled);
   await page.locator('[data-score]').fill('3');await page.locator('#fill').click();await page.waitForFunction(()=>document.querySelector('#reason').textContent.includes('等待用户在网站提交'));
   assert.equal(await gradingPages[1].locator('input').inputValue(),'3');assert.equal(await gradingPages[0].locator('input').inputValue(),'');
   const history=(await request('/api/history',undefined,b)).value;assert.equal(history[0].result.score,3);assert.equal(app.store.records()[0].state,'paused');
@@ -87,13 +86,8 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   assert.equal(await page.locator('aside [data-tab=models]').count(),1);
   assert.equal(await page.locator('.task-tabs [data-tab=workflows]').count(),1);
   await page.locator('[data-tab=models]').click();
-  await page.locator('#workspaceSelect').click();
-  assert.equal(await page.locator('#models').isVisible(),true);
-  await page.keyboard.press('Escape');
-  await page.locator('#workspaceSelect').focus();
-  // Keep the native select focused across several periodic refreshes.
-  await page.keyboard.press('ArrowUp');await page.waitForTimeout(1600);
-  await page.keyboard.press('Enter');
+  assert.equal(await page.locator('#workspaceSelect').isVisible(),false);
+  await page.locator('.workspace-card[data-workspace="default"]').click();
   await page.waitForFunction(()=>document.querySelector('#workspaceSelect').value==='default' && document.querySelector('#grading').hidden===false);
   // A selection during a slow operation is applied afterwards, not discarded.
   let releasePause, pauseEntered;
@@ -102,10 +96,9 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   await page.route('**/api/history',async route=>{pauseEntered();await held;await route.continue();});
   await page.locator('[data-tab=history]').click();
   await entered;
-  await page.locator('#workspaceSelect').selectOption(b);
-  await page.locator('#workspaceSelect').blur();
+  await page.locator(`.workspace-card[data-workspace="${b}"]`).click();
   await page.waitForTimeout(900);
-  assert.equal(await page.locator('#workspaceSelect').inputValue(),b);
+  assert.equal(await page.locator(`.workspace-card[data-workspace="${b}"]`).evaluate(el=>el.classList.contains('pending')),true);
   releasePause();
   await page.waitForFunction(()=>document.querySelector('#phase').textContent==='已停止');
   await page.unroute('**/api/history');
@@ -124,7 +117,7 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   const exportedText=fs.readFileSync(path.join(root,'sessions',b,'data','exports',exportedFiles[0]),'utf8');
   assert.match(exportedText,/所属任务/);assert.match(exportedText,/并发任务 B/);
   assert.ok(!fs.existsSync(path.join(root,'data','exports')));
-  await page.locator('#workspaceSelect').selectOption('default');
+  await page.locator('.workspace-card[data-workspace="default"]').click();
   await page.waitForFunction(()=>document.querySelector('#workspaceSelect').value==='default' && document.querySelector('#phase').textContent==='已暂停');
   await page.locator('#exportMenu > summary').click();await page.getByRole('link',{name:'CSV',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('文件保存在'));
@@ -144,7 +137,7 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   await page.goto('about:blank');await app.close();app=await createApp(opts);await page.goto(app.url);await page.waitForFunction(()=>document.querySelector('#workspaceSelect').options.length===2);
   assert.equal((await request('/api/settings',undefined,b)).value.presets['我的方案'].rubric,'第二任务规范');assert.ok((await request('/api/history',undefined,b)).value.length>=1);assert.equal((await request('/api/state',undefined,b)).value.running,false);
   assert.equal((await request('/api/workspaces')).value.find(w=>w.id===b).name,'并发任务 B');
-  await page.locator('#workspaceSelect').selectOption(b);await page.waitForFunction(()=>document.querySelector('#workspaceSelect').value!== 'default' && !document.querySelector('#deleteWorkspace').disabled);
+  await page.locator(`.workspace-card[data-workspace="${b}"]`).click();await page.waitForFunction(()=>document.querySelector('#workspaceSelect').value!== 'default' && !document.querySelector('#deleteWorkspace').disabled);
   await page.locator('#deleteWorkspace').click();await page.locator('#workspaceDialogSave').click();await page.waitForFunction(()=>document.querySelector('#workspaceSelect').options.length===1);
   assert.equal(await page.locator('#workspaceSelect').inputValue(),'default');assert.equal(await page.locator('#deleteWorkspace').isDisabled(),false);
   const archived=fs.readdirSync(path.join(root,'archived-sessions'));assert.equal(archived.length,1);assert.ok(fs.existsSync(path.join(root,'archived-sessions',archived[0],'data','history.sqlite')));

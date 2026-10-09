@@ -16,6 +16,7 @@ export function buildLayout() {
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&exportMenu.open){exportMenu.open=false;exportTitle.focus();}});
   const workspaceNote = document.querySelector('.workspace-controls > .hint'); workspaceNote.remove();
   $('workspaceSelect').closest('label').firstChild.textContent = '当前任务';
+  $('workspaceSelect').closest('label').hidden = true;
   $('addWorkspace').textContent = '＋ 新建任务';
   $('addWorkspace').insertAdjacentHTML('afterend','<button id="renameWorkspace">重命名</button><button id="deleteWorkspace" class="danger">删除任务</button>');
   document.body.insertAdjacentHTML('beforeend','<dialog id="workspaceDialog"><form method="dialog"><h2 id="workspaceDialogTitle">重命名任务</h2><p id="workspaceDialogHint" class="hint"></p><label id="workspaceNameLabel">任务名称<input id="workspaceNameInput" maxlength="80" required></label><div class="actions"><button value="cancel" formnovalidate>取消</button><button id="workspaceDialogSave" value="ok" class="primary">保存</button></div></form></dialog>');
