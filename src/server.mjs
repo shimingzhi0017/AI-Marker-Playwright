@@ -12,6 +12,7 @@ import { SuitePlatform as ZhixuePlatform } from './suite-platform.mjs';
 import { installSuiteAdapters } from './suite-adapters.mjs';
 import { validateConfig, validateResult } from './domain.mjs';
 import { exportHistory, enrichStudents } from './export.mjs';
+import { chooseExportDirectory } from './export-folder.mjs';
 import { blackRatio } from './blank.mjs';
 import { observeSubmissions } from './submission-observer.mjs';
 import { trackZhixueTopics } from './zhixue-receipt.mjs';
@@ -28,7 +29,8 @@ function sanitizeSettings(settings) {
   if (!settings.presets[settings.active]) throw Error('请选择有效方案');
   return settings;
 }
-export async function createApp({ root = defaultRoot, browserFactory = opts => launchPersistentBrowser(opts.profile, opts.launch), gradeFunction, coordinator, child = false, sharedProvidersFile } = {}) {
+export async function createApp({ root = defaultRoot, browserFactory = opts => launchPersistentBrowser(opts.profile, opts.launch), gradeFunction, coordinator, child = false, sharedProvidersFile, exportDirectoryPicker = chooseExportDirectory } = {}) {
+  let lastExportDirectory;
   const children = new Map();
   const deletedDefaultFile = path.join(root,'default-task-deleted.json');
   let defaultDeleted = !child && fs.existsSync(deletedDefaultFile);
@@ -102,7 +104,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           newTaskConfig.adaptationGroups[0].name = '默认页面配置';
           fs.mkdirSync(directory,{recursive:true});
           fs.writeFileSync(path.join(directory,'config.json'),JSON.stringify(newTaskConfig,null,2));
-          const app = await createApp({root:directory,browserFactory,gradeFunction,coordinator,child:true,sharedProvidersFile});
+          const app = await createApp({root:directory,browserFactory,gradeFunction,coordinator,child:true,sharedProvidersFile,exportDirectoryPicker});
           const response = await fetch(app.url); const cookie = response.headers.get('set-cookie').split(';')[0];
           const name = String(taskName || `任务 ${children.size+2}`).slice(0,80);
           const childSettings=JSON.parse(fs.readFileSync(path.join(directory,'config.json'),'utf8'));childSettings.workspaceName=name;fs.writeFileSync(path.join(directory,'config.json'),JSON.stringify(childSettings,null,2));
@@ -321,7 +323,14 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
         case '/api/export-file': {
           if (!['json','csv','html'].includes(input.format)) throw Error('导出格式无效');
           const records = enrichStudents(store.records(), path.join(data,'diagnostics','submission-observations.jsonl'));
-          const directory = path.join(data,'exports'); fs.mkdirSync(directory,{recursive:true});
+          let directory = path.join(data,'exports');
+          if(input.chooseDirectory===true){
+            directory=await exportDirectoryPicker(lastExportDirectory || (fs.existsSync(directory)?directory:root));
+            if(directory===null){text(res,200,{cancelled:true});return;}
+            if(typeof directory!=='string'||!path.isAbsolute(directory)||!fs.statSync(directory).isDirectory())throw Error('请选择有效的导出文件夹');
+            lastExportDirectory=directory;
+          }
+          fs.mkdirSync(directory,{recursive:true});
           const taskName=settings().workspaceName || '任务';
           const safeName=taskName.replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').slice(0,60) || '任务';
           const destination = path.join(directory, safeName+'-history-'+Date.now()+'.'+input.format);
@@ -394,7 +403,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
       if (!/^[a-f0-9-]{36}$/.test(id)) continue;
       const directory = path.join(root,'sessions',id), metadata = path.join(directory,'workspace.json');
       if (!fs.existsSync(metadata)) continue;
-      const app = await createApp({root:directory,browserFactory,gradeFunction,coordinator,child:true,sharedProvidersFile});
+      const app = await createApp({root:directory,browserFactory,gradeFunction,coordinator,child:true,sharedProvidersFile,exportDirectoryPicker});
       const response = await fetch(app.url), cookie = response.headers.get('set-cookie').split(';')[0];
       children.set(id,{app,cookie,name:JSON.parse(fs.readFileSync(metadata,'utf8')).name});
     }

@@ -153,7 +153,7 @@ document.querySelector('#resultPanel').addEventListener('input',e=>{updateScoreT
 const adaptationUI=createAdaptationUI({getConfig:()=>config,api,action,notice,refresh:renderSettings,markDirty});
 try {const initialTasks=await api('/api/workspaces');workspace=initialTasks[0]?.id || 'default';config=await api('/api/settings');renderSettings();await poll();setInterval(poll,700);}catch(e){notice(e.message);}
 
-for(const link of document.querySelectorAll('a[href*="/api/export"]')) link.onclick=event=>{event.preventDefault();action(async()=>{const format=new URL(link.href).searchParams.get('format');const result=await api('/api/export-file',{format,openFolder:true});notice(`已导出任务“${result.taskName}”的 ${result.count} 条记录，${result.folderOpened?'已请求打开所在文件夹。':'文件保存在：'+result.path}${result.folderError?'（文件夹未能自动打开）':''}`,true);});};
+for(const link of document.querySelectorAll('a[href*="/api/export"]')) link.onclick=event=>{event.preventDefault();action(async()=>{const format=new URL(link.href).searchParams.get('format');const result=await api('/api/export-file',{format,chooseDirectory:true,openFolder:true});if(result.cancelled)return;notice(`已导出任务“${result.taskName}”的 ${result.count} 条记录。文件保存在：${result.path}${result.folderOpened?'。已请求打开所在文件夹。':''}${result.folderError?'（文件夹未能自动打开）':''}`,true);});};
 
 // Switch layouts only after selecting a task; changing layout on pointerdown can close the native menu.
 

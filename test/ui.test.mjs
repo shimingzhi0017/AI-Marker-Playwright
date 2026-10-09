@@ -27,7 +27,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[];
   page.setDefaultTimeout(10000);
   page.on('pageerror',error=>errors.push(error.message));
-  await page.route('**/api/export-file*',async route=>{const body=route.request().postDataJSON();assert.equal(body.openFolder,true);await route.continue({postData:JSON.stringify({...body,openFolder:false})});});
+  await page.route('**/api/export-file*',async route=>{const body=route.request().postDataJSON();assert.equal(body.openFolder,true);assert.equal(body.chooseDirectory,true);await route.continue({postData:JSON.stringify({...body,openFolder:false,chooseDirectory:false})});});
   await page.goto(app.url);
   await page.waitForFunction(()=>document.querySelector('#phase').textContent==='待开始');
   assert.equal(await page.title(),'阅卷工作台');

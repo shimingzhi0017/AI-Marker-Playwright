@@ -28,7 +28,7 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   let app=await createApp(opts);
   t.after(async()=>{await app.close();await browser.close();await new Promise(resolve=>fixture.close(resolve));});
   const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
-  await page.route('**/api/export-file*',async route=>{const body=route.request().postDataJSON();assert.equal(body.openFolder,true);await route.continue({postData:JSON.stringify({...body,openFolder:false})});});
+  await page.route('**/api/export-file*',async route=>{const body=route.request().postDataJSON();assert.equal(body.openFolder,true);assert.equal(body.chooseDirectory,true);await route.continue({postData:JSON.stringify({...body,openFolder:false,chooseDirectory:false})});});
   await page.goto(app.url);await page.waitForFunction(()=>document.querySelector('#workspaceSelect').options.length===1);
   const request=async(url,body,id='default')=>page.evaluate(async({url,body,id})=>{
     const response=await fetch(url+(id==='default'?'':(url.includes('?')?'&':'?')+'workspace='+id),body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
