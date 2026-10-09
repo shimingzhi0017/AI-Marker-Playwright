@@ -11,7 +11,8 @@ window.addEventListener('beforeunload',e=>{if(dirty.size){e.preventDefault();e.r
 const scoped = (url, id = workspace) => id === 'default' ? url : url + (url.includes('?') ? '&' : '?') + 'workspace=' + encodeURIComponent(id);
 const labels = { grading: '阅卷', presets: '方案设置', models: '模型接口', workflows: '评分工作流', history: '历史记录' };
 const states = { loading:'获取图片', grading:'模型评分', review:'待确认', filled:'已填分', submitted:'已提交', paused:'已暂停', uncertain:'待核对', submitting:'提交中', 'resolved-not-submitted':'已确认未提交' };
-function notice(message, success = false) { $('notice').textContent = message; $('notice').className = success ? 'success' : ''; $('notice').hidden = false; }
+let noticeTimer;
+function notice(message, success = false) { clearTimeout(noticeTimer);$('notice').textContent = message; $('notice').className = success ? 'success' : ''; $('notice').hidden = false;if(success && !message.includes('文件保存在'))noticeTimer=setTimeout(()=>{$('notice').hidden=true;},2500); }
 async function api(url, data, id = workspace) { const response = await fetch(url === '/api/workspaces' ? url : scoped(url,id), data === undefined ? {} : { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) }); const value = await response.json(); if (!response.ok) throw Error(value.error || '请求失败'); return value; }
 async function action(fn) { if (busy) return; busy = true; try { await fn(); } catch (e) { notice(e.message); } finally { busy = false; await poll(); } }
 function options(element, values, selected) { element.replaceChildren(...values.map(value => { const option = document.createElement('option'); option.value = value; option.textContent = value; return option; })); if (values.includes(selected)) element.value = selected; }

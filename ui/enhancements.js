@@ -2,6 +2,10 @@
 export function buildLayout() {
   const $ = id => document.getElementById(id);
   $('eyebrow').hidden = true;
+  const noticePopup=document.createElement('div');noticePopup.id='noticePopup';
+  const closeNotice=document.createElement('button');closeNotice.id='closeNotice';closeNotice.textContent='×';closeNotice.setAttribute('aria-label','关闭提示');
+  document.body.append(noticePopup);noticePopup.append($('notice'),closeNotice);
+  closeNotice.onclick=()=>{$('notice').hidden=true;};
   const exportLinks=[...document.querySelectorAll('a[href*="/api/export"]')];
   const exportMenu=document.createElement('details');exportMenu.id='exportMenu';exportMenu.className='export-menu';
   const exportTitle=document.createElement('summary');exportTitle.textContent='导出';exportMenu.append(exportTitle);
