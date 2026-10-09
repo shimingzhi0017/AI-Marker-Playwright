@@ -63,6 +63,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.waitForFunction(()=>document.querySelector('#providerDialog').hidden);
   await page.locator('#workspaceSelect').click();
   await page.keyboard.press('Escape');
+  await page.locator('#workspaceSelect').selectOption(await page.locator('#workspaceSelect').inputValue());
   await page.locator('[data-tab=workflows]').click();
   assert.equal(await page.locator('#recognitionPolicy').inputValue(),'manual');
   await page.locator('#recognitionPolicy').selectOption('arbitration');
@@ -75,7 +76,8 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.getByText('输出与请求设置',{exact:true}).click();await page.locator('#outputLimit').check();await page.locator('#outputTokens').fill('2048');await page.locator('#primaryPanel summary').click();await page.locator('#primaryEffort').selectOption('high');await page.locator('#saveWorkflow').click();await page.waitForFunction(()=>document.querySelector('#dirtyBadge').hidden);assert.equal(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).workflows['我的工作流'].model.reasoningEffort,'high');
   await page.locator('[data-tab=models]').click();
   await page.locator('#viewProviderModels').click();await page.locator('#fetchModels').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent==='模型目录已更新');assert.match(await page.locator('#modelCatalog').innerText(),/fixture-model/);await page.locator('#closeProviderModels').click();
-  await page.locator('#workspaceSelect').click();await page.keyboard.press('Escape');
+  await page.locator('#workspaceSelect').click();await page.keyboard.press('Escape');await page.locator('#workspaceSelect').selectOption(await page.locator('#workspaceSelect').inputValue());
+  await page.locator('#workspaceSelect').selectOption(await page.locator('#workspaceSelect').inputValue());
   await page.locator('[data-tab=workflows]').click();
   await page.locator('#primaryModel').fill('unrelated-old-model');
   await page.locator('#primaryChooseModel').click();
@@ -193,7 +195,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   assert.ok(fs.readdirSync(root).some(name=>name.startsWith('shared-providers.json.before-delete-')));
   await page.reload();await page.locator('[data-tab=models]').click();
   assert.equal(await page.locator('#providerSelect option').count(),0);
-  await page.locator('#workspaceSelect').click();await page.keyboard.press('Escape');await page.locator('[data-tab=workflows]').click();
+  await page.locator('#workspaceSelect').click();await page.keyboard.press('Escape');await page.locator('#workspaceSelect').selectOption(await page.locator('#workspaceSelect').inputValue());await page.locator('[data-tab=workflows]').click();
   assert.match(await page.locator('#primaryProvider option:checked').innerText(),/接口已删除/);
   await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
 });
