@@ -6,6 +6,12 @@ function paragraph(container, title, text) {
   if(text === undefined || text === null || text === '') return;
   container.append(node('h3', title), node('p', String(text)));
 }
+function readingDetails(container, result) {
+  paragraph(container, '书写识别检查', result?.recognitionWarning || (result?.recognition?.status === 'clear' && result.recognition.coverageChecked ? '模型报告已检查完整答题区域，未报告识别疑点。' : '此结果未记录完整的书写识别检查。'));
+  paragraph(container, '学生实际作答', result?.studentAnswer);
+  for (const note of Array.isArray(result?.recognition?.notes) ? result.recognition.notes : []) if (typeof note === 'string') paragraph(container, '涂改及位置说明', note);
+  for (const issue of Array.isArray(result?.recognition?.issues) ? result.recognition.issues : []) if (issue && typeof issue === 'object') paragraph(container, `识别疑点 · ${issue.location || '位置未说明'}`, `可见内容：${issue.observed || '未说明'}；疑点：${issue.reason || '未说明'}`);
+}
 export function renderResultDetails(container, record, history = false) {
   container.replaceChildren(); const result = record.result;
   if(!result) { paragraph(container,'异常说明',record.error); return; }
@@ -14,6 +20,7 @@ export function renderResultDetails(container, record, history = false) {
     paragraph(container,'评分时间',record.time ? new Date(record.time).toLocaleString('zh-CN') : undefined);
   }
   paragraph(container,'模型总分 → 最终分数',`${value(result.rawScore ?? record.originalResult?.score ?? result.score)} → ${value(result.score)}`);
+  readingDetails(container, result);
   const dual = result.dualEval;
   if(dual) {
     paragraph(container,'双阅判定',`${{consensus:'逐项一致',average:'主观题阈值内平均',arbitration:'已调用仲裁'}[dual.result] || dual.result}；主评 ${value(dual.a?.score)}，复评 ${value(dual.b?.score)}，总分差 ${value(Math.abs(dual.a?.score - dual.b?.score))}。总分差不代表各项一致。`);
@@ -36,6 +43,7 @@ export function renderResultDetails(container, record, history = false) {
   if(dual) for(const [title,r] of [['主评',dual.a],['复评',dual.b],...(dual.result==='arbitration' ? [['仲裁',dual.verdict || result]] : [])]) {
     const detail=node('details');detail.append(node('summary',`${title} · ${r?.model || '模型名未记录'} · ${value(r?.score)}`));
     paragraph(detail,'识别答案',r?.studentAnswer || '未提供');
+    readingDetails(detail, r);
     for(const item of items(r)) paragraph(detail,`${item.label} · ${value(item.score)}`,item.reason || item.comment);
     paragraph(detail,'评分依据',r?.comment || '未提供');container.append(detail);
   }

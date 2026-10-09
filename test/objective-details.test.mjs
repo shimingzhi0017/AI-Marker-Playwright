@@ -37,6 +37,7 @@ test('单总分框客观双阅逐项比较，任意分歧或缺失必须仲裁',
     calls = []; replies = { A: scenario.a, B: scenario.b, C: response([2, 3]) };
     const result = await grade(config, settings, [], new AbortController().signal);
     assert.equal(result.dualEval.result, scenario.expected);
+    assert.match(result.recognitionWarning, /书写识别检查/);
     assert.equal(calls.includes('C'), scenario.expected === 'arbitration');
     if (scenario.expected === 'arbitration') { assert.equal(result.score, 5); assert.deepEqual(result.subScores, [{ label: '12', score: 5 }]); }
   }

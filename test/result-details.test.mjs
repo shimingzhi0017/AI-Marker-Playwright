@@ -28,4 +28,7 @@ test('详情显示同总分不同分项、仲裁依据、旧记录缺失和文�
   assert.match(rows[0],/0 分.*2 分.*0 分.*分数不一致/s);
   assert.ok(rows.slice(1).every(row=>row.includes('分数一致')));
   assert.ok(rows.every(row=>!row.includes('未提供')));
+  await page.evaluate(()=>window.renderResultDetails(document.querySelector('#details'),{result:{score:2,studentAnswer:'a=[无法辨认]',recognitionWarning:'书写识别存疑，请人工确认',recognition:{status:'uncertain',coverageChecked:true,notes:['旧答案划掉，替换内容位于横线上方'],issues:[{location:'图1第（1）问右侧',observed:'a=[无法辨认]',reason:'字迹与涂抹重叠'}]}}}));
+  const reading=await page.locator('#details').innerText();
+  assert.match(reading,/横线上方/);assert.match(reading,/图1第（1）问右侧/);assert.match(reading,/字迹与涂抹重叠/);assert.match(reading,/人工确认/);
 });

@@ -129,7 +129,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
     state.running = true; state.count = 0; state.record = null; state.reason = ''; state.snapshot = snapshot; state.phase = '准备阅卷';
     runner = new Runner(platform, store, cfg, (record, mode) => {
       state.record = structuredClone(record); state.review = true; state.phase = '请确认评分';
-      state.reason = [record.blankDetection?.warning, record.result?.formatWarning].filter(Boolean).join(' ');
+      state.reason = [record.blankDetection?.warning, record.result?.formatWarning, record.result?.recognitionWarning].filter(Boolean).join(' ');
       return new Promise(resolve => {
         pendingReview = resolve;
         if (mode === 'unattended') { finishReview('submit'); return; }
