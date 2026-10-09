@@ -59,6 +59,7 @@ export class Runner {
       }
     } catch (error) {
       if (record && error.modelResponse) record.modelResponse = error.modelResponse;
+      if (record && error.modelRequestFailure) record.modelRequestFailure = error.modelRequestFailure;
       if (record) { record.state = record.state === 'submitting' ? 'uncertain' : record.state === 'submitted' ? 'submitted' : 'paused'; record.error = error.message; this.store.save(record); }
       this.store.log('paused', { reason: error.message });
       await this.platform.diagnostic(error.message);

@@ -14,6 +14,7 @@ function readingDetails(container, result) {
 }
 export function renderResultDetails(container, record, history = false) {
   container.replaceChildren(); const result = record.result;
+  if(record.modelRequestFailure) paragraph(container,'模型请求失败',`${record.modelRequestFailure.provider || '供应商未记录'} · ${record.modelRequestFailure.model || '模型未记录'} · ${record.modelRequestFailure.type || '请求失败'}${record.modelRequestFailure.attempts ? ` · 请求${record.modelRequestFailure.attempts}次` : ''}`);
   if(!result) { paragraph(container,'异常说明',record.error); return; }
   if(history) {
     paragraph(container,'方案 / 运行模式',`${record.presetName || '未记录'} / ${{trial:'人工确认',normal:'5秒倒计时提交',unattended:'无人值守'}[record.mode] || '旧记录未保存模式'}`);

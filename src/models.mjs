@@ -1,5 +1,10 @@
 import { promptFor, parseResult, validateResult, fieldImages, recognitionWarning } from './domain.mjs';
 import { sameScoringItems } from '../ui/scoring-labels.js';
+import { setTimeout as delay } from 'node:timers/promises';
+
+async function retryDelay(ms, signal) {
+  try { await delay(ms, undefined, { signal }); } catch (error) { signal?.throwIfAborted(); throw error; }
+}
 
 export function endpoint(provider) {
   const url = provider.endpoint.replace(/\/$/, '');
@@ -51,11 +56,24 @@ export async function requestModel(provider, model, prompt, images, signal, budg
   for (let attempt = 0; attempt < 2; attempt++) {
     signal?.throwIfAborted();
     if (budget.remaining-- <= 0) throw Error('本份答卷模型请求预算用尽');
-    const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.any([signal || new AbortController().signal, AbortSignal.timeout(provider.timeoutMs || 120000)]) });
-    const text = await response.text();
+    let response, text;
+    try {
+      response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.any([signal || new AbortController().signal, AbortSignal.timeout(provider.timeoutMs || 120000)]) });
+      text = await response.text();
+    } catch (cause) {
+      signal?.throwIfAborted();
+      const code = cause?.cause?.code || cause?.code || '';
+      const temporary = cause?.name === 'TimeoutError' || ['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EAI_AGAIN','ENETUNREACH','UND_ERR_CONNECT_TIMEOUT','UND_ERR_SOCKET','UND_ERR_BODY_TIMEOUT','UND_ERR_HEADERS_TIMEOUT'].includes(code);
+      if (temporary && attempt === 0 && budget.remaining > 0) {
+        await retryDelay(700, signal); continue;
+      }
+      const reason = cause?.name === 'TimeoutError' || /TIMEOUT|TIMEDOUT/.test(code) ? '请求超时' : /CERT|TLS|SSL/.test(code) ? '证书或安全连接失败' : code === 'ENOTFOUND' ? '接口域名无法解析' : temporary ? '网络连接中断或接口暂时不可达' : '网络请求失败';
+      const error = Error(`模型${model}：${reason}${temporary && attempt > 0 ? '，重试后仍失败' : ''}；已暂停，请检查网络或接口后重新开始。`);
+      error.modelRequestFailure = { model, type: reason, code, attempts: attempt + 1 }; throw error;
+    }
     if (!response.ok) {
       if (attempt === 0 && (response.status === 429 || response.status >= 500) && budget.remaining > 0) {
-        await new Promise(resolve => setTimeout(resolve, response.status === 429 ? 1000 : 300));
+        await retryDelay(response.status === 429 ? 1000 : 300, signal);
         continue;
       }
       throw Error(`模型服务HTTP ${response.status}`);
@@ -73,7 +91,9 @@ export async function grade(config, settings, images, signal) {
   const call = async (entry, prompt) => {
     const provider = settings.providers[entry?.provider];
     if (!provider || !entry.model) throw Error('工作流模型或供应商无效');
-    const text = await requestModel({ ...provider, reasoningEffort: entry.reasoningEffort, maxOutputTokens: workflow.outputLimitEnabled === false ? undefined : workflow.maxOutputTokens || provider.maxOutputTokens }, entry.model, prompt, [...fieldImages(config), ...images], signal, budget);
+    let text;
+    try {    text = await requestModel({ ...provider, reasoningEffort: entry.reasoningEffort, maxOutputTokens: workflow.outputLimitEnabled === false ? undefined : workflow.maxOutputTokens || provider.maxOutputTokens }, entry.model, prompt, [...fieldImages(config), ...images], signal, budget); }
+    catch (error) { if (!signal?.aborted) { error.modelRequestFailure ||= { model: entry.model, type: error.message }; error.modelRequestFailure.provider = entry.provider; } throw error; }
     try { const parsed = parseResult(text, config); return { ...parsed, recognitionWarning: recognitionWarning(parsed), model: entry.model, rawResponse: text }; }
     catch (error) { error.modelResponse = { model: entry.model, rawResponse: text }; throw error; }
   };
