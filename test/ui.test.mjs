@@ -46,11 +46,15 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   assert.match(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets['我的方案'].question.images[0],/^data:image\/png;base64,/);
   await page.locator('[data-tab=models]').click();await page.locator('#endpoint').fill(fixtureUrl);await page.locator('#apiKey').fill('local-fixture');await page.locator('#saveProvider').click();
   await page.waitForFunction(()=>document.querySelector('#notice').textContent==='供应商已保存');
+  assert.equal(await page.locator('.task-tabs').isVisible(),false);
+  await page.locator('#workspaceSelect').click();
+  await page.keyboard.press('Escape');
   await page.locator('[data-tab=workflows]').click();
   await page.locator('#primaryModel').fill('fixture-model');await page.locator('#saveWorkflow').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent==='工作流已保存');
   await page.getByText('输出与请求设置',{exact:true}).click();await page.locator('#outputLimit').check();await page.locator('#outputTokens').fill('2048');await page.locator('#primaryEffort').selectOption('high');await page.locator('#saveWorkflow').click();await page.waitForFunction(()=>document.querySelector('#dirtyBadge').hidden);assert.equal(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).workflows['我的工作流'].model.reasoningEffort,'high');
   await page.locator('[data-tab=models]').click();
   await page.locator('#fetchModels').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent==='模型目录已更新');assert.match(await page.locator('#modelCatalog').innerText(),/fixture-model/);
+  await page.locator('#workspaceSelect').click();await page.keyboard.press('Escape');
   await page.locator('[data-tab=presets]').click();
   await page.getByText('页面适配配置（完成真实测试后使用）',{exact:true}).click();await page.locator('[data-platform="browser.url"]').fill(fixtureUrl);await page.locator('[data-platform=taskIdSelector]').fill('#task');await page.locator('[data-platform=paperIdSelector]').fill('#paper');await page.locator('#savePlatform').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent==='页面适配已保存');
   await page.reload();await page.locator('[data-tab=presets]').click();assert.equal(await page.locator('#answer').inputValue(),'模拟参考说明');
