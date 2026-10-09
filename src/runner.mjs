@@ -38,7 +38,12 @@ export class Runner {
           } else record.blankDetection = await detectBlank(images, config.blankDetection.reference, config.blankDetection.threshold);
         }
         if (record.blankDetection?.isBlank) result = { score: 0, studentAnswer: '', comment: '范本空白检测：请确认', subScores: (config.scoring?.units || []).map(u => ({ label: u.label, score: 0 })) };
-        else result = await this.modelGrade(config, this.settings, images.map(i => i.data), signal);
+        else result = await this.modelGrade(config, this.settings, images.map(i => i.data), signal, progress=>{
+          record.modelProgress ||= {};
+          record.modelProgress[progress.role]=progress;
+          this.store.save(record);
+          this.store.log('model-progress',{id:record.id,...progress});
+        });
         signal.throwIfAborted();
         record.result = calculate(result, config); record.state = 'review'; this.store.save(record);
         const decision = await this.review(record, record.blankDetection?.isBlank || record.blankDetection?.skipped || record.result.formatWarning || (record.result.recognitionWarning && !['arbitration', 'three-way-consensus'].includes(record.result.recognitionDecision)) ? 'trial' : this.settings.mode || 'trial');

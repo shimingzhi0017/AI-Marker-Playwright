@@ -20,5 +20,5 @@ test('断线有限重试、持续失败诊断、鉴权不重试及暂停取消',
   calls=0;await assert.rejects(call(undefined,{remaining:1}),/网络连接/);assert.equal(calls,1);
   mode='auth';calls=0;await assert.rejects(call(),/HTTP 401/);assert.equal(calls,1);
   mode='reset';calls=0;const controller=new AbortController();const pending=call(controller.signal);setTimeout(()=>controller.abort(Error('用户暂停')),100);await assert.rejects(pending,/用户暂停/);assert.equal(calls,1);
-  mode='slow';calls=0;await assert.rejects(requestModel({...provider,timeoutMs:20},'fixture','prompt',[]),/请求超时/);assert.equal(calls,2);
+  mode='slow';calls=0;await assert.rejects(requestModel({...provider,timeoutMs:20},'fixture','prompt',[]),/请求超时/);assert.equal(calls,1);
 });

@@ -73,6 +73,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
     if (state.running) {
       state.record = structuredClone(record);
       state.phase = { loading: '正在获取图片', grading: '模型正在评分', review: '请确认评分', submitting: '正在确认提交', submitted: '已提交，等待下一份', paused: '已暂停', uncertain: '提交状态待核对', filled: '已填分' }[record.state] || record.state;
+      if(record.state==='grading' && record.modelProgress)state.reason=Object.values(record.modelProgress).map(p=>`${p.role} ${p.model}：${({requesting:'等待模型返回',retrying:'网络重试中',completed:'已完成',failed:'失败',cancelled:'已取消'})[p.status] || p.status}`).join('；');
       if (record.state === 'submitted') state.count++;
     }
   };

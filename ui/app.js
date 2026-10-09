@@ -51,6 +51,7 @@ function renderState() {
   for(const field of ['question','answer','rubric'])$(field+'Upload').disabled=state.running||state.starting;
   $('countdown').hidden=state.countdown === null; $('countdown').textContent=`${state.countdown} 秒后提交`;
   const r=state.record;
+  if(r?.state==='grading' && r.modelProgress){const seconds=Math.max(0,Math.floor((Date.now()-new Date(r.time).getTime())/1000));$('reason').textContent=(state.reason || '等待模型评分')+` · 已等待${seconds}秒`; }
   if(!r && !$('answerImages').children.length)$('answerImages').innerHTML='<div class="empty">开始阅卷后，这里显示当前答卷图片</div>';
   if(!r && displayedRecord) { displayedRecord=null; $('answerImages').replaceChildren(); $('resultEmpty').hidden=false; $('resultPanel').hidden=true; $('presetLabel').textContent=''; }
   if(r && displayedRecord !== `${r.id}:${!!r.result}:${r.imageFiles?.length}`) {

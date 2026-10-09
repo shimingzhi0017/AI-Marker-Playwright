@@ -57,6 +57,7 @@ export async function requestModel(provider, model, prompt, images, signal, budg
     signal?.throwIfAborted();
     if (budget.remaining-- <= 0) throw Error('本份答卷模型请求预算用尽');
     let response, text;
+    budget.onProgress?.({status:attempt ? 'retrying':'requesting',model,attempt:attempt+1});
     try {
       response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.any([signal || new AbortController().signal, AbortSignal.timeout(provider.timeoutMs || 120000)]) });
       text = await response.text();
@@ -64,7 +65,7 @@ export async function requestModel(provider, model, prompt, images, signal, budg
       signal?.throwIfAborted();
       const code = cause?.cause?.code || cause?.code || '';
       const temporary = cause?.name === 'TimeoutError' || ['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EAI_AGAIN','ENETUNREACH','UND_ERR_CONNECT_TIMEOUT','UND_ERR_SOCKET','UND_ERR_BODY_TIMEOUT','UND_ERR_HEADERS_TIMEOUT'].includes(code);
-      if (temporary && attempt === 0 && budget.remaining > 0) {
+      if (temporary && cause?.name !== 'TimeoutError' && attempt === 0 && budget.remaining > 0) {
         await retryDelay(700, signal); continue;
       }
       const reason = cause?.name === 'TimeoutError' || /TIMEOUT|TIMEDOUT/.test(code) ? '请求超时' : /CERT|TLS|SSL/.test(code) ? '证书或安全连接失败' : code === 'ENOTFOUND' ? '接口域名无法解析' : temporary ? '网络连接中断或接口暂时不可达' : '网络请求失败';
@@ -84,34 +85,46 @@ export async function requestModel(provider, model, prompt, images, signal, budg
     return result;
   }
 }
-export async function grade(config, settings, images, signal) {
+export async function grade(config, settings, images, signal, onProgress) {
+  const controller=new AbortController();
+  const timeoutMs=settings.gradingTimeoutMs || 180000;
+  const timeoutError=Error(`本份答卷模型评分超过${Math.round(timeoutMs/1000)}秒，已暂停；请检查正在等待的模型或更换模型后重试。`);
+  timeoutError.modelRequestFailure={type:'整份评分超时',timeoutMs};
+  const combined=AbortSignal.any([signal || new AbortController().signal,controller.signal]);
+  const timer=setTimeout(()=>controller.abort(timeoutError),timeoutMs);
+  try {return await gradeInternal(config,settings,images,combined,onProgress,controller);}
+  finally {clearTimeout(timer);}
+}
+async function gradeInternal(config, settings, images, signal, onProgress, controller) {
   const workflow = settings.workflows[config.workflowId];
   if (!workflow?.model) throw Error('工作流主模型未配置');
   const budget = { remaining: settings.requestBudget || 6 };
-  const call = async (entry, prompt) => {
+  const call = async (entry, prompt, role='主评') => {
     const provider = settings.providers[entry?.provider];
     if (!provider || !entry.model) throw Error('工作流模型或供应商无效');
     let text;
-    try {    text = await requestModel({ ...provider, reasoningEffort: entry.reasoningEffort, maxOutputTokens: workflow.outputLimitEnabled === false ? undefined : workflow.maxOutputTokens || provider.maxOutputTokens }, entry.model, prompt, [...fieldImages(config), ...images], signal, budget); }
-    catch (error) { if (!signal?.aborted) { error.modelRequestFailure ||= { model: entry.model, type: error.message }; error.modelRequestFailure.provider = entry.provider; } throw error; }
-    try { const parsed = parseResult(text, config); return { ...parsed, recognitionWarning: recognitionWarning(parsed), model: entry.model, rawResponse: text }; }
-    catch (error) { error.modelResponse = { model: entry.model, rawResponse: text }; throw error; }
+    const progress=event=>onProgress?.({...event,role,provider:entry.provider,model:entry.model,time:new Date().toISOString()});
+    progress({status:'requesting'});
+    try {    text = await requestModel({ ...provider, reasoningEffort: entry.reasoningEffort, maxOutputTokens: workflow.outputLimitEnabled === false ? undefined : workflow.maxOutputTokens || provider.maxOutputTokens }, entry.model, prompt, [...fieldImages(config), ...images], signal, {get remaining(){return budget.remaining;},set remaining(value){budget.remaining=value;},onProgress:progress}); }
+    catch (error) { progress({status:signal?.aborted?'cancelled':'failed',message:error.message});if (!signal?.aborted) { error.modelRequestFailure ||= { model: entry.model, type: error.message }; error.modelRequestFailure.provider = entry.provider; } throw error; }
+    try { const parsed = parseResult(text, config);progress({status:'completed',score:parsed.score}); return { ...parsed, recognitionWarning: recognitionWarning(parsed), model: entry.model, rawResponse: text }; }
+    catch (error) {progress({status:'failed',message:error.message}); error.modelResponse = { model: entry.model, rawResponse: text }; throw error; }
   };
   const prompt = promptFor(config);
   const useArbitration = workflow.recognitionPolicy === 'arbitration';
   if (!workflow.dualEval?.enabled) {
     const primary = await call(workflow.model, prompt);
     if (!primary.recognitionWarning || !useArbitration) return primary;
-    const verdict = await call(workflow.dualEval?.arbitration, `${prompt}\n首次识别存在疑点，请重新检查原图，忠实识别实际书写并独立评分，不得脑补。本次为独立仲裁，请仅依据原始答卷图片、题目及评分标准重新识别和逐项评分，合计你自己的总分，不得平均或推测其他模型评分。保留全部无法确认内容及疑点。`);
+    const verdict = await call(workflow.dualEval?.arbitration, `${prompt}\n首次识别存在疑点，请重新检查原图，忠实识别实际书写并独立评分，不得脑补。本次为独立仲裁，请仅依据原始答卷图片、题目及评分标准重新识别和逐项评分，合计你自己的总分，不得平均或推测其他模型评分。保留全部无法确认内容及疑点。`,'仲裁');
     return { ...verdict, recognitionWarning: [primary.recognitionWarning, verdict.recognitionWarning].filter(Boolean).join(' '), recognitionDecision: 'arbitration', recognitionArbitration: { primary, verdict } };
   }
   const dual = workflow.dualEval;
   const objective = dual.questionType !== 'subjective';
   const needsDetails = objective && (config.scoring?.units?.length || 0) <= 1;
   const dualPrompt = (config.scoring?.units?.length || 0) <= 1 ? `${prompt}\n双阅额外要求：必须返回scoringDetails数组，按评分标准中的每个小问或独立评分点逐项列出{label,score,maxScore,studentAnswer,reason}；reason说明对应评分规则、作答是否符合及给分或扣分原因，不得只有“正确/错误”，包括零分项，不得合并为整题总分。若提示包含固定评分项清单，id、label、maxScore及顺序必须严格按该清单返回；否则label使用评分标准原文中的编号和名称，顺序与标准一致。scoringDetails各项之和必须等于score。subScores仍只对应网页总分框。` : prompt;
-  const settled = await Promise.allSettled([call(workflow.model, dualPrompt), call(dual.secondary, dualPrompt)]);
-  const failed = settled.find(r => r.status === 'rejected'); if (failed) throw failed.reason;
-  const [a, b] = settled.map(r => r.value);
+  let a,b;
+  try {[a,b]=await Promise.all([call(workflow.model, dualPrompt,'主评'), call(dual.secondary, dualPrompt,'复评')]);}
+  catch(error){controller.abort(error);throw error;}
   // Uncertain readings require a third review before claiming three-way agreement.
   const readingWarning = [a.recognitionWarning, b.recognitionWarning].filter(Boolean).join(' ');
   const diff = Math.abs(a.score - b.score);
@@ -125,7 +138,7 @@ export async function grade(config, settings, images, signal) {
     const result = { ...a, recognitionWarning: readingWarning, formatWarning: a.formatWarning || b.formatWarning, score: subScores.length ? subScores.reduce((s, u) => s + u.score, 0) : (a.score + b.score) / 2, subScores, comment: `${a.comment || ''}\n${b.comment || ''}`, dualEval: { result: 'average', a, b } };
     return validateResult(result, config);
   }
-  const verdict = await call(dual.arbitration, `${dualPrompt}\n本次触发原因：${readingWarning ? '识别存疑' : '评分分歧或评分明细不完整'}。请仅依据原始答卷图片、题目及评分标准独立重新识别和逐项评分，合计你自己的总分，不得平均或推测其他模型评分。`);
+  const verdict = await call(dual.arbitration, `${dualPrompt}\n本次触发原因：${readingWarning ? '识别存疑' : '评分分歧或评分明细不完整'}。请仅依据原始答卷图片、题目及评分标准独立重新识别和逐项评分，合计你自己的总分，不得平均或推测其他模型评分。`,'仲裁');
   if (needsDetails && !verdict.scoringDetails?.length) {
     const error = Error('客观题仲裁模型未返回逐项评分明细，已停止；不能仅按总分继续');
     error.modelResponse = { model: dual.arbitration.model, rawResponse: verdict.rawResponse }; throw error;
