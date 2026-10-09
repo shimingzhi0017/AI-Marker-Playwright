@@ -34,13 +34,14 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   assert.ok(await page.locator('#grading').isVisible());
   await page.locator('[data-tab=presets]').click();
   page.once('dialog',dialog=>dialog.accept());
-  await page.locator('#importFile').setInputFiles({name:'fixture-config.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({presets:{active:'我的方案',list:{'我的方案':{answer:{text:'',images:[]},rubric:'',scoring:{maxScore:0,units:[]},workflowId:'我的工作流'}}},providers:{providers:{'个人接口':{protocol:'chat',endpoint:'',models:[]}}},workflows:{workflows:{'我的工作流':{id:'我的工作流',model:{provider:'个人接口',model:''}}}}}))});
+  await page.locator('#importFile').setInputFiles({name:'fixture-config.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({presets:{active:'我的方案',list:{'我的方案':{answer:{text:'',images:[]},rubric:'',scoring:{maxScore:0,units:[],items:[{id:'old-item',label:'旧题评分点',maxScore:4}]},workflowId:'我的工作流'}}},providers:{providers:{'个人接口':{protocol:'chat',endpoint:'',models:[]}}},workflows:{workflows:{'我的工作流':{id:'我的工作流',model:{provider:'个人接口',model:''}}}}}))});
   await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('导入成功'));
   const forbidden=await fetch(`${app.url}/api/settings`,{method:'POST',body:'{}'});assert.equal(forbidden.status,403);
   await page.locator('[data-tab=presets]').click();
   await page.locator('#answer').fill('模拟参考说明');await page.locator('#rubric').fill('模拟评分规范');await page.locator('#maxScore').fill('4');await page.locator('#savePreset').click();
   await page.waitForFunction(()=>document.querySelector('#notice').textContent==='当前任务方案已保存');
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets['我的方案'].answer,{text:'模拟参考说明',images:[]});
+    assert.equal(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets['我的方案'].scoring.items,undefined);
   await page.locator('#questionUpload').setInputFiles({name:'reference.png',mimeType:'image/png',buffer:image});
   await page.waitForFunction(()=>document.querySelectorAll('#questionImages img').length===1);
   await page.locator('#savePreset').click();await page.waitForFunction(()=>document.querySelector('#dirtyBadge').hidden);
