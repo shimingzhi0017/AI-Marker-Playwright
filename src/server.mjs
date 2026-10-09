@@ -1,4 +1,4 @@
-import { migrateGroups, applyGroup, fingerprint, inspectPage, installPicker, AdaptationDebugger } from './adaptation.mjs';
+import { migrateGroups, applyGroup, fingerprint, inspectPage, installPicker, AdaptationDebugger, submissionReadinessError } from './adaptation.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -115,7 +115,8 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
     state.starting = true; const expectedGeneration = generation;
     try {
     if (!platform) throw Error('请先打开阅卷浏览器');
-    const cfg = settings();
+    const cfg = applyGroup(settings(), page.url());
+    platform = new ZhixuePlatform(page, cfg, path.join(data, 'diagnostics')); platform.topicTracker = topicTracker;
     const snapshot = await platform.ready();
     if (generation !== expectedGeneration) throw Error('启动已取消');
     if (!snapshot) throw Error('平台已显示任务完成');
@@ -125,7 +126,8 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
       const provider = cfg.providers[entry?.provider];
       if (!entry?.model || !provider?.endpoint || !(provider.apiKey || process.env[provider.apiKeyEnv || ''])) throw Error('请在“模型接口”中填写接口地址、密钥和工作流模型');
     }
-    if (cfg.mode !== 'trial' && (!cfg.platform?.verified || !snapshot.strongIdentity || !cfg.platform.submitResponseUrlPattern)) throw Error('自动提交尚未实测，请使用“人工确认”模式，评分后点击“只填分”。');
+    const readinessError = submissionReadinessError(cfg, snapshot);
+    if (cfg.mode !== 'trial' && readinessError) throw Error(readinessError);
     state.running = true; state.count = 0; state.record = null; state.reason = ''; state.snapshot = snapshot; state.phase = '准备阅卷';
     runner = new Runner(platform, store, cfg, (record, mode) => {
       state.record = structuredClone(record); state.review = true; state.phase = '请确认评分';

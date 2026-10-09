@@ -7,7 +7,16 @@ import http from 'node:http';
 import sharp from 'sharp';
 import {launchBrowser} from '../src/browser.mjs';
 import {ZhixuePlatform} from '../src/platform.mjs';
-import {AdaptationDebugger,matchingGroup,applyGroup,fingerprint,installPicker,verifyManualResponse} from '../src/adaptation.mjs';
+import {AdaptationDebugger,matchingGroup,applyGroup,fingerprint,installPicker,verifyManualResponse,submissionReadinessError} from '../src/adaptation.mjs';
+
+test('已验证适配跨任务继承，编号缺失不能误报需要重测',()=>{
+  const inherited={platform:{verified:false},adaptationGroups:[{id:'same',url:'https://fixture.test/mark/',platform:{verified:true,submitResponseUrlPattern:'commit'}}]};
+  const cfg=applyGroup(structuredClone(inherited),'https://fixture.test/mark/?task=second');
+  assert.equal(submissionReadinessError(cfg,{strongIdentity:true}),'');
+  assert.match(submissionReadinessError(cfg,{strongIdentity:false}),/当前答卷尚未取得稳定编号/);
+  assert.match(submissionReadinessError(cfg,{strongIdentity:false}),/无需重新做提交测试/);
+  assert.match(submissionReadinessError(applyGroup(inherited,'https://different.test/'),{strongIdentity:true}),/当前网址/);
+});
 
 test('网址分组精确域名、路由前缀及歧义拒绝，规则修改使指纹变化',()=>{
   const groups=[{id:'root',url:'https://fixture.test/',platform:{verified:false}},{id:'specific',url:'https://fixture.test/mark/#/personal',platform:{verified:true}}];

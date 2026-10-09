@@ -29,6 +29,12 @@ export function applyGroup(settings, pageUrl) {
   cfg.adaptationGroupId=group?.id || null;cfg.adaptationScope=group?.url || null;
   return cfg;
 }
+export function submissionReadinessError(settings, snapshot) {
+  if (!settings.platform?.verified) return '当前网址匹配的页面适配尚未通过核验，请选择已验证的网址分组；同一适配无需按任务重复测试。';
+  if (!settings.platform.submitResponseUrlPattern) return '已验证的页面适配缺少提交回执接口配置，请检查网址分组。';
+  if (!snapshot.strongIdentity) return '页面适配已验证，但当前答卷尚未取得稳定编号。请在阅卷网站切换或刷新答卷后点击“检查页面”；无需重新做提交测试。仍未取得编号时，请使用人工确认并只填分。';
+  return '';
+}
 export function parseBody(text) {
   try { return JSON.parse(text); } catch { return Object.fromEntries(new URLSearchParams(text || '')); }
 }
