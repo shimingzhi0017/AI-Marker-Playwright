@@ -7,26 +7,29 @@ import { trackZhixueTopics } from '../src/zhixue-receipt.mjs';
 import { installImageProvenance } from '../src/image-provenance.mjs';
 import { launchBrowser } from '../src/browser.mjs';
 
-test('1至3份测试逐份确认，达到限制停止；无上限及超过3份禁止测试提交', async () => {
-  for (const limit of [1, 2, 3, 0, 4]) {
+test('自定义份数按成功提交计数并停止，无上限可人工停止，失败回执不计数', async () => {
+  for (const [limit, fail] of [[1,false], [3,false], [4,false], [20,false], [100,false], [0,false], [20,true]]) {
     const settings = JSON.parse(fs.readFileSync(new URL('../config.example.json', import.meta.url)));
     settings.mode = 'trial'; settings.batchLimit = limit;
     settings.presets[settings.active].scoring.maxScore = 10;
     settings.presets[settings.active].answer = '模拟参考答案';
     settings.presets[settings.active].rubric = '模拟评分标准';
-    const records = new Map(); let submits = 0, reviews = 0;
+    const records = new Map(); let submits = 0, reviews = 0, reads = 0;
     const platform = {
       options: { manualSubmissionTest: true, verified: false, submitResponseUrlPattern: 'commit' },
-      async ready() { return { identity: `paper${submits}`, taskId: 'task', units: [{label:'12',maxScore:10}], strongIdentity: true, networkTopic: {scanRecordId:`paper${submits}`} }; },
+      async ready() { reads++; return { identity: `paper${submits}`, taskId: 'task', units: [{label:'12',maxScore:10}], strongIdentity: true, networkTopic: {scanRecordId:`paper${submits}`} }; },
       async images() { return [{ data:'image', hash:'hash' }]; }, async fill() {}, async diagnostic() {},
-      async submit(snapshot, scores, options) { assert.equal(options.manualTest, true); submits++; return {confirmed:true}; }
+      async submit(snapshot, scores, options) { assert.equal(options.manualTest, true); if(fail) throw Error('模拟回执失败'); submits++; return {confirmed:true}; }
     };
     const store = {records:()=>[...records.values()],save:r=>records.set(r.id,structuredClone(r)),log(){},async images(){return [];} };
-    const runner = new Runner(platform, store, settings, async (r, mode) => {assert.equal(mode,'trial');reviews++;return 'submit';}, async()=>({score:4,comment:'test',subScores:[]}));
+    const runner = new Runner(platform, store, settings, async (r, mode) => {assert.equal(mode,'trial');reviews++;return limit === 0 && reviews === 6 ? 'stop' : 'submit';}, async()=>({score:4,comment:'test',subScores:[]}));
     const result = await runner.run();
-    assert.equal(submits, limit >= 1 && limit <= 3 ? limit : 0);
-    assert.equal(reviews, submits || 1);
+    assert.equal(submits, fail ? 0 : limit || 5);
+    assert.equal(reviews, fail ? 1 : limit || 6);
+    assert.equal(reads, reviews);
     assert.equal(result.count, submits);
+    if(limit && !fail) assert.match(result.reason, /数量限制/);
+    if(fail) assert.equal([...records.values()][0].state,'uncertain');
   }
 });
 
