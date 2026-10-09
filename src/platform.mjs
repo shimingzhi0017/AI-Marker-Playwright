@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
+import { resolveZhixueOptions } from './zhixue-builtin.mjs';
 import { matchesTopic, verifyCommit, zhixueCommitUrl, matchesZhixueCommitUrl } from './zhixue-receipt.mjs';
 
 const hash = buffer => crypto.createHash('sha256').update(buffer).digest('hex');
@@ -22,16 +23,25 @@ export function stableImageKey(value) {
     return url.href;
   } catch { return value; }
 }
-export function pageContext(value) {
+export function pageContext(value, depth = 0) {
   try {
     const url = new URL(value);
     const hashQuery = url.hash.includes('?') ? url.hash.slice(url.hash.indexOf('?') + 1) : '';
     const params = new URLSearchParams(hashQuery);
-    return { examId: params.get('examId') || url.searchParams.get('examId') || '', markingPaperId: params.get('markingPaperId') || url.searchParams.get('markingPaperId') || '' };
+    const direct={ examId: params.get('examId') || url.searchParams.get('examId') || '', markingPaperId: params.get('markingPaperId') || url.searchParams.get('markingPaperId') || '' };
+    if(!direct.markingPaperId && depth<3) for(const [key,value] of url.searchParams) if(/^app-\d+$/.test(key)) {
+      let decoded=value;
+      for(let i=0;i<3;i++) {
+        const nested=pageContext(new URL(decoded,url.origin).href,depth+1);
+        if(nested.markingPaperId)return {...nested,examId:direct.examId || nested.examId};
+        try {const next=decodeURIComponent(decoded);if(next===decoded)break;decoded=next;}catch{break;}
+      }
+    }
+    return direct;
   } catch { return { examId: '', markingPaperId: '' }; }
 }
 export class ZhixuePlatform {
-  constructor(page, settings, diagnosticsDir) { this.scope = settings.adaptationScope;this.page = page; this.options = settings.platform || {}; this.dir = diagnosticsDir; }
+  constructor(page, settings, diagnosticsDir) { this.scope = settings.adaptationScope;this.page = page; this.options = resolveZhixueOptions(settings.platform || {},page.url?.()); this.dir = diagnosticsDir; }
   async frame() {
     const matches = [];
     for (const frame of this.page.frames()) {
@@ -54,14 +64,15 @@ export class ZhixuePlatform {
     }, this.options);
     const inputs = frame.locator(this.inputSelector());
     const units = await inputs.evaluateAll(elements => elements.map((el, i) => ({ index: i, label: el.getAttribute('data-label') || el.closest('li')?.querySelector('.label')?.textContent?.trim() || `第${i + 1}题`, maxScore: Number(el.getAttribute('score') || el.getAttribute('max') || 0) })));
-    const context = pageContext(data.url);
+    const frameContext = pageContext(data.url), outerContext=pageContext(this.page.url?.());
+    const context = {examId:frameContext.examId || outerContext.examId,markingPaperId:frameContext.markingPaperId || outerContext.markingPaperId};
     const legacyTaskId = data.taskId || data.url.replace(/([?&])_t=[^&]+/g, '');
     const taskId = context.examId || context.markingPaperId ? `${context.examId}:${context.markingPaperId}:${legacyTaskId}` : legacyTaskId;
     const imageKeys = data.images.map(i => stableImageKey(i.sourceUrl || i.url));
     const networkTopic = this.options.identityMode === 'zhixue-network' ? await this.topicTracker?.match(imageKeys, context.markingPaperId, this.page) : null;
     if (matchesTopic(networkTopic, imageKeys, context.markingPaperId)) {
       data.paperId = networkTopic.scanRecordId;
-      return { ...data, taskId, legacyTaskId, pageContext: context, units, imageKeys, networkTopic,
+      return { ...data, taskId, legacyTaskId, pageContext: context, units, imageKeys, networkTopic, builtinAdapter:this.options.builtinAdapter,
         identity: `${taskId}:${data.paperId}`, identitySource: 'matched-scanrecorddetail', strongIdentity: true };
     }
     return { ...data, taskId, legacyTaskId, pageContext: context, units, imageKeys,

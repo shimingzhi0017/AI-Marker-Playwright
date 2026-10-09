@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { redact } from './submission-observer.mjs';
 import { verifyCommit, matchesZhixueCommitUrl } from './zhixue-receipt.mjs';
+import { resolveZhixueOptions } from './zhixue-builtin.mjs';
 
 export function urlScope(value) {
   const url = new URL(value);
@@ -26,6 +27,7 @@ export function migrateGroups(settings) {
 export function applyGroup(settings, pageUrl) {
   const cfg=structuredClone(settings); const group=matchingGroup(migrateGroups(cfg),pageUrl);
   cfg.platform=group ? structuredClone(group.platform) : { verified:false };
+  cfg.platform=resolveZhixueOptions(cfg.platform,pageUrl);
   cfg.adaptationGroupId=group?.id || null;cfg.adaptationScope=group?.url || null;
   return cfg;
 }
