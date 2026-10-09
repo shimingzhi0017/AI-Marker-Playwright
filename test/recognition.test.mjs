@@ -9,6 +9,13 @@ test('完整区域忠实转录规则及识别疑点必须进入人工确认', as
   assert.match(prompt,/横线上方、右侧/); assert.match(prompt,/不得根据参考答案/); assert.match(prompt,/不扩大答题范围/);
   const clear = {status:'clear',coverageChecked:true,notes:[],issues:[]};
   assert.equal(recognitionWarning({recognition:clear}),'');
+  assert.match(prompt,/明确写错、漏步骤或未作答/);
+  assert.match(prompt,/不要求每个笔画都完美清晰/);
+  assert.equal(recognitionWarning({recognition:{...clear,notes:['答案写在横线上方，清楚可辨']}}),'');
+  const harmless={location:'图1左侧',observed:'划掉的草稿字迹不清',reason:'被删除的旧内容有重叠',affectsScore:false,impactReason:'旧草稿已明确删除，最终答案清楚，不影响评分点'};
+  assert.equal(recognitionWarning({recognition:{...clear,status:'uncertain',issues:[harmless]}}),'');
+  assert.ok(recognitionWarning({recognition:{...clear,issues:[{...harmless,impactReason:''}]}}));
+  assert.ok(recognitionWarning({recognition:{...clear,issues:[{...harmless,affectsScore:true}]}}));
   for (const recognition of [undefined, {...clear,coverageChecked:false}, {...clear,status:'uncertain'}, {...clear,issues:[{location:'图1右上',observed:'[无法辨认]',reason:'涂抹重叠'}]}, {...clear,issues:'invalid'}]) {
     assert.ok(recognitionWarning({recognition}));
   }

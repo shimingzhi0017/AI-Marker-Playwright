@@ -7,10 +7,10 @@ function paragraph(container, title, text) {
   container.append(node('h3', title), node('p', String(text)));
 }
 function readingDetails(container, result) {
-  paragraph(container, '书写识别检查', result?.recognitionWarning || (result?.recognition?.status === 'clear' && result.recognition.coverageChecked ? '模型报告已检查完整答题区域，未报告识别疑点。' : '此结果未记录完整的书写识别检查。'));
+  paragraph(container, '书写识别检查', result?.recognitionWarning || ((result?.recognition?.status === 'clear' || result?.recognitionWarning === '') && result.recognition?.coverageChecked ? '模型报告已检查完整答题区域，未报告影响评分的识别疑点。' : '此结果未记录完整的书写识别检查。'));
   paragraph(container, '学生实际作答', result?.studentAnswer);
   for (const note of Array.isArray(result?.recognition?.notes) ? result.recognition.notes : []) if (typeof note === 'string') paragraph(container, '涂改及位置说明', note);
-  for (const issue of Array.isArray(result?.recognition?.issues) ? result.recognition.issues : []) if (issue && typeof issue === 'object') paragraph(container, `识别疑点 · ${issue.location || '位置未说明'}`, `可见内容：${issue.observed || '未说明'}；疑点：${issue.reason || '未说明'}`);
+  for (const issue of Array.isArray(result?.recognition?.issues) ? result.recognition.issues : []) if (issue && typeof issue === 'object') paragraph(container, `${issue.affectsScore === false && issue.impactReason ? '书写说明（模型判定不影响评分）' : '识别疑点'} · ${issue.location || '位置未说明'}`, `可见内容：${issue.observed || '未说明'}；说明：${issue.reason || '未说明'}${issue.impactReason ? '；评分影响：' + issue.impactReason : ''}`);
 }
 export function renderResultDetails(container, record, history = false) {
   container.replaceChildren(); const result = record.result;
