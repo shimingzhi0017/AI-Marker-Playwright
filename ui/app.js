@@ -70,7 +70,25 @@ function renderState() {
   $('comment').disabled=!state.review;$('correction').disabled=!state.review;updateScoreTotal();
   $('events').replaceChildren(...state.events.slice(0,20).map(e=>{const li=document.createElement('li'),time=document.createElement('time'),message=document.createElement('span');time.textContent=new Date(e.time).toLocaleTimeString();message.textContent=e.message;li.append(time,message);return li;}));
 }
-async function refreshWorkspaces() { const requestedWorkspace=workspace;const values=await api('/api/workspaces');if(requestedWorkspace!==workspace || switching)return;workspaces=values;if(pendingWorkspace!==null || document.activeElement===$('workspaceSelect')){$('workspaceStatus').textContent=`${values.filter(w=>w.running).length} 个任务正在运行 / 共 ${values.length} 个`;return;}if([...$('workspaceSelect').options].map(o=>o.value).join()!==values.map(w=>w.id).join())options($('workspaceSelect'),values.map(w=>w.id),workspace);if($('workspaceSelect').value!==workspace)$('workspaceSelect').value=workspace;for(const option of $('workspaceSelect').options){const w=values.find(w=>w.id===option.value);const label=`${w.name} · ${w.phase}${w.review?' · 待确认':''} · ${w.count}份`;if(option.textContent!==label)option.textContent=label;} $('workspaceStatus').textContent=`${values.filter(w=>w.running).length} 个任务正在运行 / 共 ${values.length} 个`; }
+function requestWorkspace(id) {
+  if(id===workspace && currentTab!=='models'){pendingWorkspace=null;return;}
+  if(busy){pendingWorkspace=id;notice('当前操作完成后将自动切换到所选任务');renderWorkspaceCards();return;}
+  action(()=>switchWorkspace(id));
+}
+function renderWorkspaceCards() {
+  const target=$('workspaceCards'),ids=workspaces.map(w=>w.id);
+  for(const card of [...target.children])if(!ids.includes(card.dataset.workspace))card.remove();
+  for(const w of workspaces) {
+    let card=[...target.children].find(el=>el.dataset.workspace===w.id);
+    if(!card){card=document.createElement('button');card.type='button';card.dataset.workspace=w.id;card.className='workspace-card';
+      for(const cls of ['workspace-card-name','workspace-card-status','workspace-card-count']){const text=document.createElement('span');text.className=cls;card.append(text);}
+      card.onclick=()=>requestWorkspace(w.id);target.append(card);}
+    const selected=w.id===workspace;card.classList.toggle('active',selected);card.classList.toggle('running',!!w.running);card.classList.toggle('review',!!w.review);card.classList.toggle('pending',w.id===pendingWorkspace);card.setAttribute('aria-pressed',String(selected));
+    const values=[w.name,w.id===pendingWorkspace?'等待切换':w.review?'待人工确认':w.phase || '待开始',`已提交 ${w.count || 0} 份`];
+    [...card.children].forEach((el,i)=>{if(el.textContent!==values[i])el.textContent=values[i];});
+  }
+}
+async function refreshWorkspaces() { const requestedWorkspace=workspace;const values=await api('/api/workspaces');if(requestedWorkspace!==workspace || switching)return;workspaces=values;renderWorkspaceCards();if(pendingWorkspace!==null || document.activeElement===$('workspaceSelect')){$('workspaceStatus').textContent=`${values.filter(w=>w.running).length} 个任务正在运行 / 共 ${values.length} 个`;return;}if([...$('workspaceSelect').options].map(o=>o.value).join()!==values.map(w=>w.id).join())options($('workspaceSelect'),values.map(w=>w.id),workspace);if($('workspaceSelect').value!==workspace)$('workspaceSelect').value=workspace;for(const option of $('workspaceSelect').options){const w=values.find(w=>w.id===option.value);const label=`${w.name} · ${w.phase}${w.review?' · 待确认':''} · ${w.count}份`;if(option.textContent!==label)option.textContent=label;} $('workspaceStatus').textContent=`${values.filter(w=>w.running).length} 个任务正在运行 / 共 ${values.length} 个`; }
 async function switchWorkspace(id) {if(dirty.size&&!confirm('当前任务有未保存修改，切换将放弃这些修改。是否继续？')){$('workspaceSelect').value=workspace;return;}dirty.clear();$('dirtyBadge').hidden=true;switching=true; workspace=id;if(currentTab==='models'){currentTab='grading';document.querySelector('.task-tabs').hidden=false;document.querySelectorAll('.tab').forEach(el=>el.hidden=el.id!==currentTab);document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===currentTab));$('title').textContent=labels[currentTab];} displayedRecord=null; selectedRecord=null; $('historyDetail').hidden=true;$('historyDialog').close(); $('resultPanel').hidden=true; $('resultEmpty').hidden=false; $('answerImages').replaceChildren(); $('notice').hidden=true;try{config=await api('/api/settings');renderSettings();document.querySelectorAll('a[href*="/api/export"]').forEach(a=>a.href=scoped('/api/export?format='+new URL(a.href).searchParams.get('format')));if(currentTab==='history')await renderHistory();}finally{switching=false;} await poll(); }
 async function poll() { if(switching)return;const id=workspace;try { const next=await api('/api/state');if(id!==workspace || switching)return;state=next;renderState();adaptationUI.poll(state);await refreshWorkspaces(); } catch(e) { $('phase').textContent='连接已断开'; notice('控制台连接已断开，请重新启动可视化程序。'); } }
 const wasArbitrated = r => r.result?.dualEval?.result === 'arbitration' || !!r.result?.recognitionArbitration || r.originalResult?.dualEval?.result === 'arbitration' || !!r.originalResult?.recognitionArbitration;
@@ -113,7 +131,7 @@ $('workflowModelSearch').oninput=showModelChoices;
 $('closeWorkflowModels').onclick=()=>$('workflowModelDialog').close();
 
 $('importFile').onchange=()=>action(async()=>{const file=$('importFile').files[0];if(!file)return;if(!confirm('导入将替换当前配置，是否继续？'))return;await api('/api/import',JSON.parse(await file.text()));config=await api('/api/settings');renderSettings();notice('导入成功，请核对方案及模型后开始',true);$('importFile').value='';});
-$('workspaceSelect').onchange=()=>{const selected=$('workspaceSelect').value;if(selected===workspace && currentTab!=='models'){pendingWorkspace=null;return;}if(busy){pendingWorkspace=selected;notice('当前操作完成后将自动切换到所选任务');return;}action(()=>switchWorkspace(selected));};
+$('workspaceSelect').onchange=()=>requestWorkspace($('workspaceSelect').value);
 $('addWorkspace').onclick=()=>action(async()=>{const result=await api('/api/workspaces',{});await refreshWorkspaces();await switchWorkspace(result.id);const name=await workspaceDialog();if(name!==null){if(!name)throw Error('任务名称不能为空');await api('/api/workspace-name',{name});config.workspaceName=name;await refreshWorkspaces();}notice('新任务已创建，配置已复制。请在自己的浏览器登录并选择阅卷页面。',true);});
 $('pauseAll').onclick=()=>action(async()=>{await refreshWorkspaces();await Promise.all(workspaces.map(w=>api('/api/pause',{},w.id)));notice('已请求暂停全部任务',true);});
 const enhancements=createEnhancements({getConfig:()=>config,save,action,markDirty,renderPreset,renderUnits,renderProvider,renderWorkflow,getSnapshot:()=>state.snapshot,api,refreshSettings:renderSettings,notice});

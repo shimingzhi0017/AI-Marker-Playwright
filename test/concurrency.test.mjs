@@ -61,6 +61,14 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   const starts=await Promise.all([request('/api/start',{},'default'),request('/api/start',{},b)]);assert.ok(starts.every(s=>s.status===200),JSON.stringify(starts));
   await until(async()=>(await Promise.all(['default',b].map(id=>request('/api/state',undefined,id)))).every(s=>s.value.review));
   assert.equal(maxActive,2);
+  await page.waitForFunction(()=>document.querySelectorAll('#workspaceCards .workspace-card').length===2 && document.querySelectorAll('#workspaceCards .review').length===2);
+  await page.locator('#workspaceSelect').focus();
+  await request('/api/workspace-name',{name:'实时任务 A'},'default');
+  await page.waitForFunction(()=>[...document.querySelectorAll('.workspace-card-name')].some(el=>el.textContent==='实时任务 A'));
+  await page.locator('.workspace-card[data-workspace="default"]').click();
+  await page.waitForFunction(()=>document.querySelector('#workspaceCards .active').dataset.workspace==='default');
+  assert.equal(await page.locator('#ocr').innerText(),'模拟内容');
+
   const activeDeletion=await request('/api/workspaces',{action:'delete',id:b});assert.equal(activeDeletion.status,400);
   await page.locator('#workspaceSelect').selectOption('default');await page.waitForFunction(()=>document.querySelector('#ocr').textContent==='模拟内容');
   await page.locator('#pause').click();await page.waitForFunction(()=>document.querySelector('#phase').textContent==='已暂停');assert.equal((await request('/api/state',undefined,b)).value.review,true);
