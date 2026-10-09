@@ -1,3 +1,4 @@
+import {spawn} from 'node:child_process';
 import { migrateGroups, applyGroup, fingerprint, inspectPage, installPicker, AdaptationDebugger, submissionReadinessError } from './adaptation.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -324,7 +325,16 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           const taskName=settings().workspaceName || '任务';
           const safeName=taskName.replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').slice(0,60) || '任务';
           const destination = path.join(directory, safeName+'-history-'+Date.now()+'.'+input.format);
-          exportHistory(records.map(r=>({...r,workspaceName:taskName})),destination); text(res,200,{path:destination,count:records.length,taskName}); return;
+          exportHistory(records.map(r=>({...r,workspaceName:taskName})),destination);
+          let folderOpened=false,folderError;
+          if(input.openFolder===true){
+            try {
+              if(process.platform!=='win32')throw Error('此系统暂不支持自动打开文件夹');
+              await new Promise((resolve,reject)=>{const explorer=spawn('explorer.exe',['/select,',destination],{windowsHide:true,stdio:'ignore',detached:true});explorer.once('error',reject);explorer.once('spawn',()=>{explorer.unref();resolve();});});
+              folderOpened=true;
+            }catch(error){folderError=error.message;}
+          }
+          text(res,200,{path:destination,count:records.length,taskName,folderOpened,folderError}); return;
         }
         case '/api/start': await start(); break;
         case '/api/pause': pause(); break;
