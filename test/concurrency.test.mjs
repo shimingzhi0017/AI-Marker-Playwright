@@ -49,6 +49,14 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   await page.locator('[data-score]').fill('3');await page.locator('#fill').click();await page.waitForFunction(()=>document.querySelector('#reason').textContent.includes('等待用户在网站提交'));
   assert.equal(await gradingPages[1].locator('input').inputValue(),'3');assert.equal(await gradingPages[0].locator('input').inputValue(),'');
   const history=(await request('/api/history',undefined,b)).value;assert.equal(history[0].result.score,3);assert.equal(app.store.records()[0].state,'paused');
+  const globalProviders=(await request('/api/settings')).value.providers;
+  globalProviders['共享测试']={endpoint:base,apiKey:'fixture-shared',models:['shared-model']};
+  assert.equal((await request('/api/providers',{providers:globalProviders},b)).status,200);
+  assert.deepEqual((await request('/api/settings')).value.providers['共享测试'],globalProviders['共享测试']);
+  assert.deepEqual((await request('/api/settings',undefined,b)).value.providers['共享测试'],globalProviders['共享测试']);
+  assert.equal(await page.locator('aside #workspaceSelect').count(),1);
+  assert.equal(await page.locator('aside [data-tab=models]').count(),1);
+  assert.equal(await page.locator('.task-tabs [data-tab=workflows]').count(),1);
   await page.locator('[data-tab=history]').click();
   assert.equal(await page.locator('#exportWorkspace').count(),0);
   assert.equal(await page.locator('#workspaceSelect').inputValue(),b);

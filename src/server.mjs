@@ -25,7 +25,7 @@ function sanitizeSettings(settings) {
   if (!settings.presets[settings.active]) throw Error('请选择有效方案');
   return settings;
 }
-export async function createApp({ root = defaultRoot, browserFactory = opts => launchPersistentBrowser(opts.profile, opts.launch), gradeFunction, coordinator, child = false } = {}) {
+export async function createApp({ root = defaultRoot, browserFactory = opts => launchPersistentBrowser(opts.profile, opts.launch), gradeFunction, coordinator, child = false, sharedProvidersFile } = {}) {
   const children = new Map();
   if (!coordinator) {
     const locks = new Map(), stores = new Set();
@@ -39,6 +39,22 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
   fs.mkdirSync(root, { recursive: true });
   const file = path.join(root, 'config.json'), data = path.join(root, 'data');
   if (!fs.existsSync(file)) fs.copyFileSync(path.join(defaultRoot, 'config.example.json'), file);
+  sharedProvidersFile ||= path.join(root,'shared-providers.json');
+  if(!fs.existsSync(sharedProvidersFile)) fs.writeFileSync(sharedProvidersFile,JSON.stringify(loadSettings(file).providers,null,2));
+  const localConfig=loadSettings(file), sharedProviders=JSON.parse(fs.readFileSync(sharedProvidersFile,'utf8'));
+  let migrated=false;
+  for(const [name,provider] of Object.entries(localConfig.sharedProvidersMigrated ? {} : localConfig.providers)) {
+    if(!Object.hasOwn(sharedProviders,name)) {sharedProviders[name]=provider;migrated=true;}
+    else if(JSON.stringify(provider)!==JSON.stringify(sharedProviders[name]) && !localConfig.sharedProvidersMigrated) {
+      const base=name+'（'+(localConfig.workspaceName || path.basename(root)).slice(0,16)+'）';let alias=base,index=2;
+      while(Object.hasOwn(sharedProviders,alias)&&JSON.stringify(sharedProviders[alias])!==JSON.stringify(provider))alias=base+index++;
+      sharedProviders[alias]=provider;
+      for(const w of Object.values(localConfig.workflows))for(const entry of [w.model,w.dualEval?.secondary,w.dualEval?.arbitration])if(entry?.provider===name)entry.provider=alias;
+      migrated=true;
+    }
+  }
+  if(!localConfig.sharedProvidersMigrated){fs.copyFileSync(file,file+'.before-shared-providers');localConfig.sharedProvidersMigrated=true;fs.writeFileSync(file,JSON.stringify(localConfig,null,2));}
+  if(migrated)fs.writeFileSync(sharedProvidersFile,JSON.stringify(sharedProviders,null,2));
   const store = new Store(data);
   coordinator.stores.add(store);
   const state = { running: false, phase: '待开始', reason: '请导入原插件配置，或在设置中填写方案和模型。', count: 0, record: null, snapshot: null, browserOpen: false, review: false, countdown: null };
@@ -54,10 +70,11 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
       if (record.state === 'submitted') state.count++;
     }
   };
-  function settings() { return loadSettings(file); }
+  function settings() { const cfg=loadSettings(file);cfg.providers=JSON.parse(fs.readFileSync(sharedProvidersFile,'utf8'));return cfg; }
   function writeSettings(value) {
     if (state.running || state.starting) throw Error('请先暂停阅卷，再修改配置');
     sanitizeSettings(value);
+    value.providers=settings().providers;
     fs.writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2)); fs.renameSync(`${file}.tmp`, file);
     if (page) { platform = new ZhixuePlatform(page, value, path.join(data, 'diagnostics')); platform.topicTracker = topicTracker; }
     note('设置已保存');
@@ -191,7 +208,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           }
           const id = crypto.randomUUID(), directory = path.join(root,'sessions',id);
           fs.mkdirSync(directory,{recursive:true}); fs.copyFileSync(file,path.join(directory,'config.json'));
-          const app = await createApp({root:directory,browserFactory,gradeFunction,coordinator,child:true});
+          const app = await createApp({root:directory,browserFactory,gradeFunction,coordinator,child:true,sharedProvidersFile});
           const response = await fetch(app.url); const cookie = response.headers.get('set-cookie').split(';')[0];
           const name = String(input.name || `任务 ${children.size+2}`).slice(0,80);
           const childSettings=JSON.parse(fs.readFileSync(path.join(directory,'config.json'),'utf8'));childSettings.workspaceName=name;fs.writeFileSync(path.join(directory,'config.json'),JSON.stringify(childSettings,null,2));
@@ -199,9 +216,14 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           children.set(id,{app,cookie,name});
           text(res,200,{ok:true,id}); return;
         }
+        case '/api/providers': {
+          const cfg=settings();sanitizeSettings({...cfg,providers:input.providers});
+          fs.writeFileSync(sharedProvidersFile+'.tmp',JSON.stringify(input.providers,null,2));fs.renameSync(sharedProvidersFile+'.tmp',sharedProvidersFile);
+          note('全任务共享模型接口已保存；正在运行的轮次继续使用启动时配置');break;
+        }
         case '/api/settings': writeSettings(input); break;
         case '/api/workspace-name': { const cfg=settings();cfg.workspaceName=String(input.name||'').trim().slice(0,80);if(!cfg.workspaceName)throw Error('任务名称不能为空');fs.writeFileSync(file,JSON.stringify(cfg,null,2));break; }
-        case '/api/import': writeSettings(importSettings(input)); break;
+        case '/api/import': {const imported=importSettings(input);sanitizeSettings(imported);fs.writeFileSync(sharedProvidersFile,JSON.stringify(imported.providers,null,2));writeSettings(imported);break;}
         case '/api/open': await openBrowser(); break;
         case '/api/diagnose': {
           if (state.running) throw Error('请先暂停'); if (!platform) throw Error('请先打开阅卷浏览器');
@@ -263,7 +285,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           const response = await fetch(address, { headers: provider.protocol === 'gemini' ? { 'x-goog-api-key': key } : { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(30000) });
           if (!response.ok) throw Error(`模型目录请求失败（${response.status}）`); const value = await response.json();
           provider.models = provider.protocol === 'gemini' ? (value.models || []).map(m => m.name.replace(/^models\//, '')) : (value.data || []).map(m => m.id);
-          writeSettings(cfg); break;
+          fs.writeFileSync(sharedProvidersFile,JSON.stringify(cfg.providers,null,2)); break;
         }
         default: text(res, 404, { error: '接口不存在' }); return;
       }
