@@ -54,10 +54,10 @@ function renderState() {
     displayedRecord=`${r.id}:${!!r.result}:${r.imageFiles?.length}`; renderImages($('answerImages'),r); $('presetLabel').textContent=r.presetName; $('resultEmpty').hidden=!!r.result; $('resultPanel').hidden=!r.result;
     if(r.result) { $('scores').replaceChildren(); const values=r.result.subScores?.length ? r.result.subScores : [{label:'总分',score:r.result.score}]; for(const [i,s] of values.entries()) { const label=document.createElement('label'); label.textContent=s.label; const input=document.createElement('input'); input.type='number'; input.step=p?.scoring?.units?.[i]?.roundStep||p?.scoring?.roundStep||0.5; input.min=0;input.max=p?.scoring?.units?.[i]?.maxScore||p?.scoring?.maxScore||''; input.value=s.score; input.dataset.score='true'; label.append(input); $('scores').append(label); } $('ocr').textContent=r.result.studentAnswer || '无识别文本'; $('comment').value=r.result.comment || ''; $('correction').value=''; $('rawResult').textContent=JSON.stringify(r.result,null,2);$('dualSummary').hidden=!r.result.dualEval;$('dualSummary').textContent=r.result.dualEval?`双评：${{consensus:'一致',average:'阈值内平均',arbitration:'仲裁'}[r.result.dualEval.result]} · 主评 ${r.result.dualEval.a.score} / 复评 ${r.result.dualEval.b.score}`:''; }
   }
-  const canSubmit=!!(config?.platform?.verified && r?.snapshot?.strongIdentity && config?.platform?.submitResponseUrlPattern);
+  const canSubmit=!!((config?.platform?.verified || (config?.platform?.manualSubmissionTest && config.mode === 'trial' && config.batchLimit === 1 && r?.snapshot?.networkTopic)) && r?.snapshot?.strongIdentity && config?.platform?.submitResponseUrlPattern);
   for(const id of ['fill','stopReview']) $(id).disabled=!state.review;
   $('submit').disabled=!state.review || !canSubmit;
-  $('submitHint').textContent=canSubmit ? '确认提交后会等待平台响应，再处理下一份。' : '提交适配尚未实测：可只填分，再在阅卷网站手动提交。';
+  $('submitHint').textContent=canSubmit ? (config.platform.manualSubmissionTest && !config.platform.verified ? '人工确认提交测试：核验服务器回执后停止，本次最多提交1份。' : '确认提交后会等待平台响应，再处理下一份。') : '提交适配尚未实测：可只填分，再在阅卷网站手动提交。';
   for(const input of document.querySelectorAll('[data-score]')) input.disabled=!state.review;
   $('comment').disabled=!state.review;$('correction').disabled=!state.review;updateScoreTotal();
   $('events').replaceChildren(...state.events.slice(0,20).map(e=>{const li=document.createElement('li'),time=document.createElement('time'),message=document.createElement('span');time.textContent=new Date(e.time).toLocaleTimeString();message.textContent=e.message;li.append(time,message);return li;}));

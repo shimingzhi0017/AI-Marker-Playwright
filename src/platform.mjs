@@ -126,8 +126,8 @@ export class ZhixuePlatform {
     }
     await this.assertCurrent(snapshot);
   }
-  async submit(snapshot, scores) {
-    if (!this.options.verified || (!this.options.paperIdSelector && !snapshot.networkTopic) || !this.options.submitResponseUrlPattern) throw Error('平台尚未完成实测配置，禁止自动提交');
+  async submit(snapshot, scores, { manualTest = false } = {}) {
+    if ((!this.options.verified && !(manualTest && this.options.manualSubmissionTest && snapshot.networkTopic)) || (!this.options.paperIdSelector && !snapshot.networkTopic) || !this.options.submitResponseUrlPattern) throw Error('平台尚未完成实测配置，禁止自动提交');
     await this.assertCurrent(snapshot);
     const frame = await this.frame();
     const inputs = frame.locator(this.inputSelector());

@@ -217,7 +217,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           if (!state.review || !state.liveRecord || !pendingReview) throw Error('当前没有待确认评分');
           if (input.recordId && input.recordId !== state.liveRecord.id) throw Error('评分记录已变化，请确认当前答卷');
           if (!['fill', 'submit', 'stop'].includes(input.decision)) throw Error('操作无效');
-          if (input.decision === 'submit' && (!settings().platform?.verified || !state.liveRecord.snapshot.strongIdentity || !settings().platform?.submitResponseUrlPattern)) throw Error('自动提交尚未验收，请点击“只填分”，再在网站手动提交。');
+          if (input.decision === 'submit' && ((!settings().platform?.verified && !(settings().platform?.manualSubmissionTest && runner.settings.mode === 'trial' && runner.settings.batchLimit === 1 && state.liveRecord.snapshot.networkTopic)) || !state.liveRecord.snapshot.strongIdentity || !settings().platform?.submitResponseUrlPattern)) throw Error('自动提交尚未验收，请点击“只填分”，再在网站手动提交。');
           const record = state.liveRecord;
           if(input.comment!==undefined&&(typeof input.comment!=='string'||input.comment.length>100000))throw Error('评分依据格式无效');
           if (input.scores) {

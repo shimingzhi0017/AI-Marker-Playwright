@@ -48,9 +48,10 @@ export class Runner {
         await this.platform.fill(snapshot, scores);
         signal.throwIfAborted();
         if (decision === 'fill') { record.state = 'filled'; this.store.save(record); return { count: this.count, reason: '已填分，等待用户在网站提交' }; }
-        if (!this.platform.options?.verified || !snapshot.strongIdentity || !this.platform.options.submitResponseUrlPattern) throw Error('尚未实测答卷标识和提交响应；已保存评分，请先使用只填分模式');
+        const manualTest = this.platform.options?.manualSubmissionTest && this.settings.mode === 'trial' && this.settings.batchLimit === 1 && !!snapshot.networkTopic;
+        if ((!this.platform.options?.verified && !manualTest) || !snapshot.strongIdentity || !this.platform.options.submitResponseUrlPattern) throw Error('尚未实测答卷标识和提交响应；已保存评分，请先使用只填分模式');
         record.state = 'submitting'; this.store.save(record);
-        record.receipt = await this.platform.submit(snapshot, scores);
+        record.receipt = await this.platform.submit(snapshot, scores, { manualTest });
         record.state = 'submitted'; this.store.save(record);
         this.count++; this.store.log('submitted', { id: record.id, count: this.count });
         previous = snapshot;
