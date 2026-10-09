@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { validateConfig, calculate } from './domain.mjs';
 import { grade } from './models.mjs';
-import { detectBlank } from './blank.mjs';
+import { detectBlank, blankReferenceWarning } from './blank.mjs';
 
 export class Runner {
   constructor(platform, store, settings, review, modelGrade = grade, coordinator) {
@@ -31,13 +31,17 @@ export class Runner {
         record.imageHashes = images.map(i => i.hash); record.state = 'grading'; this.store.save(record);
         let result;
         if (config.blankDetection?.enabled) {
-          record.blankDetection = await detectBlank(images, config.blankDetection.reference, config.blankDetection.threshold);
+          const warning = blankReferenceWarning(config.blankDetection.reference, images.length, config.blankDetection.threshold);
+          if (warning) {
+            record.blankDetection = { isBlank: false, skipped: true, warning };
+            this.store.log('blank-detection-skipped', { id: record.id, warning });
+          } else record.blankDetection = await detectBlank(images, config.blankDetection.reference, config.blankDetection.threshold);
         }
         if (record.blankDetection?.isBlank) result = { score: 0, studentAnswer: '', comment: '范本空白检测：请确认', subScores: (config.scoring?.units || []).map(u => ({ label: u.label, score: 0 })) };
         else result = await this.modelGrade(config, this.settings, images.map(i => i.data), signal);
         signal.throwIfAborted();
         record.result = calculate(result, config); record.state = 'review'; this.store.save(record);
-        const decision = await this.review(record, record.blankDetection?.isBlank ? 'trial' : this.settings.mode || 'trial');
+        const decision = await this.review(record, record.blankDetection?.isBlank || record.blankDetection?.skipped ? 'trial' : this.settings.mode || 'trial');
         signal.throwIfAborted();
         if (decision === 'stop') { record.state = 'paused'; this.store.save(record); return { count: this.count, reason: '用户停止，评分已保存' }; }
         const scores = record.result.subScores.length ? record.result.subScores.map(s => s.score) : [record.result.score];

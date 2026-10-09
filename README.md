@@ -143,6 +143,8 @@ npm.cmd run tool -- export history.csv
 npm.cmd run tool -- export history.html
 ```
 
+空白检测需要先保存与当前题目图片数量对应的范本。未设置范本、数量不匹配或范本参数无效时，本份答卷仍交给模型评分，并强制人工确认；工作台和历史会保留提示，不会直接判零或自动提交。损坏的答卷图片仍会暂停处理。
+
 确认历史记录确实为空白答卷后建立范本：
 
 ```powershell

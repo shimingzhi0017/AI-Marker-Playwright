@@ -121,7 +121,25 @@ test('空白范本必须与图片对应，损坏图片不能判零', async () =>
   const reference = [await blackRatio(buffer)];
   assert.equal((await detectBlank([{ buffer }], reference)).isBlank, true);
   await assert.rejects(detectBlank([{ buffer: Buffer.from('bad') }], reference));
-  await assert.rejects(detectBlank([{ buffer }], []), /数量/);
+  await assert.rejects(detectBlank([{ buffer }], []), /未设置范本/);
+});
+
+test('空白检测缺少或不匹配范本时走模型评分并强制人工确认', async t => {
+  const f = await fixture(t);
+  for (const reference of [undefined, [], [{ threshold: 0, ratio: 0 }, { threshold: 0, ratio: 0 }], [{ threshold: 0 }]]) {
+    f.settings.presets.p.blankDetection = { enabled: true, reference, threshold: 0.01 };
+    let modelCalls = 0;
+    const outcome = await new Runner(f.platform, f.store, f.settings, async (record, mode) => {
+      assert.equal(mode, 'trial');
+      assert.equal(record.blankDetection.skipped, true);
+      assert.match(record.blankDetection.warning, /范本/);
+      assert.equal(record.result.score, 2);
+      return 'stop';
+    }, async () => { modelCalls++; return result([1, 1]); }).run();
+    assert.equal(modelCalls, 1);
+    assert.equal(outcome.paused, undefined);
+    assert.equal(f.submits(), 0);
+  }
 });
 test('历史导出保留零分且HTML转义模型内容', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'marker-export-'));
