@@ -82,6 +82,8 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   assert.deepEqual((await request('/api/settings')).value.providers['共享测试'],globalProviders['共享测试']);
   assert.deepEqual((await request('/api/settings',undefined,b)).value.providers['共享测试'],globalProviders['共享测试']);
   assert.equal(await page.locator('aside #workspaceSelect').count(),1);
+  assert.equal(await page.locator('aside #workspaceCards').count(),1);
+  assert.equal(await page.locator('main #workspaceCards').count(),0);
   assert.equal(await page.locator('aside [data-tab=models]').count(),1);
   assert.equal(await page.locator('.task-tabs [data-tab=workflows]').count(),1);
   await page.locator('[data-tab=models]').click();

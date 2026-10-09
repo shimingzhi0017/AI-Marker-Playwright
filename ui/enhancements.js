@@ -2,7 +2,7 @@
 export function buildLayout() {
   const $ = id => document.getElementById(id);
   $('eyebrow').hidden = true;
-  document.querySelector('main > header').insertAdjacentHTML('afterend','<section class="task-overview" aria-label="任务概览"><div class="task-overview-heading"><h2>任务概览</h2><span>状态实时更新 · 点击切换</span></div><div id="workspaceCards" class="workspace-cards"></div></section>');
+  document.querySelector('.workspace-controls').insertAdjacentHTML('afterbegin','<section class="task-overview" aria-label="任务概览"><div class="task-overview-heading"><h2>任务概览</h2><span>状态实时更新 · 点击切换</span></div><div id="workspaceCards" class="workspace-cards"></div></section>');
   const noticePopup=document.createElement('div');noticePopup.id='noticePopup';
   const closeNotice=document.createElement('button');closeNotice.id='closeNotice';closeNotice.textContent='×';closeNotice.setAttribute('aria-label','关闭提示');
   document.body.append(noticePopup);noticePopup.append($('notice'),closeNotice);
