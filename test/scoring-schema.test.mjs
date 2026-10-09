@@ -16,6 +16,22 @@ test('评分标准固定编号对齐改名结果，拒绝漏项重复未知及�
   assert.equal(scoringItemSchema({...cfg,rubric:'①第（1）问：2分。'}).length,0);
 });
 
+test('真实全对全错标准标题生成统一编号，题号描述匹配且不掩盖分数分歧',()=>{
+  const cfg={answer:'fixture',rubric:'一、第（1）问：只能给0分或2分\n\n2分：正确。\n0分：错误。\n二、第（2）问：只能给0分或2分\n三、第（3）问：只能给0分或2分\n四、第（4）问：只能给0分或2分',scoring:{maxScore:8}};
+  const schema=scoringItemSchema(cfg);assert.equal(schema.length,4);
+  const labels=['（1）滑块经过第二个光电门时的速度大小','（2）测得速度相对于真实值的误差偏向','（3）滑块的加速度大小','（4）测得加速度相对于真实值的误差偏向'];
+  const result={score:6,subScores:[],scoringDetails:labels.map((label,i)=>({label,score:i===3?0:2,maxScore:2}))};
+  const parsed=parseResult(JSON.stringify(result),cfg);
+  assert.deepEqual(parsed.scoringDetails.map(x=>x.id),schema.map(x=>x.id));
+  assert.deepEqual(parsed.scoringDetails.map(x=>x.label),schema.map(x=>x.label));
+  assert.equal(sameScoringItems(parsed.scoringDetails,schema.map(item=>({...item,score:2}))),false);
+  const oldBare=result.scoringDetails.map((item,i)=>({...item,label:`第（${i+1}）问`}));
+  assert.equal(alignScoringItems(result.scoringDetails,oldBare).length,4);
+  assert.equal(sameScoringItems(result.scoringDetails,oldBare),true);
+  const split=[{label:'第（1）问A',score:2,maxScore:2},{label:'第（1）问B',score:2,maxScore:2}];
+  assert.equal(sameScoringItems(split,[{label:'第（1）问',score:2,maxScore:2},{label:'第（2）问',score:2,maxScore:2}]),false);
+});
+
 test('任意数量及常见编号格式随当前评分标准生成，覆盖旧任务分项',()=>{
   for (const count of [1,2,3,5,8,24]) {
     const cfg={answer:'fixture',rubric:Array.from({length:count},(_,i)=>`${i+1}. 评分点${i+1}：满分2分。`).join('\n'),scoring:{maxScore:count*2,items:[{id:'old',label:'旧题目',maxScore:count*2}]}};

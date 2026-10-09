@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { scoringLabelKey } from '../ui/scoring-labels.js';
+import { scoringLabelKey, matchScoringItem } from '../ui/scoring-labels.js';
 
 const context = vm.createContext({ console });
 vm.runInContext(fs.readFileSync(new URL('../vendor/prompt.js', import.meta.url), 'utf8'), context);
@@ -11,8 +11,16 @@ function rubricScoringItems(config) {
   // Read only explicit item maxima; never infer points from deductions or examples.
   const number = '(?:[①-⑳]|\\d+[.、．]|[（(]\\d+[）)]|[一二三四五六七八九十]+、)';
   const pattern = new RegExp(`^\\s*(?:${number}\\s*)?([^\\n：:]+)[：:]\\s*(?:满分\\s*)?(\\d+(?:\\.\\d+)?)\\s*分[。.]?\\s*$`, 'gmu');
-  const items = [...fieldText(config.rubric).matchAll(pattern)]
+  let items = [...fieldText(config.rubric).matchAll(pattern)]
     .map((match, index) => ({ id: `scoring-item-${index + 1}`, label: match[1].trim(), maxScore: Number(match[2]) }));
+  const valid=items=>items.length && items.every(item=>item.maxScore>0) &&
+    new Set(items.map(item=>scoringLabelKey(item.label))).size===items.length &&
+    Math.abs(items.reduce((sum,item)=>sum+item.maxScore,0)-maxScore(config))<1e-8;
+  if(!valid(items)) {
+    // Explicit all-or-nothing headings are maxima, unlike isolated deduction examples.
+    const heading=/^\s*(?:[一二三四五六七八九十]+、|[①-⑳]\s*)?((?:第\s*)?[（(]\d+[）)]\s*(?:问)?[^\n：:]*)[：:]\s*(?:只能给|只给|得分为)\s*0\s*分\s*(?:或|或者|、)\s*(\d+(?:\.\d+)?)\s*分[。.]?\s*$/gmu;
+    items=[...fieldText(config.rubric).matchAll(heading)].map((m,i)=>({id:`scoring-item-${i+1}`,label:m[1].trim(),maxScore:Number(m[2])}));
+  }
   return items.length && items.every(item=>item.maxScore>0) &&
     new Set(items.map(item=>scoringLabelKey(item.label))).size===items.length &&
     Math.abs(items.reduce((sum,item)=>sum+item.maxScore,0)-maxScore(config))<1e-8 ? items : [];
@@ -34,7 +42,7 @@ function applyScoringItemSchema(result, config) {
   if (!Array.isArray(details) || details.length !== schema.length) throw Error(`模型评分项不完整：评分标准要求${schema.length}项，请按固定编号返回。`);
   const used = new Set();
   for (const detail of details) {
-    const item = detail.id !== undefined ? schema.find(item=>item.id===detail.id) : schema.find(item=>scoringLabelKey(item.label)===scoringLabelKey(detail.label));
+    const item = matchScoringItem(detail,schema,details);
     if (!item || used.has(item.id) || detail.score > item.maxScore) throw Error('模型评分项编号缺失、重复、不对应或分项越界，请核对评分标准');
     used.add(item.id); detail.originalLabel = detail.label; detail.label = item.label; detail.id = item.id; detail.maxScore = item.maxScore;
   }
