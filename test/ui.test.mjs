@@ -30,6 +30,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.goto(app.url);
   await page.waitForFunction(()=>document.querySelector('#phase').textContent==='待开始');
   assert.equal(await page.title(),'阅卷工作台');
+  assert.equal((await page.request.get(app.url+'/app.js')).headers()['cache-control'],'no-store');
   assert.ok(await page.locator('#grading').isVisible());
   await page.locator('[data-tab=presets]').click();
   page.once('dialog',dialog=>dialog.accept());
@@ -47,6 +48,18 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.locator('[data-tab=models]').click();await page.locator('#editProvider').click();await page.locator('#endpoint').fill(fixtureUrl);await page.locator('#apiKey').fill('local-fixture');await page.locator('#saveProvider').click();
   await page.waitForFunction(()=>document.querySelector('#notice').textContent==='供应商已保存');
   assert.equal(await page.locator('.task-tabs').isVisible(),false);
+  await page.locator('#editProvider').click();
+  assert.ok(await page.locator('#endpoint').isVisible());
+  await page.locator('#endpoint').fill(fixtureUrl+'/edited');
+  await page.waitForTimeout(900);
+  assert.equal(await page.locator('#endpoint').inputValue(),fixtureUrl+'/edited');
+  await page.locator('#providerDialog').press('Escape');
+  assert.equal(await page.locator('#providerDialog').isVisible(),false);
+  await page.locator('#editProvider').click();
+  assert.equal(await page.locator('#endpoint').inputValue(),fixtureUrl+'/edited');
+  await page.locator('#endpoint').fill(fixtureUrl);
+  await page.locator('#saveProvider').click();
+  await page.waitForFunction(()=>document.querySelector('#providerDialog').hidden);
   await page.locator('#workspaceSelect').click();
   await page.keyboard.press('Escape');
   await page.locator('[data-tab=workflows]').click();

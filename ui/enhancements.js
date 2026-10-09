@@ -110,9 +110,9 @@ export function buildLayout() {
   const providerCard=$('providerSelect').closest('.card');
   providerCard.querySelector('h2').textContent='模型供应商';
   const providerForm=$('endpoint').closest('.form-grid');
-  const providerDialog=document.createElement('dialog');providerDialog.id='providerDialog';providerDialog.setAttribute('aria-labelledby','providerDialogTitle');
+  const providerDialog=document.createElement('section');providerDialog.id='providerDialog';providerDialog.hidden=true;providerDialog.setAttribute('aria-labelledby','providerDialogTitle');
   providerDialog.innerHTML='<div class="image-dialog-heading"><h2 id="providerDialogTitle">编辑接口</h2><button id="closeProvider">关闭</button></div>';
-  document.body.append(providerDialog);providerDialog.append(providerForm);
+  providerCard.append(providerDialog);providerDialog.append(providerForm);
   const advancedProvider=document.createElement('details');advancedProvider.innerHTML='<summary>高级设置</summary>';
   advancedProvider.append($('apiKeyEnv').closest('label'));providerDialog.append(advancedProvider);
   const saveActions=document.createElement('div');saveActions.className='actions';saveActions.append($('saveProvider'));providerDialog.append(saveActions);
@@ -122,10 +122,12 @@ export function buildLayout() {
   const modelDialog=document.createElement('dialog');modelDialog.id='providerModelsDialog';modelDialog.innerHTML='<div class="image-dialog-heading"><h2>模型目录</h2><button id="closeProviderModels">关闭</button></div>';
   document.body.append(modelDialog);modelDialog.append($('modelCatalog'),$('fetchModels'),$('manualModelList'));
   const modelAdd=document.createElement('div');modelAdd.className='controls';modelAdd.append($('newModelId').closest('label'),$('addModelId'));modelDialog.append(modelAdd);
-  providerCard.querySelectorAll('details').forEach(d=>d.remove());
+  providerCard.querySelectorAll('details').forEach(d=>{if(!providerDialog.contains(d))d.remove();});
   providerCard.querySelectorAll('p.hint').forEach((p,i)=>{if(i>0)p.remove();});
-  $('editProvider').onclick=()=>{ $('providerDialogTitle').textContent='编辑接口 · '+$('providerSelect').value;$('apiKey').type='password';providerDialog.showModal();};
-  $('closeProvider').onclick=()=>providerDialog.close();
+  $('editProvider').onclick=()=>{ $('providerDialogTitle').textContent='编辑接口 · '+$('providerSelect').value;$('apiKey').type='password';providerDialog.hidden=false;$('editProvider').setAttribute('aria-expanded','true');$('endpoint').focus();providerDialog.scrollIntoView({block:'nearest',behavior:'smooth'});};
+  $('editProvider').setAttribute('aria-controls','providerDialog');$('editProvider').setAttribute('aria-expanded','false');
+  $('closeProvider').onclick=()=>{providerDialog.hidden=true;$('editProvider').setAttribute('aria-expanded','false');$('editProvider').focus();};
+  providerDialog.addEventListener('keydown',event=>{if(event.key==='Escape'){$('closeProvider').click();event.stopPropagation();}});
   $('viewProviderModels').onclick=()=>modelDialog.showModal();$('closeProviderModels').onclick=()=>modelDialog.close();
 }
 

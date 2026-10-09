@@ -164,7 +164,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
         res.end(fs.readFileSync(new URL('../ui/index.html', import.meta.url))); return;
       }
       if (['/app.js', '/enhancements.js', '/result-details.js', '/scoring-labels.js', '/adaptation-ui.js', '/style.css'].includes(url.pathname)) {
-        res.writeHead(200, { 'Content-Type': url.pathname.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8' });
+        res.writeHead(200, { 'Content-Type': url.pathname.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8', 'Cache-Control': 'no-store' });
         res.end(fs.readFileSync(new URL(`../ui${url.pathname}`, import.meta.url))); return;
       }
       if (!req.headers.cookie?.split(';').some(c => c.trim() === `marker=${token}`) || (req.headers.origin && req.headers.origin !== origin)) { text(res, 403, { error: '请从本地控制台操作' }); return; }
