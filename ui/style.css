@@ -38,3 +38,5 @@ aside .task-overview{width:100%;margin:0 0 8px}aside .task-overview-heading{alig
 aside nav button[data-tab="models"]{text-align:center}
 
 #rubricGeneratorDialog{width:min(850px,94vw);max-height:90vh;overflow:auto}#rubricGeneratorDialog label{margin-bottom:14px}#rubricGeneratorDialog textarea{width:100%}#rubricWarnings{line-height:1.8;color:#815c20}#rubricGenerationStatus{min-height:1.5em}
+
+.rubric-settings-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px}.rubric-settings-column{min-width:0}.rubric-settings-column textarea{min-height:180px}.rubric-settings-column .hint{display:block;margin-top:8px}@media(max-width:680px){.rubric-settings-columns{grid-template-columns:1fr;gap:12px}}
