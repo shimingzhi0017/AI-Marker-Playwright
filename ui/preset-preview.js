@@ -4,10 +4,10 @@ function displayMath(text){
   // Preserve explicit math delimiters; wrap only recognizable bare formula runs.
   return text.split(/(\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]|\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g).map((part,index)=>{
     if(index%2)return part;
-    return part.replace(/[A-Za-z0-9\\{}_^=+\-*/()[\].<>≤≥ΔΔ₀-₉²³·\s]+/g,run=>{
-      if(!/\\(?:frac|sqrt|times|Delta|cdot)|[A-Za-z][₀-₉_^]|[A-Za-z][^\n]*=/.test(run))return run;
+    return part.replace(/[A-Za-z0-9\\{}_^=+\-−–*/()[\].<>≤≥Δ₀-₉²³·\s]+/g,run=>{
+      if(!/\\(?:frac|sqrt|times|Delta|cdot)|[A-Za-z][₀-₉_^]|[A-Za-z][^\n]*[=≤≥]|[≤≥][^\n]*[A-Za-z]/.test(run))return run;
       const leading=run.match(/^\s*/)[0],trailing=run.match(/\s*$/)[0];
-      let expression=run.trim().replace(/[₀-₉]/g,c=>'_'+('₀₁₂₃₄₅₆₇₈₉'.indexOf(c))).replace(/²/g,'^2').replace(/³/g,'^3').replace(/Δ/g,'\\Delta ').replace(/·/g,'\\cdot ').replace(/≤/g,'\\le ').replace(/≥/g,'\\ge ');
+      let expression=run.trim().replace(/[₀-₉]/g,c=>'_'+('₀₁₂₃₄₅₆₇₈₉'.indexOf(c))).replace(/²/g,'^2').replace(/³/g,'^3').replace(/Δ/g,'\\Delta ').replace(/·/g,'\\cdot ').replace(/[−–]/g,'-').replace(/≤/g,'\\le ').replace(/≥/g,'\\ge ');
       return leading+'\\('+expression+'\\)'+trailing;
     });
   }).join('');
