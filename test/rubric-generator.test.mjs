@@ -95,3 +95,25 @@ test('图片经已有接口生成草稿，预览回填后保存并保留原始�
   assert.equal(await page.locator('#rubricMaxScore').inputValue(),'4');
   assert.deepEqual(errors,[]);
 });
+
+
+test('AI接口未保存修改不阻止返回当前任务或切换另一任务', {timeout:30000}, async t => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'marker-navigation-'));
+  const app=await createApp({root});const browser=await launchBrowser({headless:true});
+  t.after(async()=>{await browser.close();await app.close();});
+  const page=await browser.newPage();const dialogs=[];page.on('dialog',async dialog=>{dialogs.push(dialog.message());await dialog.dismiss();});
+  await page.goto(app.url);await page.locator('.workspace-card.active').waitFor();
+  await page.locator('[data-tab=models]').click();await page.locator('#editProvider').click();
+  await page.locator('#endpoint').fill('https://draft.example/v1');await page.locator('#providerDialog').press('Escape');
+  await page.locator('.workspace-card.active').click();
+  assert.ok(await page.locator('.task-tabs').isVisible());assert.ok(await page.locator('#grading').isVisible());
+  await page.locator('[data-tab=models]').click();await page.locator('#editProvider').click();
+  assert.equal(await page.locator('#endpoint').inputValue(),'https://draft.example/v1');await page.locator('#providerDialog').press('Escape');
+  await page.evaluate(async()=>{await fetch('/api/workspaces',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});});
+  await page.waitForFunction(()=>document.querySelectorAll('.workspace-card').length===2);
+  await page.locator('.workspace-card:not(.active)').click();
+  await page.waitForFunction(()=>document.querySelector('.task-tabs').hidden===false);
+  await page.locator('[data-tab=models]').click();await page.locator('#editProvider').click();
+  assert.equal(await page.locator('#endpoint').inputValue(),'https://draft.example/v1');
+  assert.equal(dialogs.length,0);
+});
