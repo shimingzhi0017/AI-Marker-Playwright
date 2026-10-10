@@ -31,7 +31,7 @@ function sanitizeSettings(settings) {
   if (!settings.presets[settings.active]) throw Error('请选择有效方案');
   return settings;
 }
-export async function createApp({ root = defaultRoot, browserFactory = opts => launchPersistentBrowser(opts.profile, opts.launch), gradeFunction, coordinator, child = false, sharedProvidersFile, exportDirectoryPicker = chooseExportDirectory } = {}) {
+export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defaultRoot, browserFactory = opts => launchPersistentBrowser(opts.profile, opts.launch), gradeFunction, coordinator, child = false, sharedProvidersFile, exportDirectoryPicker = chooseExportDirectory } = {}) {
   let lastExportDirectory;
   const children = new Map();
   const deletedDefaultFile = path.join(root,'default-task-deleted.json');
@@ -428,7 +428,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const app = await createApp(); console.log(`可视化阅卷控制台：${app.url}\n关闭本窗口会停止控制台。`);
   let uiBrowser;
   try {
-    uiBrowser = await launchPersistentBrowser(path.join(defaultRoot, 'ui-profile'), { headless: false, viewport: null, args: [`--app=${app.url}`] });
+    uiBrowser = await launchPersistentBrowser(path.join(process.env.AI_MARKER_DATA_ROOT || defaultRoot, 'ui-profile'), { headless: false, viewport: null, args: [`--app=${app.url}`] });
     uiBrowser.on('close', () => app.close().then(() => process.exit(0)));
   } catch (error) { console.log(`自动打开窗口失败：${error.message}\n请在浏览器中打开上面的本地地址，或按首次运行说明检查浏览器。`); }
   process.once('SIGINT', () => app.close().then(async () => { await uiBrowser?.close(); process.exit(0); }));
