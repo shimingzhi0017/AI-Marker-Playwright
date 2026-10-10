@@ -12,7 +12,7 @@ import {launchBrowser} from '../src/browser.mjs';
 test('评分标准生成验证分值并拒绝缺少题目或答案', async () => {
   const settings={providers:{demo:{}}}, input={provider:'demo',model:'vision',question:'题目',answer:'答案',maxScore:4};
   await assert.rejects(generateRubric(settings,{...input,answer:''}),/参考答案/);
-  await assert.rejects(generateRubric(settings,input,async()=>JSON.stringify({question:'题目',answer:'答案',rubric:'① 第一空：满分3分',warnings:[]})),/合计/);
+  await assert.rejects(generateRubric(settings,input,async()=>JSON.stringify({question:'题目',answer:'答案',rubric:'① 第一空：满分3分',warnings:[]})),/分项/);
   const result=await generateRubric(settings,input,async()=>JSON.stringify({question:'题目',answer:'答案',rubric:'① 第一空：满分4分\n正确4分，错误0分',warnings:['分值分配须确认']}));
   assert.equal(result.warnings.length,1);
 });
@@ -22,7 +22,7 @@ test('图片经已有接口生成草稿，预览回填后保存并保留原始�
   const fixture=http.createServer(async(req,res)=>{
     let body='';for await(const chunk of req)body+=chunk;
     received=JSON.parse(body);
-    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({question:'识别题目',answer:'识别答案',rubric:'① 第一空：满分2分\n正确2分，错误0分。\n② 第二空：满分2分\n正确2分，错误0分。\n总分4分。',warnings:['建议分值，请教师确认']})}}]}));
+    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({question:'识别题目',answer:'识别答案',rubric:'第一空2分，第二空2分，共4分',items:[{label:'第一空',maxScore:2,criteria:'正确2分，错误0分。'},{label:'第二空',maxScore:2,criteria:'正确2分，错误0分。'}],warnings:['建议分值，请教师确认']})}}]}));
   });
   await new Promise(resolve=>fixture.listen(0,'127.0.0.1',resolve));
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'marker-rubric-'));
@@ -66,6 +66,7 @@ test('图片经已有接口生成草稿，预览回填后保存并保留原始�
   assert.equal(await page.locator('#rubricMaxScore').inputValue(),'');
   assert.equal(await page.locator('#rubricStrictness').inputValue(),'normal');
   await page.locator('#rubricMaxScore').fill('4');
+  await page.locator('#rubricScoreAllocation').fill('第一空2分，第二空2分，忽略图片原分值');
   await page.locator('#rubricStrictness').selectOption('lenient');
   assert.match(await page.locator('#rubricRequirements').inputValue(),/简写/);
   await page.locator('#rubricStrictness').selectOption('custom');
@@ -75,6 +76,8 @@ test('图片经已有接口生成草稿，预览回填后保存并保留原始�
   assert.equal(received.model,'vision');assert.equal(received.messages[0].content.filter(part=>part.type==='image_url').length,2);
   assert.match(received.messages[0].content[0].text,/不得固定为四项/);
   assert.match(received.messages[0].content[0].text,/总分：4分/);
+  assert.match(received.messages[0].content[0].text,/第一空2分，第二空2分/);
+  assert.match(received.messages[0].content[0].text,/忽略题目图片、答案图片/);
   assert.match(received.messages[0].content[0].text,/允许同义词，但必须写出单位/);
   assert.equal(fs.readFileSync(path.join(root,'config.json'),'utf8'),before);
   await page.locator('#applyGeneratedRubric').click();
@@ -86,6 +89,7 @@ test('图片经已有接口生成草稿，预览回填后保存并保留原始�
   assert.match(saved.rubric.text || saved.rubric,/第一空/);
   assert.equal(saved.scoring.maxScore,4);
   assert.equal(saved.rubricGeneration.strictness,'custom');
+  assert.equal(saved.rubricGeneration.scoreAllocation,'第一空2分，第二空2分，忽略图片原分值');
   await page.reload();await page.locator('[data-tab=presets]').click();await page.locator('#openRubricGenerator').click();
   assert.equal(await page.locator('#rubricRequirements').inputValue(),'允许同义词，但必须写出单位');
   assert.equal(await page.locator('#rubricMaxScore').inputValue(),'4');
