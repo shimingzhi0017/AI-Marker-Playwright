@@ -1,0 +1,58 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import sharp from 'sharp';
+import {generateRubric} from '../src/rubric-generator.mjs';
+import {createApp} from '../src/server.mjs';
+import {launchBrowser} from '../src/browser.mjs';
+
+test('评分标准生成验证分值并拒绝缺少题目或答案', async () => {
+  const settings={providers:{demo:{}}}, input={provider:'demo',model:'vision',question:'题目',answer:'答案',maxScore:4};
+  await assert.rejects(generateRubric(settings,{...input,answer:''}),/参考答案/);
+  await assert.rejects(generateRubric(settings,input,async()=>JSON.stringify({question:'题目',answer:'答案',rubric:'① 第一空：满分3分',warnings:[]})),/合计/);
+  const result=await generateRubric(settings,input,async()=>JSON.stringify({question:'题目',answer:'答案',rubric:'① 第一空：满分4分\n正确4分，错误0分',warnings:['分值分配须确认']}));
+  assert.equal(result.warnings.length,1);
+});
+
+test('图片经已有接口生成草稿，预览回填后保存并保留原始图片', {timeout:45000}, async t => {
+  let received;
+  const fixture=http.createServer(async(req,res)=>{
+    let body='';for await(const chunk of req)body+=chunk;
+    received=JSON.parse(body);
+    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({question:'识别题目',answer:'识别答案',rubric:'① 第一空：满分2分\n正确2分，错误0分。\n② 第二空：满分2分\n正确2分，错误0分。\n总分4分。',warnings:['建议分值，请教师确认']})}}]}));
+  });
+  await new Promise(resolve=>fixture.listen(0,'127.0.0.1',resolve));
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'marker-rubric-'));
+  const app=await createApp({root});
+  const cfg=JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8'));
+  const provider=Object.keys(cfg.providers)[0];
+  cfg.providers[provider]={protocol:'chat',endpoint:`http://127.0.0.1:${fixture.address().port}/v1`,apiKey:'fixture-key',models:['vision']};
+  fs.writeFileSync(path.join(root,'shared-providers.json'),JSON.stringify(cfg.providers));
+  cfg.presets[cfg.active].scoring.maxScore=4;
+  cfg.workflows[cfg.presets[cfg.active].workflowId].model={provider,model:'vision'};
+  fs.writeFileSync(path.join(root,'config.json'),JSON.stringify(cfg));
+  const before=fs.readFileSync(path.join(root,'config.json'),'utf8');
+  const browser=await launchBrowser({headless:true});
+  t.after(async()=>{await browser.close();await app.close();await new Promise(resolve=>fixture.close(resolve));});
+  const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.goto(app.url);await page.locator('[data-tab=presets]').click();
+  const image=await sharp({create:{width:30,height:30,channels:3,background:'white'}}).png().toBuffer();
+  for(const field of ['question','answer'])await page.locator('#'+field+'Upload').setInputFiles({name:'source.png',mimeType:'image/png',buffer:image});
+  await page.waitForFunction(()=>document.querySelectorAll('#answerImages img').length===1);
+  await page.locator('#openRubricGenerator').click();await page.locator('#generateRubric').click();
+  await page.locator('#rubricDraft').waitFor({state:'visible'});
+  assert.equal(received.model,'vision');assert.equal(received.messages[0].content.filter(part=>part.type==='image_url').length,2);
+  assert.match(received.messages[0].content[0].text,/不得固定为四项/);
+  assert.equal(fs.readFileSync(path.join(root,'config.json'),'utf8'),before);
+  await page.locator('#applyGeneratedRubric').click();
+  assert.equal(await page.locator('#question').inputValue(),'识别题目');
+  assert.equal(await page.locator('#answer').inputValue(),'识别答案');
+  await page.locator('#savePreset').click();await page.waitForFunction(()=>document.querySelector('#dirtyBadge').hidden);
+  const saved=JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets[cfg.active];
+  assert.equal(saved.question.images.length,1);assert.equal(saved.answer.images.length,1);
+  assert.match(saved.rubric.text || saved.rubric,/第一空/);assert.deepEqual(errors,[]);
+});

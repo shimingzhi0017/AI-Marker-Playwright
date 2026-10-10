@@ -14,6 +14,7 @@ import { validateConfig, validateResult } from './domain.mjs';
 import { exportHistory, enrichStudents } from './export.mjs';
 import { chooseExportDirectory } from './export-folder.mjs';
 import { listModels } from './models.mjs';
+import { generateRubric } from './rubric-generator.mjs';
 import {adaptationTemplates,createTemplateGroup} from './adaptation-templates.mjs';
 import { blackRatio } from './blank.mjs';
 import { observeSubmissions } from './submission-observer.mjs';
@@ -209,7 +210,7 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': `marker=${token}; HttpOnly; SameSite=Strict; Path=/`, 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" });
         res.end(fs.readFileSync(new URL('../ui/index.html', import.meta.url))); return;
       }
-      if (['/app.js', '/provider-templates.js', '/enhancements.js', '/result-details.js', '/scoring-labels.js', '/adaptation-ui.js', '/style.css', '/feedback.js', '/icon.svg', '/icon.ico', '/icon-256.png'].includes(url.pathname) || /^\/icon-(?:16|20|24|32|40|48|64|128|256)\.png$/.test(url.pathname) || /^\/katex\/(?:katex\.mjs|katex\.min\.css|fonts\/[A-Za-z0-9_-]+\.woff2)$/.test(url.pathname)) {
+      if (['/app.js', '/provider-templates.js', '/enhancements.js', '/rubric-generator.js', '/result-details.js', '/scoring-labels.js', '/adaptation-ui.js', '/style.css', '/feedback.js', '/icon.svg', '/icon.ico', '/icon-256.png'].includes(url.pathname) || /^\/icon-(?:16|20|24|32|40|48|64|128|256)\.png$/.test(url.pathname) || /^\/katex\/(?:katex\.mjs|katex\.min\.css|fonts\/[A-Za-z0-9_-]+\.woff2)$/.test(url.pathname)) {
         res.writeHead(200, { 'Content-Type': /\.m?js$/.test(url.pathname) ? 'text/javascript; charset=utf-8' : url.pathname.endsWith('.woff2') ? 'font/woff2' : url.pathname.endsWith('.ico') ? 'image/x-icon' : url.pathname.endsWith('.png') ? 'image/png' : url.pathname.endsWith('.svg') ? 'image/svg+xml' : 'text/css; charset=utf-8', 'Cache-Control': 'no-store' });
         res.end(fs.readFileSync(new URL(`../ui${url.pathname}`, import.meta.url))); return;
       }
@@ -395,6 +396,10 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
           if (!record?.imageFiles?.length) throw Error('没有可用图片'); const cfg = settings();
           cfg.presets[record.presetName].blankDetection = { enabled: true, threshold: 0.01, reference: await Promise.all(record.imageFiles.map(f => blackRatio(fs.readFileSync(f)))) };
           writeSettings(cfg); note('空白范本已保存'); break;
+        }
+        case '/api/generate-rubric': {
+          if (state.running || state.starting) throw Error('请先暂停当前任务');
+          text(res, 200, await generateRubric(settings(), input)); return;
         }
         case '/api/models': {
           if (state.running) throw Error('请先暂停'); const cfg = settings(), provider = cfg.providers[input.name];

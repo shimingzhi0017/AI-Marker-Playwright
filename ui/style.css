@@ -36,3 +36,5 @@ aside .task-overview{width:100%;margin:0 0 8px}aside .task-overview-heading{alig
 .brand .logo{padding:0;background:transparent;display:block;flex-shrink:0}.brand .logo img{display:block;width:44px;height:44px}
 
 aside nav button[data-tab="models"]{text-align:center}
+
+#rubricGeneratorDialog{width:min(850px,94vw);max-height:90vh;overflow:auto}#rubricGeneratorDialog label{margin-bottom:14px}#rubricGeneratorDialog textarea{width:100%}#rubricWarnings{line-height:1.8;color:#815c20}#rubricGenerationStatus{min-height:1.5em}
