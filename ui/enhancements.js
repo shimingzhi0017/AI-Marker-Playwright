@@ -127,13 +127,13 @@ export function buildLayout() {
   comparison.innerHTML='<div class="policy-card-heading"><span class="policy-number">01</span><h4>分数一致性</h4></div><p class="hint">选择客观逐项核对，或主观总分差阈值。</p>';
   comparison.append($('questionType').closest('label'),$('threshold').closest('label'));
   const comparisonNote=document.createElement('p');comparisonNote.id='comparisonPolicyNote';comparisonNote.className='policy-note';comparison.append(comparisonNote);
-  const recognition=document.createElement('div');recognition.className='policy-card';
+  const recognition=document.createElement('div');recognition.className='policy-card dual-control';
   recognition.innerHTML='<div class="policy-card-heading"><span class="policy-number">02</span><h4>书写识别疑点</h4></div><p class="hint">模型无法确认书写时，选择后续处理方式。</p>';
   const recognitionField=$('recognitionPolicy').closest('label');recognitionField.classList.remove('wide');recognition.append(recognitionField);
   const recognitionNote=document.createElement('p');recognitionNote.id='recognitionPolicyNote';recognitionNote.className='policy-note';recognition.append(recognitionNote);
   for(const hint of [...rulesGrid.querySelectorAll(':scope > p.hint')])hint.remove();
   rulesGrid.append(comparison,recognition);
-  const safeguards=document.createElement('details');safeguards.className='policy-explanation';safeguards.innerHTML='<summary>查看完整处理规则</summary><ul><li>客观题逐项比较；任意分歧或缺少明细都调用仲裁，总分相同也不能跳过。</li><li>主观题总分差在设定阈值内时取平均，超出时调用仲裁。</li><li>识别有疑点时调用第三模型；三评总分及逐项一致时直接采用一致分数。</li><li>三评不一致时，按所选方式转人工或采用有效仲裁分数；疑点仍保留供审查。</li><li>提交遵循当前运行模式；仲裁失败或分数无效时暂停。</li></ul>';rules.append(safeguards);
+  const safeguards=document.createElement('details');safeguards.className='policy-explanation';safeguards.innerHTML='<summary>查看完整处理规则</summary><ul><li>客观题逐项比较；任意分歧或缺少明细都调用仲裁，总分相同也不能跳过。</li><li>主观题总分差在设定阈值内时取平均，超出时调用仲裁。</li><li>识别有疑点时调用第三模型；三评总分及逐项一致时直接采用一致分数。</li><li>三评不一致时，按所选方式转人工或采用有效仲裁分数；疑点仍保留供审查。</li><li>提交遵循当前运行模式；仲裁失败或分数无效时暂停。</li></ul>';safeguards.classList.add('dual-control');rules.append(safeguards);
   $('saveWorkflow').textContent='保存评分设置';
   const backupMenu=document.createElement('details');backupMenu.className='export-menu';backupMenu.innerHTML='<summary>配置备份</summary>';
   const backupOptions=document.createElement('div');backupOptions.className='export-options';
