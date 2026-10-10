@@ -117,3 +117,13 @@ test('AI接口未保存修改不阻止返回当前任务或切换另一任务', 
   assert.equal(await page.locator('#endpoint').inputValue(),'https://draft.example/v1');
   assert.equal(dialogs.length,0);
 });
+
+
+test('网站模板先于任务配置返回时不报初始化错误', {timeout:30000}, async t => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'marker-init-'));const app=await createApp({root});const browser=await launchBrowser({headless:true});
+  t.after(async()=>{await browser.close();await app.close();});
+  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/api/workspaces',async route=>{await new Promise(resolve=>setTimeout(resolve,700));await route.continue();});
+  await page.goto(app.url);await page.waitForFunction(()=>document.querySelector('#adaptWebsite').options.length>20);
+  assert.deepEqual(errors,[]);assert.equal(await page.locator('#notice').textContent(),'');
+});

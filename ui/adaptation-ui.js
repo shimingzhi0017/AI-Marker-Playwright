@@ -35,6 +35,7 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
   const $=id=>document.getElementById(id);let selected,lastPick,inspection;
   let templates=[];
   function websiteOptions(){
+    if(!getConfig())return;
     const select=$('adaptWebsite'), group=current();
     select.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'请选择阅卷网站'}),...templates.map(t=>Object.assign(document.createElement('option'),{value:'template:'+t.id,textContent:t.name})),...groups().filter(g=>!g.templateId).map(g=>Object.assign(document.createElement('option'),{value:'group:'+g.id,textContent:g.name+'（自定义）'})));
     select.value=group?.templateId?'template:'+group.templateId:group?'group:'+group.id:'';
@@ -55,7 +56,7 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
   $('adaptTemplate').onclick=()=>action(async()=>{templates=(await api('/api/adaptation',{action:'templates'})).templates;$('adaptTemplateSelect').replaceChildren(...templates.map(t=>{const o=document.createElement('option');o.value=t.id;o.textContent=t.name;return o;}));templatePreview();$('adaptTemplateDialog').showModal();});
   $('adaptTemplateSelect').onchange=templatePreview;$('adaptTemplateCancel').onclick=()=>$('adaptTemplateDialog').close();
   $('adaptTemplateAdd').onclick=()=>action(async()=>{const result=await api('/api/adaptation',{action:'template',templateId:$('adaptTemplateSelect').value,url:$('adaptTemplateUrl').value});getConfig().adaptationGroups=result.groups;selected=result.selected;$('adaptTemplateDialog').close();refresh();render();notice('网站方案已添加，打开阅卷浏览器后检查页面即可',true);});
-  function groups(){return getConfig().adaptationGroups || [];}
+  function groups(){return getConfig()?.adaptationGroups || [];}
   function current(){return groups().find(g=>g.id===selected);}
   function render() {
     const list=groups();if(!list.some(g=>g.id===selected))selected=list[0]?.id;
