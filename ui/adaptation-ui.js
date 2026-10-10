@@ -25,7 +25,9 @@ export function buildAdaptationUI() {
   const websiteControls=document.createElement('div');websiteControls.className='controls';websiteControls.innerHTML='<label>选择阅卷网站<select id="adaptWebsite"><option value="">正在加载网站…</option></select></label><button id="adaptAddCustom">添加自定义网站</button>';
   const intro=root.querySelector('p.hint');intro.textContent='选择内置网站即可使用对应适配规则；未列出的网站可添加自定义方案。';
   websiteControls.append(document.getElementById('adaptDelete'));
+  const websiteAddress=document.createElement('p');websiteAddress.id='websiteAddress';websiteAddress.className='website-address';websiteAddress.setAttribute('aria-live','polite');
   card.insertBefore(intro,root);card.insertBefore(websiteControls,root);card.insertBefore(document.getElementById('adaptStatus'),root);
+  websiteControls.after(websiteAddress);
   card.append(settings);settings.append(root,advanced);
   document.getElementById('adaptTemplate').hidden=true;
   card.id='websiteCard';card.classList.add('website-picker');heading.hidden=true;intro.hidden=true;
@@ -33,7 +35,7 @@ export function buildAdaptationUI() {
   document.getElementById('verified').disabled=true;
   document.getElementById('savePlatform').hidden=true;advanced.append(document.getElementById('savePlatform'));details.remove();
 }
-export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirty}) {
+export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirty,onWebsiteChanged}) {
   const $=id=>document.getElementById(id);let selected,lastPick,inspection,recorded=false;
   const deleteDialog=document.createElement('dialog');deleteDialog.id='deleteWebsiteDialog';
   deleteDialog.innerHTML='<h2>删除自定义网站</h2><p id="deleteWebsiteMessage"></p><form method="dialog" class="actions"><button value="cancel">取消</button><button value="delete" class="danger">确认删除</button></form>';
@@ -46,29 +48,39 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
     select.value=group?.templateId?'template:'+group.templateId:group?'group:'+group.id:'';
   }
   api('/api/adaptation',{action:'templates'}).then(result=>{templates=result.templates;websiteOptions();}).catch(error=>notice(error.message));
+  async function selectWebsite(input){
+    const result=await api('/api/adaptation',{action:'select',...input});
+    const config=getConfig();config.adaptationGroups=result.groups;config.selectedAdaptationGroupId=result.selected;
+    config.browser ||= {};config.browser.url=result.url;config.platform=result.platform;selected=result.selected;
+    onWebsiteChanged?.();
+    render();$('adaptAdvancedSettings').open=false;
+    if(result.navigationError){$('adaptStatus').textContent=result.navigationError;notice(result.navigationError);}
+    else $('adaptStatus').textContent+=' 网站网址已同步。';
+  }
   $('adaptWebsite').onchange=()=>action(async()=>{
     const value=$('adaptWebsite').value;
-    if(value.startsWith('group:')){selected=value.slice(6);render();return;}
+    if(value.startsWith('group:')){await selectWebsite({id:value.slice(6)});return;}
     if(!value.startsWith('template:'))return;
     const id=value.slice(9),existing=groups().find(g=>g.templateId===id);
-    if(existing){selected=existing.id;render();$('adaptAdvancedSettings').open=false;return;}
+    if(existing){await selectWebsite({id:existing.id});return;}
     const template=templates.find(t=>t.id===id);
     if(!template.url){$('adaptTemplateSelect').replaceChildren(...templates.map(t=>Object.assign(document.createElement('option'),{value:t.id,textContent:t.name})));$('adaptTemplateSelect').value=id;templatePreview();$('adaptTemplateDialog').showModal();return;}
-    const result=await api('/api/adaptation',{action:'template',templateId:id,url:template.url});getConfig().adaptationGroups=result.groups;selected=result.selected;refresh();render();$('adaptAdvancedSettings').open=false;
+    await selectWebsite({templateId:id,url:template.url});
   });
   $('adaptAddCustom').onclick=()=>{$('adaptNew').click();$('adaptAdvancedSettings').open=true;$('adaptCustomSteps').open=true;$('adaptName').focus();};
   function templatePreview(){const template=templates.find(t=>t.id===$('adaptTemplateSelect').value);$('adaptTemplateStatus').textContent=template?.status || '';$('adaptTemplateUrl').value=template?.url || '';}
   $('adaptTemplate').onclick=()=>action(async()=>{templates=(await api('/api/adaptation',{action:'templates'})).templates;$('adaptTemplateSelect').replaceChildren(...templates.map(t=>{const o=document.createElement('option');o.value=t.id;o.textContent=t.name;return o;}));templatePreview();$('adaptTemplateDialog').showModal();});
   $('adaptTemplateSelect').onchange=templatePreview;$('adaptTemplateCancel').onclick=()=>$('adaptTemplateDialog').close();
-  $('adaptTemplateAdd').onclick=()=>action(async()=>{const result=await api('/api/adaptation',{action:'template',templateId:$('adaptTemplateSelect').value,url:$('adaptTemplateUrl').value});getConfig().adaptationGroups=result.groups;selected=result.selected;$('adaptTemplateDialog').close();refresh();render();notice('网站方案已添加，打开阅卷浏览器后检查页面即可',true);});
+  $('adaptTemplateAdd').onclick=()=>action(async()=>{await selectWebsite({templateId:$('adaptTemplateSelect').value,url:$('adaptTemplateUrl').value});$('adaptTemplateDialog').close();});
   function groups(){return getConfig()?.adaptationGroups || [];}
   function current(){return groups().find(g=>g.id===selected);}
   function render() {
-    const list=groups();if(!list.some(g=>g.id===selected))selected=list[0]?.id;
+    const list=groups();if(!list.some(g=>g.id===selected))selected=list.find(g=>g.id===getConfig()?.selectedAdaptationGroupId)?.id || list.find(g=>g.url===getConfig()?.browser?.url)?.id || list[0]?.id;
     $('adaptGroup').replaceChildren(...list.map(g=>{const option=document.createElement('option');option.value=g.id;option.textContent=g.name;return option;}));$('adaptGroup').value=selected || '';
     websiteOptions();
     recorded=false;showRecording({candidates:[],message:'尚未录制提交接口；先检查页面并完成测试填分。'});
     const group=current();$('adaptDelete').hidden=!group || !!group.templateId;$('adaptDelete').textContent='删除自定义网站';$('adaptName').value=group?.name || '';$('adaptUrl').value=group?.url || '';
+    $('websiteAddress').textContent=group?.url || '';$('websiteAddress').title=group?.url || '';
     for(const input of document.querySelectorAll('[data-platform]')){const key=input.dataset.platform;const value=key==='browser.url'?group?.url:group?.platform?.[key];input.value=key==='successValue'?JSON.stringify(value??true):value || '';}
     $('verified').checked=!!group?.platform?.verified;
     $('adaptStatus').textContent=group?.platform?.verified?'此方案已核验；修改规则后需要重新验证。':group?.templateId==='zhixue'?'智学网内置方案已调通，自动识别当前答卷和提交回执；无需按任务重复调试。':group?.templateId?'使用内置网站适配，自动提交尚需实测；可展开自行调试。':'自定义方案：可检查页面、点选修正和测试填分。';
@@ -76,9 +88,9 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
   $('adaptUrl').oninput=()=>{const input=document.querySelector('[data-platform="browser.url"]');if(input)input.value=$('adaptUrl').value;};
   document.querySelector('[data-platform="browser.url"]')?.addEventListener('input',event=>{$('adaptUrl').value=event.target.value;});
   function read(){const old=current();const platform={...(old?.platform || {})};for(const input of document.querySelectorAll('[data-platform]')){const key=input.dataset.platform;if(key!=='browser.url')platform[key]=key==='successValue'?JSON.parse(input.value):input.value;}return {id:selected || crypto.randomUUID(),name:$('adaptName').value.trim()||'新分组',url:$('adaptUrl').value.trim(),...(old?.templateId?{templateId:old.templateId}:{}),platform};}
-  async function save(){const group=read();try{if(!['http:','https:'].includes(new URL(group.url).protocol))throw Error();}catch{throw Error('请先填写完整的阅卷网址，例如 https://网站域名/阅卷路径');}const result=await api('/api/adaptation',{action:'save',group});getConfig().adaptationGroups=result.groups;getConfig().platform=result.groups.find(g=>g.id===group.id).platform;getConfig().browser.url=group.url;selected=group.id;render();return group;}
+  async function save(){const group=read();try{if(!['http:','https:'].includes(new URL(group.url).protocol))throw Error();}catch{throw Error('请先填写完整的阅卷网址，例如 https://网站域名/阅卷路径');}const result=await api('/api/adaptation',{action:'save',group});getConfig().adaptationGroups=result.groups;getConfig().platform=result.groups.find(g=>g.id===group.id).platform;getConfig().browser.url=group.url;getConfig().selectedAdaptationGroupId=group.id;selected=group.id;render();return group;}
   const run=fn=>action(async()=>{try{await fn();}catch(error){$('adaptStatus').textContent=error.message;throw error;}});
-  $('adaptGroup').onchange=()=>{selected=$('adaptGroup').value;render();};
+  $('adaptGroup').onchange=()=>action(()=>selectWebsite({id:$('adaptGroup').value}));
   $('adaptNew').onclick=()=>{selected=crypto.randomUUID();getConfig().adaptationGroups.push({id:selected,name:'新网址分组',url:'https://',platform:{verified:false}});render();$('adaptAdvancedSettings').open=true;markDirty('grading');};
   $('adaptDelete').onclick=()=>{
     const group=current();if(!group || group.templateId)return;

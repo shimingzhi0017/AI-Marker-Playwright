@@ -27,7 +27,8 @@ export function migrateGroups(settings) {
   return settings.adaptationGroups;
 }
 export function applyGroup(settings, pageUrl) {
-  const cfg=structuredClone(settings); const group=matchingGroup(migrateGroups(cfg),pageUrl);
+  const cfg=structuredClone(settings),groups=migrateGroups(cfg),selected=groups.find(g=>g.id===cfg.selectedAdaptationGroupId);
+  const group=(selected && matchingGroup([selected],pageUrl)) || matchingGroup(groups,pageUrl);
   cfg.platform=group ? structuredClone(group.platform) : { verified:false };
   cfg.platform=resolveZhixueOptions(cfg.platform,pageUrl);
   cfg.adaptationGroupId=group?.id || null;cfg.adaptationScope=group?.url || null;

@@ -306,6 +306,32 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
           if(state.running||state.starting)throw Error('请先暂停阅卷再调试');
           const cfg=settings();
           if(input.action==='templates'){text(res,200,{templates:adaptationTemplates});return;}
+          if(input.action==='select'){
+            if(opening)throw Error('浏览器正在打开，请稍后切换网站');
+            let group=cfg.adaptationGroups.find(g=>g.id===input.id);
+            if(input.templateId){
+              group=cfg.adaptationGroups.find(g=>g.templateId===input.templateId);
+              if(!group){group=createTemplateGroup(input.templateId,input.url,crypto.randomUUID());cfg.adaptationGroups.push(group);}
+            }
+            if(!group)throw Error('网站方案不存在，请刷新后重试');
+            if(!['http:','https:'].includes(new URL(group.url).protocol))throw Error('请先填写完整的网站网址并保存方案');
+            const changed=cfg.selectedAdaptationGroupId!==group.id || cfg.browser.url!==group.url;
+            cfg.selectedAdaptationGroupId=group.id;cfg.browser.url=group.url;cfg.platform=structuredClone(group.platform);writeSettings(cfg);
+            let navigationError='';
+            if(changed){
+              state.snapshot=null;state.diagnosisError='';state.record=null;finishReview('stop');
+              state.phase='待开始';state.reason='网站已切换，请进入阅卷页面后重新检查。';
+              if(context){
+                try{
+                  if(!page || page.isClosed())page=context.pages()[0] || await context.newPage();
+                  await page.goto(group.url,{waitUntil:'domcontentloaded',timeout:45000});
+                  await page.bringToFront();
+                  platform=new ZhixuePlatform(page,applyGroup(settings(),page.url()),path.join(data,'diagnostics'));platform.topicTracker=topicTracker;
+                }catch(error){navigationError=`网址已保存，浏览器跳转失败：${error.message}`;state.diagnosisError=navigationError;}
+              }
+            }
+            text(res,200,{groups:settings().adaptationGroups,selected:group.id,url:group.url,platform:group.platform,navigationError});return;
+          }
           if(input.action==='template'){
             const group=createTemplateGroup(input.templateId,input.url,crypto.randomUUID());
             // Reuse an existing set instead of creating overlapping website defaults.
@@ -314,7 +340,7 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
             cfg.adaptationGroups.push(group);cfg.browser.url=group.url;cfg.platform=group.platform;writeSettings(cfg);
             text(res,200,{groups:settings().adaptationGroups,selected:group.id});return;
           }
-          if(input.action==='save'){const existing=cfg.adaptationGroups.find(g=>g.id===input.group.id);const group={...input.group,platform:{...input.group.platform,verified:!!existing?.platform.verified&&existing.url===input.group.url&&fingerprint(existing.platform)===fingerprint(input.group.platform)}};if(!['http:','https:'].includes(new URL(group.url).protocol))throw Error('分组网址必须是http或https');if(existing)cfg.adaptationGroups[cfg.adaptationGroups.indexOf(existing)]=group;else cfg.adaptationGroups.push(group);cfg.browser.url=group.url;cfg.platform=group.platform;writeSettings(cfg);text(res,200,{groups:settings().adaptationGroups});return;}
+          if(input.action==='save'){const existing=cfg.adaptationGroups.find(g=>g.id===input.group.id);const group={...input.group,platform:{...input.group.platform,verified:!!existing?.platform.verified&&existing.url===input.group.url&&fingerprint(existing.platform)===fingerprint(input.group.platform)}};if(!['http:','https:'].includes(new URL(group.url).protocol))throw Error('分组网址必须是http或https');if(existing)cfg.adaptationGroups[cfg.adaptationGroups.indexOf(existing)]=group;else cfg.adaptationGroups.push(group);cfg.selectedAdaptationGroupId=group.id;cfg.browser.url=group.url;cfg.platform=group.platform;writeSettings(cfg);text(res,200,{groups:settings().adaptationGroups});return;}
           if(input.action==='delete'){cfg.adaptationGroups=cfg.adaptationGroups.filter(g=>g.id!==input.id);writeSettings(cfg);text(res,200,{groups:cfg.adaptationGroups});return;}
           if(!page)throw Error('请先打开阅卷浏览器并进入目标页面');
           if(state.running || state.starting)throw Error('请先暂停阅卷，再进行页面调试');
