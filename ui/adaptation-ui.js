@@ -1,7 +1,7 @@
 export function buildAdaptationUI() {
   const fields=document.getElementById('platformFields'), details=fields.closest('details'), card=details.closest('.card');
   const advanced=document.createElement('details');advanced.innerHTML='<summary>高级规则：选择器与提交字段</summary>';
-  const heading=document.createElement('h2');heading.textContent='01 选择阅卷网站';card.prepend(heading);
+  const heading=document.createElement('h2');heading.textContent='选择阅卷网站';card.prepend(heading);
   const root=document.createElement('div');root.id='adaptationWizard';root.innerHTML=`
   <p class="hint">选择内置网站方案即可带入整套适配规则；也可添加自定义方案，按步骤自行调试。</p>
   <div class="controls"><label>网站方案<select id="adaptGroup"></select></label><button id="adaptTemplate">从内置方案添加</button><button id="adaptNew">新建自定义方案</button><button id="adaptDelete">删除方案</button></div>
