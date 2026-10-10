@@ -1,4 +1,5 @@
 import { requestModel } from './models.mjs';
+import { rubricPrompts } from '../ui/rubric-prompts.js';
 import { scoringItemSchema } from './domain.mjs';
 
 export async function generateRubric(settings, input, request = requestModel) {
@@ -14,9 +15,15 @@ export async function generateRubric(settings, input, request = requestModel) {
   });
   const maximum = Number(input.maxScore);
   if (!Number.isFinite(maximum) || maximum <= 0) throw Error('请先填写有效的总分');
+  const mode = input.strictness || 'normal';
+  if (!Object.hasOwn(rubricPrompts, mode)) throw Error('答案要求选项无效');
+  const requirements = typeof input.requirements === 'string' ? input.requirements.trim() : rubricPrompts[mode].text;
+  if (!requirements || requirements.length > 6000) throw Error('请填写答案要求提示词（最多6000字）');
   const type = input.questionType === 'objective' ? '客观题' : '主观题';
   const prompt = `你是教师的评分标准编写助手。依据提供的题目和参考答案编写评分标准草稿，不是给学生评分。
 题型：${type}。总分：${maximum}分。
+答案要求：${rubricPrompts[mode].label}。教师提示词：${requirements}
+将答案要求落实到各评分项的接受答案、关键要点和扣分规则，并在标准末尾说明采用的要求。宽严只影响答案接受范围和部分分，不改变原题明确给出的分值及参考答案；任何模式都不得脑补学生答案。
 题目文字：${fields[0].text}
 参考答案文字：${fields[1].text}
 图片顺序：前${fields[0].images.length}张是题目，后${fields[1].images.length}张是参考答案。
