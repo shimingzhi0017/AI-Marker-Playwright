@@ -138,6 +138,8 @@ export function buildLayout() {
   const browserStep=document.createElement('section');browserStep.className='launch-step';browserStep.id='browserStep';
   browserStep.innerHTML='<div class="launch-heading"><div><h2>打开浏览器，检查阅卷页面</h2><p>登录网站并进入具体阅卷页面，再点击检查页面。</p></div></div><div class="actions"></div>';
   browserStep.querySelector('.actions').append($('open'),$('diagnose'));
+  const pageCheckResult=document.createElement('div');pageCheckResult.className='page-check-result';pageCheckResult.setAttribute('aria-live','polite');
+  pageCheckResult.append($('readiness'),$('diagnosis'));browserStep.append(pageCheckResult);
   toolbar.prepend(browserStep);
   const runtime= document.querySelector('.runtime-settings');runtime.classList.add('launch-step');
   runtime.querySelector('.runtime-heading').innerHTML='<div class="launch-heading"><div><h2>设置本次阅卷方式</h2><p>页面识别成功后，选择运行模式和阅卷份数。</p></div></div><span id="runtimeSummary" hidden></span>';
