@@ -95,6 +95,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.locator('#dual').uncheck();
   await page.locator('#saveWorkflow').click();
   await page.locator('[data-tab=presets]').click();
+  await page.locator('[data-tab=grading]').click();
   await page.getByText('高级规则：选择器与提交字段',{exact:true}).click();await page.locator('#adaptUrl').fill(fixtureUrl);await page.locator('[data-platform=taskIdSelector]').fill('#task');await page.locator('[data-platform=paperIdSelector]').fill('#paper');await page.locator('#adaptSave').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent==='网址分组已保存');
   await page.reload();await page.locator('[data-tab=presets]').click();assert.equal(await page.locator('#answer').inputValue(),'模拟参考说明');
   await page.locator('[data-tab=grading]').click();await page.locator('#open').click();await page.waitForFunction(()=>!document.querySelector('#diagnose').disabled);await page.locator('#diagnose').click();await page.waitForFunction(()=>document.querySelector('#phase').textContent==='页面已识别');
@@ -209,7 +210,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   assert.match(await page.locator('#manualModelList').innerText(),/doubao-seed/);
   await page.locator('#closeProviderModels').click();
   assert.ok((await page.request.get(app.url+'/provider-templates.js')).ok());
-  await page.locator('.workspace-card.active').click();await page.locator('[data-tab=presets]').click();await page.locator('#adaptTemplate').click();
+  await page.locator('.workspace-card.active').click();await page.locator('[data-tab=grading]').click();await page.locator('#adaptTemplate').click();
   await page.locator('#adaptTemplateSelect').selectOption('zhixue');
   assert.match(await page.locator('#adaptTemplateStatus').innerText(),/已调通/);
   await page.locator('#adaptTemplateAdd').click();await page.waitForFunction(()=>document.querySelector('#adaptStatus').textContent.includes('智学网内置方案'));
