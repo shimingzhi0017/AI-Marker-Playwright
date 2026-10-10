@@ -59,6 +59,7 @@ export function setupRubricGenerator({getConfig, getImages, action, api, markDir
     $('roundStep').value = draftSettings.roundStep;
     getConfig().presets[$('presetSelect').value].rubricGeneration = {strictness:draftSettings.strictness,requirements:draftSettings.requirements,scoreAllocation:draftSettings.scoreAllocation};
     if ($('fillRecognizedText').checked) for (const field of ['question','answer']) if (!$(field).value.trim()) $(field).value = $(field === 'question' ? 'generatedQuestion' : 'generatedAnswer').value;
+    document.dispatchEvent(new Event('preset-preview-refresh'));
     markDirty('presets'); $('rubricGeneratorDialog').close();
   };
 }

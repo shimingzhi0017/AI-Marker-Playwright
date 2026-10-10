@@ -1,5 +1,6 @@
 import {providerTemplates} from './provider-templates.js';
 import {setupRubricGenerator} from './rubric-generator.js';
+import {setupPresetPreviews} from './preset-preview.js';
 // Additional controls share the existing settings and API; no separate draft store is persisted.
 export function buildLayout() {
   const $ = id => document.getElementById(id);
@@ -219,6 +220,7 @@ export function buildLayout() {
 export function createEnhancements({getConfig,save,action,markDirty,renderPreset,renderUnits,renderProvider,renderWorkflow,getSnapshot,api,refreshSettings,notice}) {
   const $=id=>document.getElementById(id);const images={};
   setupRubricGenerator({getConfig,getImages:field=>structuredClone(images[field]||[]),action,api,markDirty});
+  setupPresetPreviews();
   const deleteDialog=document.createElement('dialog');deleteDialog.id='deleteProviderDialog';deleteDialog.setAttribute('aria-labelledby','deleteProviderTitle');
   deleteDialog.innerHTML='<h2 id="deleteProviderTitle">删除模型接口</h2><p id="deleteProviderMessage" class="hint"></p><form method="dialog" class="actions"><button value="cancel">取消</button><button id="confirmDeleteProvider" value="delete" class="danger">确认删除</button></form>';
   document.body.append(deleteDialog);
