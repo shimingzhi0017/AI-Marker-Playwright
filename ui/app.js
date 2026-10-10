@@ -12,7 +12,7 @@ function markDirty(section){dirty.add(section);$('dirtyBadge').hidden=false;}
 document.querySelectorAll('#presets,#models,#workflows,#providerDialog,.runtime-settings').forEach(section=>section.addEventListener('input',e=>{if(!['presetSelect','providerSelect','workflowSelect','importFile'].includes(e.target.id))markDirty(section.id==='providerDialog'?'models':section.id||'grading');}));
 window.addEventListener('beforeunload',e=>{if(dirty.size){e.preventDefault();e.returnValue='';}});
 const scoped = (url, id = workspace) => id === 'default' ? url : url + (url.includes('?') ? '&' : '?') + 'workspace=' + encodeURIComponent(id);
-const labels = { grading: '阅卷', presets: '方案设置', models: '模型接口', workflows: '评分工作流', history: '历史记录' };
+const labels = { grading: '开始阅卷', presets: '阅卷方案', models: '模型接口', workflows: '评分设置', history: '历史记录' };
 const states = { loading:'获取图片', grading:'模型评分', review:'待确认', filled:'已填分', submitted:'已提交', paused:'已暂停', uncertain:'待核对', submitting:'提交中', 'resolved-not-submitted':'已确认未提交' };
 let noticeTimer;
 function notice(message, success = false) { clearTimeout(noticeTimer);$('notice').textContent = message; $('notice').className = success ? 'success' : ''; $('notice').hidden = false;if(success && !message.includes('文件保存在'))noticeTimer=setTimeout(()=>{$('notice').hidden=true;},2500); }

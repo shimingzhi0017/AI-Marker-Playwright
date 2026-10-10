@@ -75,7 +75,7 @@ export function buildLayout() {
   document.addEventListener('click',e=>{if(e.target.matches('.images img,.field-thumbnails img')){$('largeImage').src=e.target.src;$('imageDialog').showModal();}});
   const sidebar=document.querySelector('aside'), oldNav=sidebar.querySelector('nav');
   const topNav=document.createElement('nav');topNav.className='task-tabs';topNav.setAttribute('aria-label','当前任务页面');
-  const workflowTab=document.createElement('button');workflowTab.dataset.tab='workflows';workflowTab.textContent='评分工作流';
+  const workflowTab=document.createElement('button');workflowTab.dataset.tab='workflows';workflowTab.textContent='评分设置';
   topNav.append(oldNav.querySelector('[data-tab="grading"]'),oldNav.querySelector('[data-tab="presets"]'),workflowTab,oldNav.querySelector('[data-tab="history"]'));
   document.querySelector('header').after(topNav);
   const workspaceControls=document.querySelector('.workspace-controls');sidebar.insertBefore(workspaceControls,oldNav);
@@ -89,7 +89,7 @@ export function buildLayout() {
   $('runPreset').closest('label').hidden=true;$('bind').hidden=true;
   
   $('presets').querySelector('h2').textContent='当前任务方案';
-  $('workflows').querySelector('h2').textContent='当前任务评分工作流';
+  $('workflows').querySelector('h2').textContent='当前任务评分设置';
   for(const prefix of ['primary','secondary','arbitration']){
     const input=$(prefix+'Model');input.removeAttribute('list');
     const button=document.createElement('button');button.id=prefix+'ChooseModel';button.type='button';button.className='small model-choose';button.textContent='选择模型';button.dataset.modelPrefix=prefix;input.after(button);
