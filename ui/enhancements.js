@@ -76,7 +76,7 @@ export function buildLayout() {
   const sidebar=document.querySelector('aside'), oldNav=sidebar.querySelector('nav');
   const topNav=document.createElement('nav');topNav.className='task-tabs';topNav.setAttribute('aria-label','当前任务页面');
   const workflowTab=document.createElement('button');workflowTab.dataset.tab='workflows';workflowTab.textContent='评分设置';
-  topNav.append(oldNav.querySelector('[data-tab="grading"]'),oldNav.querySelector('[data-tab="presets"]'),workflowTab,oldNav.querySelector('[data-tab="history"]'));
+  topNav.append(oldNav.querySelector('[data-tab="presets"]'),workflowTab,oldNav.querySelector('[data-tab="grading"]'),oldNav.querySelector('[data-tab="history"]'));
   document.querySelector('header').after(topNav);
   const workspaceControls=document.querySelector('.workspace-controls');sidebar.insertBefore(workspaceControls,oldNav);
   const modelsButton=oldNav.querySelector('[data-tab="models"]');modelsButton.textContent='AI接口';
