@@ -28,6 +28,11 @@ export function setupRubricGenerator({getConfig, getImages, action, api, markDir
   const modelPanel=document.createElement('section');modelPanel.className='rubric-model-panel';
   modelPanel.append($('rubricProvider').closest('label'),$('rubricModel').closest('label'),$('rubricModels'));
   form.prepend(modelPanel);
+  $('rubricModel').removeAttribute('list');
+  const modelInputRow=document.createElement('div');modelInputRow.className='rubric-model-input';
+  $('rubricModel').before(modelInputRow);modelInputRow.append($('rubricModel'));
+  modelInputRow.insertAdjacentHTML('beforeend','<button id="rubricChooseModel" type="button" aria-expanded="false" aria-controls="rubricModelPicker">选择模型</button>');
+  modelPanel.insertAdjacentHTML('beforeend','<section id="rubricModelPicker" class="rubric-model-picker" hidden><label>搜索模型<input id="rubricModelSearch" placeholder="输入名称筛选模型" autocomplete="off"></label><p id="rubricModelHint" class="hint"></p><div id="rubricModelChoices" class="model-choice-list"></div></section>');
   scoreColumn.insertAdjacentHTML('afterbegin','<div class="rubric-panel-heading"><h3>分值规则</h3><span>明确总分与各小题分配</span></div>');
   answerColumn.insertAdjacentHTML('afterbegin','<div class="rubric-panel-heading"><h3>学科与要求</h3><span>选择模板，也可自行调整</span></div>');
   const scoreNumbers=document.createElement('div');scoreNumbers.className='rubric-score-numbers';
@@ -45,10 +50,19 @@ export function setupRubricGenerator({getConfig, getImages, action, api, markDir
   let generating = false, draftSettings;
   const updateRequirements=()=>{if($('rubricStrictness').value!=='custom')$('rubricRequirements').value=rubricRequirements($('rubricSubject').value,$('rubricStrictness').value);};
   $('rubricSubject').onchange=updateRequirements;$('rubricStrictness').onchange=updateRequirements;
-  const generationControls = ['generateRubric','closeRubricGenerator','rubricProvider','rubricModel','rubricMaxScore','rubricRoundStep','rubricSubject','rubricStrictness','rubricRequirements','rubricScoreAllocation','applyGeneratedRubric'];
+  const generationControls = ['generateRubric','closeRubricGenerator','rubricProvider','rubricModel','rubricChooseModel','rubricModelSearch','rubricMaxScore','rubricRoundStep','rubricSubject','rubricStrictness','rubricRequirements','rubricScoreAllocation','applyGeneratedRubric'];
+  const closeModelPicker=()=>{$('rubricModelPicker').hidden=true;$('rubricChooseModel').setAttribute('aria-expanded','false');};
   const catalog = () => {
-    $('rubricModels').replaceChildren(...(getConfig().providers[$('rubricProvider').value]?.models || []).map(model => Object.assign(document.createElement('option'), {value:model})));
+    const models=getConfig().providers[$('rubricProvider').value]?.models || [],query=$('rubricModelSearch').value.trim().toLowerCase();
+    const matching=models.filter(model=>model.toLowerCase().includes(query));
+    $('rubricModelHint').textContent=!models.length?'此接口尚无模型目录，请在AI接口中获取目录，或直接输入模型名称。':matching.length?`共 ${models.length} 个模型，显示 ${matching.length} 个`:'没有匹配的模型，请修改搜索词或直接输入模型名称。';
+    $('rubricModelChoices').replaceChildren(...matching.map(model=>{
+      const button=document.createElement('button');button.type='button';button.textContent=model;button.setAttribute('aria-pressed',String($('rubricModel').value===model));
+      button.onclick=()=>{if(generating)return;$('rubricModel').value=model;closeModelPicker();$('rubricModel').focus();};return button;
+    }));
   };
+  $('rubricChooseModel').onclick=()=>{if(!$('rubricModelPicker').hidden){closeModelPicker();return;}$('rubricModelSearch').value='';catalog();$('rubricModelPicker').hidden=false;$('rubricChooseModel').setAttribute('aria-expanded','true');$('rubricModelSearch').focus();};
+  $('rubricModelSearch').oninput=catalog;
   $('openRubricGenerator').onclick = () => {
     if (generating) return;
     const config = getConfig(), workflow = config.workflows[$('presetWorkflow').value];
@@ -61,15 +75,16 @@ export function setupRubricGenerator({getConfig, getImages, action, api, markDir
     $('rubricSubject').value = Object.hasOwn(rubricSubjects,saved.subject) ? saved.subject : '';
     $('rubricStrictness').value = Object.hasOwn(rubricPrompts,saved.strictness) ? saved.strictness : 'normal';
     $('rubricRequirements').value = saved.requirements ?? rubricRequirements($('rubricSubject').value,$('rubricStrictness').value);
-    $('rubricModel').value = workflow?.model?.model || ''; catalog();
+    $('rubricModel').value = config.providers[workflow?.model?.provider] ? workflow?.model?.model || '' : '';closeModelPicker();$('rubricModelSearch').value='';catalog();
     $('rubricDraft').hidden = true; $('rubricGenerationStatus').textContent = '';
     $('rubricGeneratorDialog').showModal();
   };
-  $('rubricProvider').onchange = () => { $('rubricModel').value = ''; catalog(); };
+  $('rubricProvider').onchange = () => { $('rubricModel').value = '';$('rubricModelSearch').value='';catalog(); };
   $('closeRubricGenerator').onclick = () => { if (!generating) $('rubricGeneratorDialog').close(); };
   $('rubricGeneratorDialog').addEventListener('cancel', event => { if (generating) event.preventDefault(); });
   $('generateRubric').onclick = () => action(async () => {
     generating = true;
+    closeModelPicker();
     for (const id of generationControls) $(id).disabled = true;
     $('rubricDraft').hidden = true;
     $('rubricGenerationStatus').textContent = '正在读取题目和参考答案并生成评分标准…';

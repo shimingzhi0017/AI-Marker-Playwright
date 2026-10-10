@@ -121,6 +121,7 @@ aside nav button[data-tab="models"]{text-align:center}
 #closeRubricGenerator{padding:8px 14px;font-size:12px;border-radius:9px}
 #rubricGeneratorDialog .form-grid{margin:0;padding:22px 28px;gap:18px}
 .rubric-model-panel{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:18px;padding:16px 20px;background:#eef4f0;border:1px solid #e0e9e2;border-radius:12px}
+.rubric-model-input{display:flex;align-items:center;gap:8px;margin-top:7px}#rubricGeneratorDialog .rubric-model-input input{margin:0;flex:1;min-width:0}.rubric-model-input button{height:40px;white-space:nowrap;font-size:12px;padding:8px 12px}.rubric-model-picker{grid-column:1/-1;padding:16px;background:#fff;border:1px solid #dce6df;border-radius:10px}.rubric-model-picker .model-choice-list{max-height:260px}.rubric-model-picker .model-choice-list button{font-size:13px;padding:10px 12px}.rubric-model-picker .hint{margin:10px 0 0!important}
 #rubricGeneratorDialog label{margin:0;font-size:12px;font-weight:500;color:#597062}
 #rubricGeneratorDialog input,#rubricGeneratorDialog select{height:40px;margin-top:7px;border-color:#d8e3db;border-radius:8px;font-size:13px;padding:8px 11px}
 #rubricGeneratorDialog textarea{margin-top:8px;border-color:#d8e3db;border-radius:9px;padding:12px 14px;font-size:13px;line-height:1.85;font-weight:400}

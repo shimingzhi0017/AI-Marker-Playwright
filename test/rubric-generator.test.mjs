@@ -61,7 +61,7 @@ test('图片经已有接口生成草稿，预览回填后保存并保留原始�
   const app=await createApp({root});
   const cfg=JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8'));
   const provider=Object.keys(cfg.providers)[0];
-  cfg.providers[provider]={protocol:'chat',endpoint:`http://127.0.0.1:${fixture.address().port}/v1`,apiKey:'fixture-key',models:['vision']};
+  cfg.providers[provider]={protocol:'chat',endpoint:`http://127.0.0.1:${fixture.address().port}/v1`,apiKey:'fixture-key',models:['vision','other-vision']};
   fs.writeFileSync(path.join(root,'shared-providers.json'),JSON.stringify(cfg.providers));
   cfg.presets[cfg.active].scoring.maxScore=0;
   cfg.workflows[cfg.presets[cfg.active].workflowId].model={provider,model:'vision'};
@@ -95,6 +95,16 @@ test('图片经已有接口生成草稿，预览回填后保存并保留原始�
   assert.equal(await page.locator('#presets #answerReferenceImages img').count(),1);
   assert.equal(await page.locator('#answerImages').count(),1);
   await page.locator('#openRubricGenerator').click();
+  assert.equal(await page.locator('#rubricModel').getAttribute('list'),null);
+  await page.locator('#rubricChooseModel').click();
+  assert.equal(await page.locator('#rubricModelChoices button').count(),2);
+  await page.locator('#rubricModelSearch').fill('other');
+  await page.locator('#rubricModelChoices button').click();
+  assert.equal(await page.locator('#rubricModel').inputValue(),'other-vision');
+  await page.waitForTimeout(800);assert.equal(await page.locator('#rubricModel').inputValue(),'other-vision');
+  await page.locator('#rubricChooseModel').click();
+  assert.equal(await page.locator('#rubricModelChoices button').count(),2);
+  await page.locator('#rubricModelChoices button').filter({hasText:/^vision$/}).click();
   assert.equal(await page.locator('#rubricMaxScore').inputValue(),'');
   assert.equal(await page.locator('#rubricStrictness').inputValue(),'normal');
   assert.equal(await page.locator('#rubricSubject option').count(),10);
