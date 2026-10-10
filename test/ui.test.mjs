@@ -32,7 +32,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.waitForFunction(()=>document.querySelector('#phase').textContent==='待开始');
   assert.equal(await page.title(),'阅卷工作台');
   assert.equal((await page.request.get(app.url+'/app.js')).headers()['cache-control'],'no-store');
-  assert.ok(await page.locator('#grading').isVisible());
+  assert.ok(await page.locator('#presets').isVisible());
   await page.locator('[data-tab=presets]').click();
   page.once('dialog',dialog=>dialog.accept());
   await page.locator('#importFile').setInputFiles({name:'fixture-config.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({presets:{active:'我的方案',list:{'我的方案':{answer:{text:'',images:[]},rubric:'',scoring:{maxScore:0,units:[],items:[{id:'old-item',label:'旧题评分点',maxScore:4}]},workflowId:'我的工作流'}}},providers:{providers:{'个人接口':{protocol:'chat',endpoint:'',models:[]}}},workflows:{workflows:{'我的工作流':{id:'我的工作流',model:{provider:'个人接口',model:''}}}}}))});
@@ -64,6 +64,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.waitForFunction(()=>document.querySelector('#providerDialog').hidden);
   await page.locator('.workspace-card.active').click();
   await page.locator('[data-tab=workflows]').click();
+  await page.locator('#dual').check();
   assert.equal(await page.locator('#recognitionPolicy').inputValue(),'manual');
   await page.locator('#recognitionPolicy').selectOption('arbitration');
   assert.ok(await page.locator('#arbitrationPanel').isVisible());

@@ -135,6 +135,24 @@ export function buildLayout() {
   rulesGrid.append(comparison,recognition);
   const safeguards=document.createElement('details');safeguards.className='policy-explanation';safeguards.innerHTML='<summary>查看完整处理规则</summary><ul><li>客观题逐项比较；任意分歧或缺少明细都调用仲裁，总分相同也不能跳过。</li><li>主观题总分差在设定阈值内时取平均，超出时调用仲裁。</li><li>识别有疑点时调用第三模型；三评总分及逐项一致时直接采用一致分数。</li><li>三评不一致时，按所选方式转人工或采用有效仲裁分数；疑点仍保留供审查。</li><li>提交遵循当前运行模式；仲裁失败或分数无效时暂停。</li></ul>';safeguards.classList.add('dual-control');rules.append(safeguards);
   $('saveWorkflow').textContent='保存评分设置';
+  const browserStep=document.createElement('section');browserStep.className='launch-step';browserStep.id='browserStep';
+  browserStep.innerHTML='<div class="launch-heading"><span>02</span><div><h2>打开浏览器，检查阅卷页面</h2><p>登录网站并进入具体阅卷页面，再点击检查页面。</p></div></div><div class="actions"></div>';
+  browserStep.querySelector('.actions').append($('open'),$('diagnose'));
+  toolbar.prepend(browserStep);
+  const runtime= document.querySelector('.runtime-settings');runtime.classList.add('launch-step');
+  runtime.querySelector('.runtime-heading').innerHTML='<div class="launch-heading"><span>03</span><div><h2>设置本次阅卷方式</h2><p>页面识别成功后，选择运行模式和阅卷份数。</p></div></div><span id="runtimeSummary" hidden></span>';
+  const runtimeControls=runtime.querySelector('.controls');
+  const quantity=document.createElement('div');quantity.className='quantity-settings';quantity.append($('batchEnabled').closest('label'),$('batch').closest('label'));
+  runtimeControls.insertBefore(quantity,$('saveMode'));$('saveMode').textContent='保存运行设置';
+  const launch=document.createElement('section');launch.className='launch-step launch-final';launch.id='launchFinal';
+  launch.innerHTML='<div class="launch-heading"><span>04</span><div><h2>开始阅卷</h2><p id="launchStatus">完成方案、模型和页面检查后即可开始。</p></div></div><div class="actions"></div>';
+  launch.querySelector('.actions').append($('start'),$('pause'));runtime.after(launch);
+  const nextSettings=document.createElement('button');nextSettings.id='nextScoringSettings';nextSettings.textContent='下一步：评分设置';nextSettings.onclick=()=>document.querySelector('[data-tab="workflows"]').click();$('savePreset').after(nextSettings);
+  const nextGrading=document.createElement('button');nextGrading.id='nextStartGrading';nextGrading.textContent='下一步：开始阅卷';nextGrading.onclick=()=>document.querySelector('[data-tab="grading"]').click();$('saveWorkflow').after(nextGrading);
+  for(const [tab,number] of [['presets','1'],['workflows','2'],['grading','3']]){
+    const button=document.querySelector(`[data-tab="${tab}"]`);const title=button.textContent;button.innerHTML='<span class="tab-step">'+number+'</span>'+title;
+  }
+  document.querySelectorAll('.tab').forEach(el=>el.hidden=el.id!=='presets');document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab==='presets'));$('title').textContent='阅卷方案';
   const backupMenu=document.createElement('details');backupMenu.className='export-menu';backupMenu.innerHTML='<summary>配置备份</summary>';
   const backupOptions=document.createElement('div');backupOptions.className='export-options';
   const importControl=$('importFile').closest('label');importControl.before(backupMenu);backupOptions.append(importControl,$('exportConfig'));backupMenu.append(backupOptions);
