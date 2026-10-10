@@ -1,7 +1,7 @@
 export function buildAdaptationUI() {
   const fields=document.getElementById('platformFields'), details=fields.closest('details'), card=details.closest('.card');
   const advanced=document.createElement('details');advanced.innerHTML='<summary>高级规则：选择器与提交字段</summary>';
-  const heading=document.createElement('h2');heading.textContent='页面适配与调试';card.prepend(heading);
+  const heading=document.createElement('h2');heading.textContent='阅卷网站';card.prepend(heading);
   const root=document.createElement('div');root.id='adaptationWizard';root.innerHTML=`
   <p class="hint">选择内置网站方案即可带入整套适配规则；也可添加自定义方案，按步骤自行调试。</p>
   <div class="controls"><label>网站方案<select id="adaptGroup"></select></label><button id="adaptTemplate">从内置方案添加</button><button id="adaptNew">新建自定义方案</button><button id="adaptDelete">删除方案</button></div>
@@ -21,12 +21,36 @@ export function buildAdaptationUI() {
   <details><summary>页面识别报告</summary><pre id="adaptReport"></pre></details></details>`;
   document.body.insertAdjacentHTML('beforeend','<dialog id="adaptTemplateDialog"><h2>添加网站适配方案</h2><label>网站<select id="adaptTemplateSelect"></select></label><p id="adaptTemplateStatus" class="hint"></p><label>实际阅卷网址<input id="adaptTemplateUrl" type="url" placeholder="填写网站或内网部署地址"></label><div class="footer-actions"><button id="adaptTemplateCancel">取消</button><button id="adaptTemplateAdd" class="primary">添加方案</button></div></dialog>');
   card.append(root);advanced.append(fields,document.getElementById('verified').closest('label'));card.append(advanced);
+  const settings=document.createElement('details');settings.id='adaptAdvancedSettings';settings.innerHTML='<summary>高级设置与自定义网站</summary>';
+  const websiteControls=document.createElement('div');websiteControls.className='controls';websiteControls.innerHTML='<label>选择阅卷网站<select id="adaptWebsite"><option value="">正在加载网站…</option></select></label><button id="adaptAddCustom">添加自定义网站</button>';
+  const intro=root.querySelector('p.hint');intro.textContent='选择内置网站即可使用对应适配规则；未列出的网站可添加自定义方案。';
+  card.insertBefore(intro,root);card.insertBefore(websiteControls,root);card.insertBefore(document.getElementById('adaptStatus'),root);
+  card.append(settings);settings.append(root,advanced);
+  document.getElementById('adaptTemplate').hidden=true;
+  document.getElementById('grading').prepend(card);
   document.getElementById('verified').disabled=true;
   document.getElementById('savePlatform').hidden=true;advanced.append(document.getElementById('savePlatform'));details.remove();
 }
 export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirty}) {
   const $=id=>document.getElementById(id);let selected,lastPick,inspection;
   let templates=[];
+  function websiteOptions(){
+    const select=$('adaptWebsite'), group=current();
+    select.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'请选择阅卷网站'}),...templates.map(t=>Object.assign(document.createElement('option'),{value:'template:'+t.id,textContent:t.name})),...groups().filter(g=>!g.templateId).map(g=>Object.assign(document.createElement('option'),{value:'group:'+g.id,textContent:g.name+'（自定义）'})));
+    select.value=group?.templateId?'template:'+group.templateId:group?'group:'+group.id:'';
+  }
+  api('/api/adaptation',{action:'templates'}).then(result=>{templates=result.templates;websiteOptions();}).catch(error=>notice(error.message));
+  $('adaptWebsite').onchange=()=>action(async()=>{
+    const value=$('adaptWebsite').value;
+    if(value.startsWith('group:')){selected=value.slice(6);render();return;}
+    if(!value.startsWith('template:'))return;
+    const id=value.slice(9),existing=groups().find(g=>g.templateId===id);
+    if(existing){selected=existing.id;render();$('adaptAdvancedSettings').open=false;return;}
+    const template=templates.find(t=>t.id===id);
+    if(!template.url){$('adaptTemplateSelect').replaceChildren(...templates.map(t=>Object.assign(document.createElement('option'),{value:t.id,textContent:t.name})));$('adaptTemplateSelect').value=id;templatePreview();$('adaptTemplateDialog').showModal();return;}
+    const result=await api('/api/adaptation',{action:'template',templateId:id,url:template.url});getConfig().adaptationGroups=result.groups;selected=result.selected;refresh();render();$('adaptAdvancedSettings').open=false;
+  });
+  $('adaptAddCustom').onclick=()=>{$('adaptNew').click();$('adaptAdvancedSettings').open=true;$('adaptCustomSteps').open=true;$('adaptName').focus();};
   function templatePreview(){const template=templates.find(t=>t.id===$('adaptTemplateSelect').value);$('adaptTemplateStatus').textContent=template?.status || '';$('adaptTemplateUrl').value=template?.url || '';}
   $('adaptTemplate').onclick=()=>action(async()=>{templates=(await api('/api/adaptation',{action:'templates'})).templates;$('adaptTemplateSelect').replaceChildren(...templates.map(t=>{const o=document.createElement('option');o.value=t.id;o.textContent=t.name;return o;}));templatePreview();$('adaptTemplateDialog').showModal();});
   $('adaptTemplateSelect').onchange=templatePreview;$('adaptTemplateCancel').onclick=()=>$('adaptTemplateDialog').close();
@@ -36,6 +60,7 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
   function render() {
     const list=groups();if(!list.some(g=>g.id===selected))selected=list[0]?.id;
     $('adaptGroup').replaceChildren(...list.map(g=>{const option=document.createElement('option');option.value=g.id;option.textContent=g.name;return option;}));$('adaptGroup').value=selected || '';
+    websiteOptions();
     const group=current();$('adaptName').value=group?.name || '';$('adaptUrl').value=group?.url || '';
     for(const input of document.querySelectorAll('[data-platform]')){const key=input.dataset.platform;const value=key==='browser.url'?group?.url:group?.platform?.[key];input.value=key==='successValue'?JSON.stringify(value??true):value || '';}
     $('verified').checked=!!group?.platform?.verified;
@@ -45,7 +70,7 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
   async function save(){const group=read();const result=await api('/api/adaptation',{action:'save',group});getConfig().adaptationGroups=result.groups;getConfig().platform=result.groups.find(g=>g.id===group.id).platform;selected=group.id;refresh();render();return group;}
   const run=fn=>action(async()=>{await fn();});
   $('adaptGroup').onchange=()=>{selected=$('adaptGroup').value;render();};
-  $('adaptNew').onclick=()=>{selected=crypto.randomUUID();getConfig().adaptationGroups.push({id:selected,name:'新网址分组',url:'https://',platform:{verified:false}});render();markDirty('presets');};
+  $('adaptNew').onclick=()=>{selected=crypto.randomUUID();getConfig().adaptationGroups.push({id:selected,name:'新网址分组',url:'https://',platform:{verified:false}});render();$('adaptAdvancedSettings').open=true;markDirty('grading');};
   $('adaptDelete').onclick=()=>run(async()=>{if(!current()||!confirm('删除这个网址分组？阅卷历史保留。'))return;const result=await api('/api/adaptation',{action:'delete',id:selected});getConfig().adaptationGroups=result.groups;selected=null;refresh();render();notice('网址分组已删除',true);});
   $('adaptSave').onclick=()=>run(async()=>{await save();notice('网址分组已保存',true);});
   $('adaptInspect').onclick=()=>run(async()=>{await save();inspection=await api('/api/adaptation',{action:'inspect',id:selected});$('adaptReport').textContent=JSON.stringify(inspection,null,2);const s=inspection.snapshot;const plausible=inspection.frames.filter(f=>f.inputs.length&&f.images.length);if(s.error&&plausible.length===1){const f=plausible[0];for(const [key,list]of [['imageSelector',f.images],['scoreSelector',f.inputs],['submitSelector',f.buttons]]){const values=[...new Set(list.map(i=>i.selector).filter(Boolean))];if(values.length===1){const field=[...document.querySelectorAll('[data-platform]')].find(i=>i.dataset.platform===key);if(field&&!field.value)field.value=values[0];}}markDirty('presets');}$('adaptStatus').textContent=s.error?'识别未完成：'+s.error+'。已列出候选元素，检查高级规则或使用点选修正后重试。':`找到${s.images.length}张图片、${s.units.length}个评分框；${s.strongIdentity?'答卷ID已识别':'答卷ID待设置'}。`;
