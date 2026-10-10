@@ -28,7 +28,8 @@ export function buildAdaptationUI() {
   card.insertBefore(intro,root);card.insertBefore(websiteControls,root);card.insertBefore(document.getElementById('adaptStatus'),root);
   card.append(settings);settings.append(root,advanced);
   document.getElementById('adaptTemplate').hidden=true;
-  document.getElementById('grading').prepend(card);
+  card.id='websiteCard';card.classList.add('website-picker');heading.hidden=true;intro.hidden=true;
+  document.getElementById('browserStep').insertBefore(card,document.getElementById('browserGuide'));
   document.getElementById('verified').disabled=true;
   document.getElementById('savePlatform').hidden=true;advanced.append(document.getElementById('savePlatform'));details.remove();
 }

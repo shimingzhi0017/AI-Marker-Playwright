@@ -71,7 +71,7 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
   const adaptationConfig=loadSettings(file);if(!adaptationConfig.adaptationGroups){fs.copyFileSync(file,file+'.before-adaptation-groups');migrateGroups(adaptationConfig);fs.writeFileSync(file,JSON.stringify(adaptationConfig,null,2));}
   const store = new Store(data);
   coordinator.stores.add(store);
-  const state = { running: false, phase: '待开始', reason: '请导入原插件配置，或在设置中填写方案和模型。', count: 0, record: null, snapshot: null, browserOpen: false, review: false, countdown: null };
+  const state = { running: false, phase: '待开始', reason: '请导入原插件配置，或在设置中填写方案和模型。', count: 0, record: null, snapshot: null, diagnosisError: '', browserOpen: false, review: false, countdown: null };
   let context, page, platform, runner, pendingReview, timer, runPromise, submissionObserver, topicTracker, opening = false, generation = 0;
   let pickerToken;const adaptationDebug=new AdaptationDebugger(()=>platform);
   const events = [];
@@ -136,6 +136,7 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
       platform = new ZhixuePlatform(page, applyGroup(cfg,target.href), path.join(data, 'diagnostics'));
       platform.topicTracker = topicTracker;
       state.browserOpen = true;
+      state.snapshot = null; state.diagnosisError = '';
       await page.goto(target.href, { waitUntil: 'domcontentloaded', timeout: 45000 });
       state.reason = '请在阅卷浏览器中登录并进入阅卷页面，然后点击“检查页面”。'; note('阅卷浏览器已打开');
     } finally { opening = false; }
@@ -330,13 +331,18 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
           throw Error('调试操作无效');
         }
         case '/api/diagnose': {
-          if (state.running) throw Error('请先暂停'); if (!platform) throw Error('请先打开阅卷浏览器');
-          await selectGradingPage();
-          platform=new ZhixuePlatform(page,applyGroup(settings(),page.url()),path.join(data,'diagnostics'));platform.topicTracker=topicTracker;
-          if(await platform.completed()){state.phase='阅卷完成';state.reason='本题已全部阅完，请在网站选择留在当前题或切换下一题。';note(state.reason);break;}
-          state.snapshot = await platform.snapshot();
-          state.phase = '页面已识别'; state.reason = `${state.snapshot.adapterName ? '已匹配'+state.snapshot.adapterName+'。' : ''}找到${state.snapshot.images.length}张图片、${state.snapshot.units.length}个评分框。${state.snapshot.strongIdentity ? '' : state.snapshot.submissionOnFill || state.snapshot.units.some(u=>u.type==='click') ? '此网站给分动作可能直接提交，可先评分，再在网站人工确认。' : '尚未确认稳定答卷ID，可先评分并只填分。'}`;
-          await platform.diagnostic('可视化页面诊断'); note(state.reason); break;
+          if (state.running || state.starting) throw Error('请先暂停');
+          state.snapshot = null; state.diagnosisError = '';
+          try {
+            if (!platform) throw Error('请先打开阅卷浏览器');
+            await selectGradingPage();
+            platform=new ZhixuePlatform(page,applyGroup(settings(),page.url()),path.join(data,'diagnostics'));platform.topicTracker=topicTracker;
+            if(await platform.completed()){state.phase='阅卷完成';state.reason='本题已全部阅完，请在网站选择留在当前题或切换下一题。';note(state.reason);break;}
+            state.snapshot = await platform.snapshot();
+            state.phase = '页面已识别'; state.reason = `${state.snapshot.adapterName ? '已匹配'+state.snapshot.adapterName+'。' : ''}找到${state.snapshot.images.length}张图片、${state.snapshot.units.length}个评分框。${state.snapshot.strongIdentity ? '' : state.snapshot.submissionOnFill || state.snapshot.units.some(u=>u.type==='click') ? '此网站给分动作可能直接提交，可先评分，再在网站人工确认。' : '尚未确认稳定答卷ID，可先评分并只填分。'}`;
+            await platform.diagnostic('可视化页面诊断'); note(state.reason);
+          } catch (error) { state.snapshot = null; state.diagnosisError = error.message; throw error; }
+          break;
         }
         case '/api/export-file': {
           if (!['json','csv','html'].includes(input.format)) throw Error('导出格式无效');

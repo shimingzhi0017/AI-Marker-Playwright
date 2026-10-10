@@ -135,20 +135,42 @@ export function buildLayout() {
   rulesGrid.append(comparison,recognition);
   const safeguards=document.createElement('details');safeguards.className='policy-explanation';safeguards.innerHTML='<summary>查看完整处理规则</summary><ul><li>客观题逐项比较；任意分歧或缺少明细都调用仲裁，总分相同也不能跳过。</li><li>主观题总分差在设定阈值内时取平均，超出时调用仲裁。</li><li>识别有疑点时调用第三模型；三评总分及逐项一致时直接采用一致分数。</li><li>三评不一致时，按所选方式转人工或采用有效仲裁分数；疑点仍保留供审查。</li><li>提交遵循当前运行模式；仲裁失败或分数无效时暂停。</li></ul>';safeguards.classList.add('dual-control');rules.append(safeguards);
   $('saveWorkflow').textContent='保存评分设置';
-  const browserStep=document.createElement('section');browserStep.className='launch-step';browserStep.id='browserStep';
-  browserStep.innerHTML='<div class="launch-heading"><div><h2>打开浏览器，检查阅卷页面</h2><p>登录网站并进入具体阅卷页面，再点击检查页面。</p></div></div><div class="actions"></div>';
+  toolbar.classList.add('launch-console');
+  const browserStep=document.createElement('section');browserStep.className='launch-pane';browserStep.id='browserStep';
+  browserStep.innerHTML=`<div class="launch-pane-heading"><h2>连接阅卷页面</h2><span id="browserStatus" class="connection-status">未连接</span></div>
+    <p id="browserGuide" class="launch-helper">打开浏览器，登录网站并进入阅卷页面。</p><div class="actions browser-actions"></div>
+    <div class="page-check-result" aria-live="polite"><div class="check-result-heading"><strong id="checkTitle">等待页面检查</strong></div>
+    <div id="checkMetrics" class="check-metrics" hidden><div><strong id="checkImages">—</strong><span>答卷图片</span></div><div><strong id="checkUnits">—</strong><span>评分框</span></div><div><strong id="checkIdentity">—</strong><span>答卷 ID</span></div></div>
+    <p id="checkError" class="check-error" hidden></p></div>`;
   browserStep.querySelector('.actions').append($('open'),$('diagnose'));
-  const pageCheckResult=document.createElement('div');pageCheckResult.className='page-check-result';pageCheckResult.setAttribute('aria-live','polite');
-  pageCheckResult.append($('readiness'),$('diagnosis'));browserStep.append(pageCheckResult);
-  toolbar.prepend(browserStep);
-  const runtime= document.querySelector('.runtime-settings');runtime.classList.add('launch-step');
-  runtime.querySelector('.runtime-heading').innerHTML='<div class="launch-heading"><div><h2>设置本次阅卷方式</h2><p>页面识别成功后，选择运行模式和阅卷份数。</p></div></div><span id="runtimeSummary" hidden></span>';
-  const runtimeControls=runtime.querySelector('.controls');
-  const quantity=document.createElement('div');quantity.className='quantity-settings';quantity.append($('batchEnabled').closest('label'),$('batch').closest('label'));
-  runtimeControls.insertBefore(quantity,$('saveMode'));$('saveMode').textContent='保存运行设置';
-  const launch=document.createElement('section');launch.className='launch-step launch-final';launch.id='launchFinal';
-  launch.innerHTML='<div class="launch-heading"><div><h2>开始阅卷</h2><p id="launchStatus">完成方案、模型和页面检查后即可开始。</p></div></div><div class="actions"></div>';
-  launch.querySelector('.actions').append($('start'),$('pause'));runtime.after(launch);
+  browserStep.querySelector('.page-check-result').append($('diagnosis'));
+  const runtime=document.querySelector('.runtime-settings');runtime.classList.add('launch-pane');
+  runtime.querySelector('.runtime-heading').innerHTML='<div class="launch-pane-heading"><h2>本次阅卷</h2><span id="runtimeSaved" class="runtime-saved">已保存</span></div><span id="runtimeSummary" hidden></span>';
+  const runtimeControls=runtime.querySelector('.controls');runtimeControls.className='runtime-controls';
+  const modeLabel=$('mode').closest('label');modeLabel.hidden=true;
+  const modeChoices=document.createElement('fieldset');modeChoices.className='mode-choices';modeChoices.innerHTML='<legend>提交方式</legend>';
+  for(const [value,title,description] of [['trial','人工确认','查看每份结果，由你确认提交'],['normal','倒计时提交','5 秒后提交，可随时拦停'],['unattended','无人值守','连续评分和提交，异常时暂停']]){
+    const label=document.createElement('label');label.className='mode-choice';
+    const radio=document.createElement('input');radio.type='radio';radio.name='runMode';radio.value=value;
+    const copy=document.createElement('span');const strong=document.createElement('strong');strong.textContent=title;
+    const hint=document.createElement('small');hint.textContent=description;copy.append(strong,hint);label.append(radio,copy);modeChoices.append(label);
+    radio.addEventListener('input',()=>{if(radio.checked){$('mode').value=value;$('mode').dispatchEvent(new Event('input',{bubbles:true}));}});
+  }
+  runtimeControls.prepend(modeChoices);
+  const quantity=document.createElement('div');quantity.className='quantity-settings';
+  const limitLabel=$('batchEnabled').closest('label');limitLabel.lastChild.textContent='限制阅卷份数';
+  quantity.append(limitLabel);quantity.insertAdjacentHTML('beforeend','<p id="quantitySummary" class="launch-helper">不限份数，阅卷结束后自动停止。</p>');
+  const batchField=$('batch').closest('label');batchField.id='batchField';batchField.firstChild.textContent='最多提交';
+  const batchInput=document.createElement('div');batchInput.className='batch-input';batchInput.append($('batch'));batchInput.insertAdjacentHTML('beforeend','<span>份</span>');batchField.append(batchInput);quantity.append(batchField);
+  runtimeControls.append(quantity);
+  const runtimeFooter=document.createElement('div');runtimeFooter.className='runtime-footer';runtimeFooter.innerHTML='<span>开始时自动保存本次设置</span>';
+  $('saveMode').textContent='保存设置';runtimeFooter.append($('saveMode'));runtime.append(runtimeFooter);
+  const columns=document.createElement('div');columns.className='launch-columns';columns.append(browserStep,runtime);toolbar.prepend(columns);
+  const launch=document.createElement('footer');launch.className='launch-footer';launch.id='launchFinal';
+  launch.innerHTML='<div class="launch-overview"><p id="launchStatus" aria-live="polite">完成方案、模型和页面检查后即可开始。</p></div><div class="launch-submit"><div class="actions"></div></div>';
+  launch.querySelector('.launch-overview').prepend($('readiness'));launch.querySelector('.launch-overview').append($('reason'));
+  launch.querySelector('.launch-submit').prepend($('count'));launch.querySelector('.actions').append($('start'),$('pause'));toolbar.append(launch);
+  for(const empty of toolbar.querySelectorAll(':scope > .actions,:scope > .summary'))if(!empty.children.length)empty.remove();
   const nextSettings=document.createElement('button');nextSettings.id='nextScoringSettings';nextSettings.textContent='下一步：评分设置';nextSettings.onclick=()=>document.querySelector('[data-tab="workflows"]').click();$('savePreset').after(nextSettings);
   const nextGrading=document.createElement('button');nextGrading.id='nextStartGrading';nextGrading.textContent='下一步：开始阅卷';nextGrading.onclick=()=>document.querySelector('[data-tab="grading"]').click();$('saveWorkflow').after(nextGrading);
   document.querySelectorAll('.tab').forEach(el=>el.hidden=el.id!=='presets');document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab==='presets'));$('title').textContent='阅卷方案';
