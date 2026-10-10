@@ -34,6 +34,9 @@ export function buildAdaptationUI() {
 }
 export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirty}) {
   const $=id=>document.getElementById(id);let selected,lastPick,inspection,recorded=false;
+  const deleteDialog=document.createElement('dialog');deleteDialog.id='deleteWebsiteDialog';
+  deleteDialog.innerHTML='<h2>删除自定义网站</h2><p id="deleteWebsiteMessage"></p><form method="dialog" class="actions"><button value="cancel">取消</button><button value="delete" class="danger">确认删除</button></form>';
+  document.body.append(deleteDialog);
   let templates=[];
   function websiteOptions(){
     if(!getConfig())return;
@@ -76,7 +79,17 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
   const run=fn=>action(async()=>{try{await fn();}catch(error){$('adaptStatus').textContent=error.message;throw error;}});
   $('adaptGroup').onchange=()=>{selected=$('adaptGroup').value;render();};
   $('adaptNew').onclick=()=>{selected=crypto.randomUUID();getConfig().adaptationGroups.push({id:selected,name:'新网址分组',url:'https://',platform:{verified:false}});render();$('adaptAdvancedSettings').open=true;markDirty('grading');};
-  $('adaptDelete').onclick=()=>run(async()=>{if(!current()||!confirm('删除这个网址分组？阅卷历史保留。'))return;const result=await api('/api/adaptation',{action:'delete',id:selected});getConfig().adaptationGroups=result.groups;selected=null;render();notice('自定义网站已删除',true);});
+  $('adaptDelete').onclick=()=>{
+    const group=current();if(!group || group.templateId)return;
+    const id=group.id;
+    $('deleteWebsiteMessage').textContent=`删除“${group.name}”？仅删除网站适配配置，阅卷方案和历史保留。`;
+    deleteDialog.showModal();
+    deleteDialog.addEventListener('close',()=>{if(deleteDialog.returnValue!=='delete')return;run(async()=>{
+      const result=await api('/api/adaptation',{action:'delete',id});
+      getConfig().adaptationGroups=result.groups;selected=null;render();
+      $('adaptAdvancedSettings').open=false;notice('自定义网站已删除',true);
+    });},{once:true});
+  };
   $('adaptSave').onclick=()=>run(async()=>{await save();notice('网址分组已保存',true);});
   $('adaptInspect').onclick=()=>run(async()=>{await save();inspection=await api('/api/adaptation',{action:'inspect',id:selected});$('adaptReport').textContent=JSON.stringify(inspection,null,2);const s=inspection.snapshot;const plausible=inspection.frames.filter(f=>f.inputs.length&&f.images.length);if(s.error&&plausible.length===1){const f=plausible[0];for(const [key,list]of [['imageSelector',f.images],['scoreSelector',f.inputs],['submitSelector',f.buttons]]){const values=[...new Set(list.map(i=>i.selector).filter(Boolean))];if(values.length===1){const field=[...document.querySelectorAll('[data-platform]')].find(i=>i.dataset.platform===key);if(field&&!field.value)field.value=values[0];}}markDirty('presets');}$('adaptStatus').textContent=s.error?'识别未完成：'+s.error+'。已列出候选元素，检查高级规则或使用点选修正后重试。':`找到${s.images.length}张图片、${s.units.length}个评分框；${s.strongIdentity?'答卷ID已识别':'答卷ID待设置'}。`;
     $('adaptScores').value=s.units?.map(()=>0).join(',') || '';
