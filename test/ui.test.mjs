@@ -199,7 +199,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   assert.match(await page.locator('#primaryProvider option:checked').innerText(),/接口已删除/);
   await page.locator('[data-tab=models]').click();await page.locator('#addProviderTemplate').click();
   await page.locator('[data-provider-template="火山引擎"]').click();
-  await page.waitForFunction(()=>document.querySelector('#endpoint').value.includes('/api/v3/chat/completions'));
+  await page.waitForFunction(()=>document.querySelector('#endpoint').value.endsWith('/api/v3'));
   assert.equal(await page.locator('#apiKey').inputValue(),'');
   assert.equal(await page.locator('#providerDialog').isVisible(),true);
   await page.locator('#closeProvider').click();await page.locator('#viewProviderModels').click();

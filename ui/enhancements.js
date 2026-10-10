@@ -117,6 +117,8 @@ export function buildLayout() {
   const providerCard=$('providerSelect').closest('.card');
   providerCard.querySelector('h2').textContent='模型供应商';
   const providerForm=$('endpoint').closest('.form-grid');
+  $('endpoint').placeholder='https://你的接口域名/v1';
+  $('endpoint').closest('label').insertAdjacentHTML('beforeend','<span class="hint">填写基础地址，软件按协议自动补充请求路径。OpenAI兼容接口通常以 /v1 结尾；其他供应商使用其提供的基础路径。完整接口地址也可使用。</span>');
   const providerDialog=document.createElement('section');providerDialog.id='providerDialog';providerDialog.hidden=true;providerDialog.setAttribute('aria-labelledby','providerDialogTitle');
   providerDialog.innerHTML='<div class="image-dialog-heading"><h2 id="providerDialogTitle">编辑接口</h2><button id="closeProvider">关闭</button></div>';
   providerCard.append(providerDialog);providerDialog.append(providerForm);
