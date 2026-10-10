@@ -113,4 +113,36 @@ aside nav button[data-tab="models"]{text-align:center}
 
 .rubric-subject-level{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}#rubricGeneratorDialog .rubric-subject-level label{min-width:0}#rubricGeneratorDialog .rubric-subject-level select{width:100%}@media(max-width:420px){.rubric-subject-level{grid-template-columns:1fr;gap:0}}
 
-#rubricGeneratorDialog #rubricRequirements{min-height:330px;line-height:1.8}@media(max-width:680px){#rubricGeneratorDialog #rubricRequirements{min-height:260px}}
+#rubricGeneratorDialog{width:min(980px,94vw);max-height:92vh;padding:0;border:1px solid #dce6df;border-radius:20px;background:#f7f9f8;box-shadow:0 24px 80px #193b3026;color:#30463b}
+#rubricGeneratorDialog::backdrop{background:#20392e66;backdrop-filter:blur(3px)}
+#rubricGeneratorDialog .image-dialog-heading{margin:0;padding:24px 28px;background:#fff;border-bottom:1px solid #e4ebe6;position:sticky;top:0;z-index:2}
+#rubricGeneratorDialog h2{font-size:21px;letter-spacing:-.3px;color:#233e30}
+.rubric-subtitle{font-size:12px;color:#86948b;margin:7px 0 0;line-height:1.6}
+#closeRubricGenerator{padding:8px 14px;font-size:12px;border-radius:9px}
+#rubricGeneratorDialog .form-grid{margin:0;padding:22px 28px;gap:18px}
+.rubric-model-panel{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:18px;padding:16px 20px;background:#eef4f0;border:1px solid #e0e9e2;border-radius:12px}
+#rubricGeneratorDialog label{margin:0;font-size:12px;font-weight:500;color:#597062}
+#rubricGeneratorDialog input,#rubricGeneratorDialog select{height:40px;margin-top:7px;border-color:#d8e3db;border-radius:8px;font-size:13px;padding:8px 11px}
+#rubricGeneratorDialog textarea{margin-top:8px;border-color:#d8e3db;border-radius:9px;padding:12px 14px;font-size:13px;line-height:1.85;font-weight:400}
+#rubricGeneratorDialog input::placeholder,#rubricGeneratorDialog textarea::placeholder{color:#9aa79f}
+#rubricGeneratorDialog .rubric-settings-columns{grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:18px}
+#rubricGeneratorDialog .rubric-settings-column{padding:20px;background:#fff;border:1px solid #e0e8e2;border-radius:12px;display:flex;flex-direction:column;gap:14px}
+.rubric-panel-heading{padding-bottom:13px;border-bottom:1px solid #edf1ee;margin-bottom:2px}
+#rubricGeneratorDialog .rubric-panel-heading h3{font-size:14px;color:#30553f;margin:0 0 5px;font-weight:650}
+.rubric-panel-heading>span{font-size:11px;color:#8a998f}
+.rubric-score-numbers{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+#rubricGeneratorDialog .rubric-settings-column .hint{font-size:11px;line-height:1.7;margin:0;color:#8b998f}
+#rubricGeneratorDialog .rubric-score-numbers+.hint{margin-top:-6px}
+#rubricGeneratorDialog #rubricScoreAllocation{min-height:210px}
+#rubricGeneratorDialog #rubricScoreAllocation+.hint{margin-top:8px}
+#rubricGeneratorDialog #rubricRequirements{min-height:260px;line-height:1.85;background:#fbfcfb}
+.rubric-editable{float:right;font-size:10px;font-weight:400;padding:2px 7px;border-radius:5px;color:#658570;background:#edf5ef}
+.rubric-generator-footer{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 28px;background:#fff;border-top:1px solid #e4ebe6}
+#rubricGeneratorDialog .rubric-generator-footer .hint{margin:0;font-size:11px;max-width:65%}
+#generateRubric{padding:11px 24px;border-radius:9px;font-weight:600;white-space:nowrap;box-shadow:0 3px 8px #176e5218}
+#rubricGenerationStatus:empty{display:none}
+#rubricGenerationStatus{margin:0;padding:16px 28px;font-size:12px;color:#52745d;background:#edf5ef}
+#rubricDraft{padding:22px 28px;background:#fff;border-top:1px solid #e4ebe6}
+#rubricDraft>label{margin-bottom:14px}
+#rubricDraft>h3{margin-top:0;font-size:15px;color:#30553f}
+@media(max-width:680px){#rubricGeneratorDialog .image-dialog-heading{padding:18px}#rubricGeneratorDialog .form-grid{padding:16px;gap:14px}#rubricGeneratorDialog .rubric-settings-columns{grid-template-columns:1fr;gap:14px}.rubric-model-panel{grid-template-columns:1fr;padding:16px;gap:12px}#rubricGeneratorDialog .rubric-settings-column{padding:16px}#rubricGeneratorDialog #rubricRequirements{min-height:240px}.rubric-generator-footer{padding:16px;gap:12px}#rubricGeneratorDialog h2{font-size:18px}.rubric-subtitle{font-size:11px;max-width:240px}#rubricDraft{padding:18px}}
