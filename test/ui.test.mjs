@@ -196,7 +196,10 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.reload();await page.locator('[data-tab=models]').click();
   assert.equal(await page.locator('#providerSelect option').count(),0);
   await page.locator('.workspace-card.active').click();await page.locator('[data-tab=workflows]').click();
-  assert.match(await page.locator('#primaryProvider option:checked').innerText(),/接口已删除/);
+  assert.equal(await page.locator('#primaryProvider option:checked').innerText(),'请先添加 AI 接口');
+  assert.equal(await page.locator('#primaryModel').inputValue(),'');
+  assert.equal(await page.locator('#primaryChooseModel').isDisabled(),true);
+  assert.equal(await page.locator('#primaryProvider').inputValue(),'');
   await page.locator('[data-tab=models]').click();await page.locator('#addProviderTemplate').click();
   await page.locator('[data-provider-template="火山引擎"]').click();
   await page.waitForFunction(()=>document.querySelector('#endpoint').value.endsWith('/api/v3'));
