@@ -9,6 +9,26 @@ import {generateRubric} from '../src/rubric-generator.mjs';
 import {createApp} from '../src/server.mjs';
 import {launchBrowser} from '../src/browser.mjs';
 import {promptFor,parseResult} from '../src/domain.mjs';
+import {rubricSubjects,rubricRequirements} from '../ui/rubric-prompts.js';
+
+test('九学科三梯度生成不同提示词，接口使用对应模板并校验学科',async()=>{
+  const subjects=Object.entries(rubricSubjects),prompts=[];
+  assert.equal(subjects.length,9);
+  const output=JSON.stringify({question:'题目',answer:'答案',rubric:'',warnings:[],items:[{label:'第一问',maxScore:4,criteria:'正确4分，错误0分。'}]});
+  for(const [subject,entry]of subjects)for(const strictness of ['strict','normal','lenient']){
+    const requirements=rubricRequirements(subject,strictness);prompts.push(requirements);
+    assert.ok(requirements.includes(entry.label));assert.match(requirements,/不得猜补/);
+    const result=await generateRubric({providers:{demo:{}}},{provider:'demo',model:'vision',question:'题目',answer:'答案',maxScore:4,subject,strictness},async(_provider,_model,prompt)=>{
+      assert.ok(prompt.includes(`学科：${entry.label}`));assert.ok(prompt.includes(requirements));return output;
+    });
+    assert.ok(result.rubric.includes(requirements));
+  }
+  assert.equal(new Set(prompts).size,27);
+  assert.match(rubricRequirements('physics','lenient'),/等价公式|公式变形/);
+  assert.match(rubricRequirements('english','strict'),/词形、时态、拼写/);
+  assert.equal(rubricRequirements('physics','custom'),'');
+  await assert.rejects(generateRubric({providers:{demo:{}}},{provider:'demo',model:'vision',question:'题目',answer:'答案',maxScore:4,subject:'unknown'},async()=>output),/学科/);
+});
 
 test('生成规则和实际模型评分遵守同一得分步长',async()=>{
   const settings={providers:{demo:{}}},input={provider:'demo',model:'vision',question:'题目',answer:'答案',maxScore:4,roundStep:1};
@@ -77,13 +97,27 @@ test('图片经已有接口生成草稿，预览回填后保存并保留原始�
   await page.locator('#openRubricGenerator').click();
   assert.equal(await page.locator('#rubricMaxScore').inputValue(),'');
   assert.equal(await page.locator('#rubricStrictness').inputValue(),'normal');
+  assert.equal(await page.locator('#rubricSubject option').count(),10);
+  await page.locator('#rubricSubject').selectOption('physics');
+  assert.match(await page.locator('#rubricRequirements').inputValue(),/学科：物理/);
   await page.locator('#rubricMaxScore').fill('4');
   assert.equal(await page.locator('#rubricRoundStep').inputValue(),'1');
   await page.locator('#rubricScoreAllocation').fill('第一空2分，第二空2分，忽略图片原分值');
   await page.locator('#rubricStrictness').selectOption('lenient');
   assert.match(await page.locator('#rubricRequirements').inputValue(),/简写/);
+  const physicsLenient=await page.locator('#rubricRequirements').inputValue();
+  await page.waitForTimeout(800);assert.equal(await page.locator('#rubricRequirements').inputValue(),physicsLenient);
+  await page.locator('#rubricSubject').selectOption('english');
+  assert.match(await page.locator('#rubricRequirements').inputValue(),/学科：英语/);
+  assert.notEqual(await page.locator('#rubricRequirements').inputValue(),physicsLenient);
+  await page.locator('#rubricStrictness').selectOption('strict');
+  assert.match(await page.locator('#rubricRequirements').inputValue(),/必需词形、时态、拼写/);
+  await page.locator('#rubricSubject').selectOption('physics');
   await page.locator('#rubricStrictness').selectOption('custom');
   await page.locator('#rubricRequirements').fill('允许同义词，但必须写出单位');
+  await page.locator('#rubricSubject').selectOption('chemistry');
+  assert.equal(await page.locator('#rubricRequirements').inputValue(),'允许同义词，但必须写出单位');
+  await page.locator('#rubricSubject').selectOption('physics');
   await page.locator('#generateRubric').click();
   await page.locator('#rubricDraft').waitFor({state:'visible'});
   assert.equal(received.model,'vision');assert.equal(received.messages[0].content.filter(part=>part.type==='image_url').length,2);
@@ -92,6 +126,7 @@ test('图片经已有接口生成草稿，预览回填后保存并保留原始�
   assert.match(received.messages[0].content[0].text,/第一空2分，第二空2分/);
   assert.match(received.messages[0].content[0].text,/忽略题目图片、答案图片/);
   assert.match(received.messages[0].content[0].text,/允许同义词，但必须写出单位/);
+  assert.match(received.messages[0].content[0].text,/学科：物理/);
   assert.equal(fs.readFileSync(path.join(root,'config.json'),'utf8'),before);
   await page.locator('#applyGeneratedRubric').click();
   assert.equal(await page.locator('#question').inputValue(),'识别题目');
@@ -102,10 +137,12 @@ test('图片经已有接口生成草稿，预览回填后保存并保留原始�
   assert.match(saved.rubric.text || saved.rubric,/第一空/);
   assert.equal(saved.scoring.maxScore,4);
   assert.equal(saved.rubricGeneration.strictness,'custom');
+  assert.equal(saved.rubricGeneration.subject,'physics');
   assert.equal(saved.rubricGeneration.scoreAllocation,'第一空2分，第二空2分，忽略图片原分值');
   await page.reload();await page.locator('[data-tab=presets]').click();await page.locator('#openRubricGenerator').click();
   assert.equal(await page.locator('#rubricRequirements').inputValue(),'允许同义词，但必须写出单位');
   assert.equal(await page.locator('#rubricMaxScore').inputValue(),'4');
+  assert.equal(await page.locator('#rubricSubject').inputValue(),'physics');
   assert.deepEqual(errors,[]);
 });
 

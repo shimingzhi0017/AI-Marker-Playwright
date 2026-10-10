@@ -1,5 +1,5 @@
 import { requestModel } from './models.mjs';
-import { rubricPrompts } from '../ui/rubric-prompts.js';
+import { rubricPrompts, rubricSubjects, rubricRequirements } from '../ui/rubric-prompts.js';
 import { scoringItemSchema } from './domain.mjs';
 
 export async function generateRubric(settings, input, request = requestModel) {
@@ -21,13 +21,17 @@ export async function generateRubric(settings, input, request = requestModel) {
   if(!aligned(maximum))throw Error(`总分必须是得分步长${step}分的整数倍`);
   const mode = input.strictness || 'normal';
   if (!Object.hasOwn(rubricPrompts, mode)) throw Error('答案要求选项无效');
-  const requirements = typeof input.requirements === 'string' ? input.requirements.trim() : rubricPrompts[mode].text;
+  const subject=input.subject ?? '';
+  if(typeof subject!=='string' || subject && !Object.hasOwn(rubricSubjects,subject))throw Error('学科选项无效');
+  const subjectName=subject ? rubricSubjects[subject].label : '通用';
+  const requirements = typeof input.requirements === 'string' ? input.requirements.trim() : rubricRequirements(subject,mode);
   if (!requirements || requirements.length > 6000) throw Error('请填写答案要求提示词（最多6000字）');
   const allocation = typeof input.scoreAllocation === 'string' ? input.scoreAllocation.trim() : '';
   if (allocation.length > 6000) throw Error('分值设置最多6000字');
   const type = input.questionType === 'objective' ? '客观题' : '主观题';
   const prompt = `你是教师的评分标准编写助手。依据提供的题目和参考答案编写评分标准草稿，不是给学生评分。
 题型：${type}。总分：${maximum}分。
+学科：${subjectName}。根据本题所属学科编写规则，教师编辑的提示词为本次答案要求，不机械增加学科模板中与本题无关的条件。
 得分步长：${step}分。所有评分项满分、步骤分、部分分、扣分和可能得分必须为${step}分的非负整数倍。${step===1?'只允许整分，禁止给出0.5分等小数分。':''}若教师分值设置不符合步长，rubric留空并在warnings说明冲突，不得自行改变步长。
 答案要求：${rubricPrompts[mode].label}。教师提示词：${requirements}
 将答案要求落实到各评分项的接受答案、关键要点和扣分规则，并在标准末尾说明采用的要求。宽严只影响答案接受范围和部分分，不改变教师指定分值及参考答案内容；任何模式都不得脑补学生答案。
@@ -54,7 +58,7 @@ rubric用分点文字编写，每个评分项标题格式为“① 小问名称�
     const total = value.items.reduce((sum,item) => sum + item.maxScore, 0);
     if (Math.abs(total - maximum) > 1e-8) throw Error(`模型分项合计为${total}分，设置总分为${maximum}分，请核对分值设置后重试`);
     if(value.items.some(item=>!aligned(item.maxScore)))throw Error(`模型分项满分不符合${step}分步长，请重试`);
-    value.rubric = value.items.map((item,index) => `${item.label}：满分${item.maxScore}分\n${item.criteria}`).join('\n\n') + `\n\n全题合计${maximum}分。\n答案要求：${requirements}`;
+    value.rubric = value.items.map((item,index) => `${item.label}：满分${item.maxScore}分\n${item.criteria}`).join('\n\n') + `\n\n全题合计${maximum}分。\n学科：${subjectName}。\n答案要求：${requirements}`;
   }
   if (!value.rubric.trim() && !value.warnings.length) throw Error('模型未生成评分标准');
   if (value.rubric.trim()) {
