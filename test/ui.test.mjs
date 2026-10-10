@@ -22,7 +22,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   const fixtureUrl=`http://127.0.0.1:${fixture.address().port}`;
   const browser=await launchBrowser({headless:true});
   let gradingPage;
-  const app=await createApp({root,browserFactory:async()=>{const context=await browser.newContext();gradingPage=await context.newPage();return context;},gradeFunction:async()=>({score:2,studentAnswer:'模拟识别内容',comment:'模拟评分依据',subScores:[]})});
+  const app=await createApp({root,browserFactory:async()=>{const context=await browser.newContext();await context.route('https://www.zhixue.com/**',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><p>网站选择测试页面</p>'}));gradingPage=await context.newPage();return context;},gradeFunction:async()=>({score:2,studentAnswer:'模拟识别内容',comment:'模拟评分依据',subScores:[]})});
   t.after(async()=>{await app.close();await browser.close();await new Promise(resolve=>fixture.close(resolve));});
   const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[];
   page.setDefaultTimeout(10000);
