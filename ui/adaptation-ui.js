@@ -24,6 +24,7 @@ export function buildAdaptationUI() {
   const settings=document.createElement('details');settings.id='adaptAdvancedSettings';settings.innerHTML='<summary>高级设置与自定义网站</summary>';
   const websiteControls=document.createElement('div');websiteControls.className='controls';websiteControls.innerHTML='<label>选择阅卷网站<select id="adaptWebsite"><option value="">正在加载网站…</option></select></label><button id="adaptAddCustom">添加自定义网站</button>';
   const intro=root.querySelector('p.hint');intro.textContent='选择内置网站即可使用对应适配规则；未列出的网站可添加自定义方案。';
+  websiteControls.append(document.getElementById('adaptDelete'));
   card.insertBefore(intro,root);card.insertBefore(websiteControls,root);card.insertBefore(document.getElementById('adaptStatus'),root);
   card.append(settings);settings.append(root,advanced);
   document.getElementById('adaptTemplate').hidden=true;
@@ -63,7 +64,7 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
     $('adaptGroup').replaceChildren(...list.map(g=>{const option=document.createElement('option');option.value=g.id;option.textContent=g.name;return option;}));$('adaptGroup').value=selected || '';
     websiteOptions();
     recorded=false;showRecording({candidates:[],message:'尚未录制提交接口；先检查页面并完成测试填分。'});
-    const group=current();$('adaptName').value=group?.name || '';$('adaptUrl').value=group?.url || '';
+    const group=current();$('adaptDelete').hidden=!group || !!group.templateId;$('adaptDelete').textContent='删除自定义网站';$('adaptName').value=group?.name || '';$('adaptUrl').value=group?.url || '';
     for(const input of document.querySelectorAll('[data-platform]')){const key=input.dataset.platform;const value=key==='browser.url'?group?.url:group?.platform?.[key];input.value=key==='successValue'?JSON.stringify(value??true):value || '';}
     $('verified').checked=!!group?.platform?.verified;
     $('adaptStatus').textContent=group?.platform?.verified?'此方案已核验；修改规则后需要重新验证。':group?.templateId==='zhixue'?'智学网内置方案已调通，自动识别当前答卷和提交回执；无需按任务重复调试。':group?.templateId?'使用内置网站适配，自动提交尚需实测；可展开自行调试。':'自定义方案：可检查页面、点选修正和测试填分。';
@@ -75,7 +76,7 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
   const run=fn=>action(async()=>{try{await fn();}catch(error){$('adaptStatus').textContent=error.message;throw error;}});
   $('adaptGroup').onchange=()=>{selected=$('adaptGroup').value;render();};
   $('adaptNew').onclick=()=>{selected=crypto.randomUUID();getConfig().adaptationGroups.push({id:selected,name:'新网址分组',url:'https://',platform:{verified:false}});render();$('adaptAdvancedSettings').open=true;markDirty('grading');};
-  $('adaptDelete').onclick=()=>run(async()=>{if(!current()||!confirm('删除这个网址分组？阅卷历史保留。'))return;const result=await api('/api/adaptation',{action:'delete',id:selected});getConfig().adaptationGroups=result.groups;selected=null;refresh();render();notice('网址分组已删除',true);});
+  $('adaptDelete').onclick=()=>run(async()=>{if(!current()||!confirm('删除这个网址分组？阅卷历史保留。'))return;const result=await api('/api/adaptation',{action:'delete',id:selected});getConfig().adaptationGroups=result.groups;selected=null;render();notice('自定义网站已删除',true);});
   $('adaptSave').onclick=()=>run(async()=>{await save();notice('网址分组已保存',true);});
   $('adaptInspect').onclick=()=>run(async()=>{await save();inspection=await api('/api/adaptation',{action:'inspect',id:selected});$('adaptReport').textContent=JSON.stringify(inspection,null,2);const s=inspection.snapshot;const plausible=inspection.frames.filter(f=>f.inputs.length&&f.images.length);if(s.error&&plausible.length===1){const f=plausible[0];for(const [key,list]of [['imageSelector',f.images],['scoreSelector',f.inputs],['submitSelector',f.buttons]]){const values=[...new Set(list.map(i=>i.selector).filter(Boolean))];if(values.length===1){const field=[...document.querySelectorAll('[data-platform]')].find(i=>i.dataset.platform===key);if(field&&!field.value)field.value=values[0];}}markDirty('presets');}$('adaptStatus').textContent=s.error?'识别未完成：'+s.error+'。已列出候选元素，检查高级规则或使用点选修正后重试。':`找到${s.images.length}张图片、${s.units.length}个评分框；${s.strongIdentity?'答卷ID已识别':'答卷ID待设置'}。`;
     $('adaptScores').value=s.units?.map(()=>0).join(',') || '';
