@@ -44,7 +44,7 @@ export function buildLayout() {
   document.querySelector('#grading > .card:last-child').classList.add('event-card');
   $('addPreset').insertAdjacentHTML('afterend','<button id="copyPreset">复制</button><button id="deletePreset" class="danger">删除</button>');
   for(const field of ['question','answer','rubric']) {
-    $(field).closest('label').insertAdjacentHTML('afterend',`<div class="field-media wide"><div id="${field}Images" class="field-thumbnails"></div><label class="file-button small">添加说明图片<input id="${field}Upload" type="file" accept="image/png,image/jpeg,image/webp" multiple></label><span class="hint">图片随方案保存；支持 PNG、JPG、WebP</span></div>`);
+    $(field).closest('label').insertAdjacentHTML('afterend',`<div class="field-media wide"><div id="${field}Images" class="field-thumbnails"></div><label class="file-button small">添加说明图片<input id="${field}Upload" type="file" accept="image/png,image/jpeg,image/webp" multiple></label><span class="hint">点击上方输入框后可按 Ctrl+V 粘贴图片；支持 PNG、JPG、WebP，图片随方案保存</span></div>`);
   }
   $('addUnit').insertAdjacentHTML('afterend','<button id="detectUnits">从当前网页带入评分框</button><span id="unitTotal" class="hint"></span>');
   $('savePreset').closest('.footer-actions').insertAdjacentHTML('beforebegin',`<details class="advanced-settings"><summary>加分与空白检测</summary><div class="form-grid"><label class="check wide"><input id="diligenceEnabled" type="checkbox">启用勤勉加分</label><label>加分上限<input id="diligenceBonus" type="number" min="0.5" step="0.5"></label><label>衰减强度<select id="diligenceDecay"><option value="1">缓慢</option><option value="2">标准</option><option value="3">快速</option></select></label><label class="wide">勤勉评估说明<textarea id="diligenceCriteria" rows="2"></textarea></label><label class="check wide"><input id="blankEnabled" type="checkbox">启用空白检测（结果仍须确认）</label><label>范本差异阈值<input id="blankThreshold" type="number" min="0" max="1" step="0.001"></label><div><p id="blankStatus" class="hint"></p><button id="clearBlank">清除范本</button></div></div><p class="hint">空白范本可在历史记录中选择已确认的空白答卷建立。</p></details>`);
@@ -155,7 +155,24 @@ export function createEnhancements({getConfig,save,action,markDirty,renderPreset
     const target=$(field+'Images');target.replaceChildren();
     (images[field]||[]).forEach((value,index)=>{if(typeof value!=='string')return;const wrap=document.createElement('div'),img=document.createElement('img'),button=document.createElement('button');img.src=value.startsWith('data:')?value:`data:image/png;base64,${value}`;img.alt='方案说明图片';button.textContent='移除';button.onclick=()=>{images[field].splice(index,1);markDirty('presets');media(field);};wrap.append(img,button);target.append(wrap);});
   }
-  for(const field of ['question','answer','rubric'])$(field+'Upload').onchange=()=>action(async()=>{for(const file of $(field+'Upload').files){if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>5*1024*1024)throw Error('说明图片须为 PNG/JPG/WebP，且每张不超过5MB');images[field].push(await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);}));}markDirty('presets');media(field);$(field+'Upload').value='';});
+  async function addFieldImages(field, files) {
+    const added=[];
+    for(const file of files){
+      if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>5*1024*1024)throw Error('说明图片须为 PNG/JPG/WebP，且每张不超过5MB');
+      added.push(await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('图片读取失败，请重新添加'));reader.readAsDataURL(file);}));
+    }
+    if(!added.length)return;
+    images[field].push(...added);markDirty('presets');media(field);
+  }
+  for(const field of ['question','answer','rubric']){
+    $(field+'Upload').onchange=()=>{const files=[...$(field+'Upload').files];action(async()=>{await addFieldImages(field,files);$(field+'Upload').value='';});};
+    $(field).addEventListener('paste',event=>{
+      const items=[...(event.clipboardData?.items||[])];
+      const files=items.filter(item=>item.kind==='file'&&item.type.startsWith('image/')).map(item=>item.getAsFile()).filter(Boolean);
+      if(!files.length)return;
+      event.preventDefault();action(()=>addFieldImages(field,files));
+    });
+  }
   function preset() {const p=getConfig().presets[$('presetSelect').value];for(const field of ['question','answer','rubric']){images[field]=structuredClone(p[field]?.images||[]);media(field);}const d=p.scoring?.diligence||{};$('diligenceEnabled').checked=!!d.enabled;$('diligenceBonus').value=d.maxBonus??3;$('diligenceDecay').value=d.decayPower??2;$('diligenceCriteria').value=d.criteria||'';$('blankEnabled').checked=!!p.blankDetection?.enabled;$('blankThreshold').value=p.blankDetection?.threshold??0.01;$('blankStatus').textContent=p.blankDetection?.reference?.length ? `已保存 ${p.blankDetection.reference.length} 个范本特征` : '尚未设置空白范本；启用后将交给模型评分并要求人工确认。';}
   function applyPreset(p) {for(const field of ['question','answer','rubric']){if(images[field]?.length || typeof p[field]==='object')p[field]={...(typeof p[field]==='object'?p[field]:{text:p[field]}),images:structuredClone(images[field]||[])};}p.scoring.diligence={...p.scoring.diligence,enabled:$('diligenceEnabled').checked,maxBonus:Number($('diligenceBonus').value),decayPower:Number($('diligenceDecay').value),criteria:$('diligenceCriteria').value};p.blankDetection={...p.blankDetection,enabled:$('blankEnabled').checked,threshold:Number($('blankThreshold').value)};}
   function provider() {const p=getConfig().providers[$('providerSelect').value] || {};const summary=$('providerSummary');summary.replaceChildren();const empty=!Object.keys(getConfig().providers).length;for(const id of ['editProvider','viewProviderModels','deleteProvider'])$(id).disabled=empty;if(empty){summary.textContent='尚未添加模型供应商，点击新建开始配置。';$('manualModelList').replaceChildren();return;}for(const [label,value] of [['接口状态',p.endpoint&&(p.apiKey||p.apiKeyEnv)?'已配置':'待配置'],['协议',{chat:'Chat Completions',responses:'Responses',gemini:'Gemini 原生'}[p.protocol||'chat']],['模型目录',`${(p.models||[]).length} 个模型`]]){const item=document.createElement('div'),title=document.createElement('span'),text=document.createElement('strong');title.textContent=label;text.textContent=value;item.append(title,text);summary.append(item);}$('manualModelList').replaceChildren(...(p.models||[]).map(id=>{const row=document.createElement('div'),name=document.createElement('span'),button=document.createElement('button');name.textContent=id;button.textContent='移除';button.onclick=()=>action(async()=>{p.models=p.models.filter(m=>m!==id);await save('模型目录已保存','models');provider();});row.append(name,button);return row;}));}

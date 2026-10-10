@@ -41,7 +41,20 @@ test('图片经已有接口生成草稿，预览回填后保存并保留原始�
   page.on('pageerror',error=>errors.push(error.message));
   await page.goto(app.url);await page.locator('[data-tab=presets]').click();
   const image=await sharp({create:{width:30,height:30,channels:3,background:'white'}}).png().toBuffer();
-  for(const field of ['question','answer'])await page.locator('#'+field+'Upload').setInputFiles({name:'source.png',mimeType:'image/png',buffer:image});
+  await page.locator('#question').evaluate((element,base64)=>{
+    const bytes=Uint8Array.from(atob(base64),char=>char.charCodeAt(0));
+    const data=new DataTransfer();data.items.add(new File([bytes],'clipboard.png',{type:'image/png'}));
+    const event=new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true});
+    element.dispatchEvent(event);if(!event.defaultPrevented)throw Error('Image paste was not handled');
+  },image.toString('base64'));
+  await page.waitForFunction(()=>document.querySelectorAll('#questionImages img').length===1);
+  const textPastePrevented=await page.locator('#question').evaluate(element=>{
+    const data=new DataTransfer();data.setData('text/plain','普通文字');
+    const event=new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true});
+    element.dispatchEvent(event);return event.defaultPrevented;
+  });
+  assert.equal(textPastePrevented,false);
+  await page.locator('#answerUpload').setInputFiles({name:'source.png',mimeType:'image/png',buffer:image});
   await page.waitForFunction(()=>document.querySelectorAll('#answerImages img').length===1);
   await page.locator('#openRubricGenerator').click();await page.locator('#generateRubric').click();
   await page.locator('#rubricDraft').waitFor({state:'visible'});
