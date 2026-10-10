@@ -35,7 +35,8 @@ export function setupPresetPreviews(){
     const left=document.createElement('div');left.className='preset-editor-source';
     const right=document.createElement('div');right.className='preset-editor-display';right.innerHTML='<div class="preview-heading">排版预览<span>实时更新</span></div>';
     const preview=document.createElement('div');preview.id=field+'Preview';preview.className='preset-text-preview';right.append(preview);
-    label.before(editor);left.append(label,media);editor.append(left,right);
+    media.classList.add('preset-editor-media');
+    label.before(editor);left.append(label);editor.append(left,right,media);
     input.addEventListener('input',refresh);
   }
   document.addEventListener('preset-preview-refresh',refresh);refresh();
