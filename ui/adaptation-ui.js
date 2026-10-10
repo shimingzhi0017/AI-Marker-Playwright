@@ -32,7 +32,7 @@ export function buildAdaptationUI() {
   document.getElementById('savePlatform').hidden=true;advanced.append(document.getElementById('savePlatform'));details.remove();
 }
 export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirty}) {
-  const $=id=>document.getElementById(id);let selected,lastPick,inspection;
+  const $=id=>document.getElementById(id);let selected,lastPick,inspection,recorded=false;
   let templates=[];
   function websiteOptions(){
     if(!getConfig())return;
@@ -62,14 +62,17 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
     const list=groups();if(!list.some(g=>g.id===selected))selected=list[0]?.id;
     $('adaptGroup').replaceChildren(...list.map(g=>{const option=document.createElement('option');option.value=g.id;option.textContent=g.name;return option;}));$('adaptGroup').value=selected || '';
     websiteOptions();
+    recorded=false;showRecording({candidates:[],message:'尚未录制提交接口；先检查页面并完成测试填分。'});
     const group=current();$('adaptName').value=group?.name || '';$('adaptUrl').value=group?.url || '';
     for(const input of document.querySelectorAll('[data-platform]')){const key=input.dataset.platform;const value=key==='browser.url'?group?.url:group?.platform?.[key];input.value=key==='successValue'?JSON.stringify(value??true):value || '';}
     $('verified').checked=!!group?.platform?.verified;
     $('adaptStatus').textContent=group?.platform?.verified?'此方案已核验；修改规则后需要重新验证。':group?.templateId==='zhixue'?'智学网内置方案已调通，自动识别当前答卷和提交回执；无需按任务重复调试。':group?.templateId?'使用内置网站适配，自动提交尚需实测；可展开自行调试。':'自定义方案：可检查页面、点选修正和测试填分。';
   }
+  $('adaptUrl').oninput=()=>{const input=document.querySelector('[data-platform="browser.url"]');if(input)input.value=$('adaptUrl').value;};
+  document.querySelector('[data-platform="browser.url"]')?.addEventListener('input',event=>{$('adaptUrl').value=event.target.value;});
   function read(){const old=current();const platform={...(old?.platform || {})};for(const input of document.querySelectorAll('[data-platform]')){const key=input.dataset.platform;if(key!=='browser.url')platform[key]=key==='successValue'?JSON.parse(input.value):input.value;}return {id:selected || crypto.randomUUID(),name:$('adaptName').value.trim()||'新分组',url:$('adaptUrl').value.trim(),...(old?.templateId?{templateId:old.templateId}:{}),platform};}
-  async function save(){const group=read();const result=await api('/api/adaptation',{action:'save',group});getConfig().adaptationGroups=result.groups;getConfig().platform=result.groups.find(g=>g.id===group.id).platform;selected=group.id;refresh();render();return group;}
-  const run=fn=>action(async()=>{await fn();});
+  async function save(){const group=read();try{if(!['http:','https:'].includes(new URL(group.url).protocol))throw Error();}catch{throw Error('请先填写完整的阅卷网址，例如 https://网站域名/阅卷路径');}const result=await api('/api/adaptation',{action:'save',group});getConfig().adaptationGroups=result.groups;getConfig().platform=result.groups.find(g=>g.id===group.id).platform;getConfig().browser.url=group.url;selected=group.id;render();return group;}
+  const run=fn=>action(async()=>{try{await fn();}catch(error){$('adaptStatus').textContent=error.message;throw error;}});
   $('adaptGroup').onchange=()=>{selected=$('adaptGroup').value;render();};
   $('adaptNew').onclick=()=>{selected=crypto.randomUUID();getConfig().adaptationGroups.push({id:selected,name:'新网址分组',url:'https://',platform:{verified:false}});render();$('adaptAdvancedSettings').open=true;markDirty('grading');};
   $('adaptDelete').onclick=()=>run(async()=>{if(!current()||!confirm('删除这个网址分组？阅卷历史保留。'))return;const result=await api('/api/adaptation',{action:'delete',id:selected});getConfig().adaptationGroups=result.groups;selected=null;refresh();render();notice('网址分组已删除',true);});
@@ -79,8 +82,15 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
   });
   for(const button of document.querySelectorAll('[data-adapt-pick]'))button.onclick=()=>run(async()=>{await save();await api('/api/adaptation',{action:'pick',id:selected,key:button.dataset.adaptPick});notice('请切到阅卷网页点选对应元素',true);});
   $('adaptFill').onclick=()=>run(async()=>{await save();const scores=$('adaptScores').value.split(/[,，]/).map(v=>v.trim()===''?NaN:Number(v));const result=await api('/api/adaptation',{action:'fill',id:selected,scores});$('adaptStatus').textContent=result.message;notice(result.message,true);});
-  $('adaptRecord').onclick=()=>run(async()=>{const result=await api('/api/adaptation',{action:'record',id:selected});$('adaptStatus').textContent=result.message;notice(result.message,true);});
-  $('adaptRefresh').onclick=()=>run(async()=>{const result=await api('/api/adaptation',{action:'status',id:selected});$('adaptStatus').textContent=result.message;$('adaptCandidate').replaceChildren(...(result.candidates||[]).map(c=>{const o=document.createElement('option');o.value=c.index;o.textContent=`${c.status} · ${c.url}`;return o;}));$('adaptNetwork').textContent=JSON.stringify(result.candidates||[],null,2);});
+  $('adaptRecord').onclick=()=>run(async()=>{await save();const result=await api('/api/adaptation',{action:'record',id:selected});recorded=true;showRecording(result);$('adaptStatus').textContent=result.message;notice(result.message,true);});
+  function showRecording(result){
+    const candidates=result.candidates||[];
+    $('adaptCandidate').replaceChildren(...(candidates.length?candidates.map(c=>Object.assign(document.createElement('option'),{value:String(c.index),textContent:`${c.status} · ${c.url}`})):[Object.assign(document.createElement('option'),{value:'',textContent:'暂无提交接口，请完成测试填分并录制手动提交'})]));
+    $('adaptCandidate').disabled=!candidates.length;$('adaptVerify').disabled=!candidates.length;
+    $('adaptNetwork').textContent=candidates.length?JSON.stringify(candidates,null,2):result.message || '尚未开始录制。';
+    if(!$('adaptReport').textContent)$('adaptReport').textContent='尚未检查页面，点击“1. 检查页面”后显示识别报告。';
+  }
+  $('adaptRefresh').onclick=()=>run(async()=>{const result=await api('/api/adaptation',{action:'status',id:selected});showRecording(result);$('adaptStatus').textContent=result.message;});
   $('adaptVerify').onclick=()=>run(async()=>{const result=await api('/api/adaptation',{action:'verify',id:selected,index:Number($('adaptCandidate').value)});const index=groups().findIndex(g=>g.id===selected);getConfig().adaptationGroups[index]=result.group;getConfig().platform=result.group.platform;render();notice(result.message,true);});
-  return {render,poll(state){const picked=state.adaptationPick;if(!picked||picked.token===lastPick)return;lastPick=picked.token;if(picked.cancelled){$('adaptStatus').textContent='点选已取消';return;}const input=[...document.querySelectorAll('[data-platform]')].find(i=>i.dataset.platform===picked.key);if(input)input.value=picked.selector;$('adaptStatus').textContent=`已选取：${picked.selector}。保存分组后检查匹配数量。`;markDirty('presets');}};
+  return {render,poll(state){if(recorded&&state.adaptationDebug)showRecording(state.adaptationDebug);const picked=state.adaptationPick;if(!picked||picked.token===lastPick)return;lastPick=picked.token;if(picked.cancelled){$('adaptStatus').textContent='点选已取消';return;}const input=[...document.querySelectorAll('[data-platform]')].find(i=>i.dataset.platform===picked.key);if(input)input.value=picked.selector;$('adaptStatus').textContent=`已选取：${picked.selector}。保存分组后检查匹配数量。`;markDirty('presets');}};
 }

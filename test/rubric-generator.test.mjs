@@ -127,3 +127,16 @@ test('网站模板先于任务配置返回时不报初始化错误', {timeout:30
   await page.goto(app.url);await page.waitForFunction(()=>document.querySelector('#adaptWebsite').options.length>20);
   assert.deepEqual(errors,[]);assert.equal(await page.locator('#notice').textContent(),'');
 });
+
+
+test('调试网址同步、空录制提示和保存不清空阅卷方案草稿', {timeout:30000}, async t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'marker-debug-ui-'));const app=await createApp({root});const browser=await launchBrowser({headless:true});
+ t.after(async()=>{await browser.close();await app.close();});const page=await browser.newPage();await page.goto(app.url);
+ await page.locator('[data-tab=presets]').click();await page.locator('#question').fill('未保存的题目草稿');
+ await page.locator('[data-tab=grading]').click();await page.locator('#adaptAddCustom').click();
+ assert.equal(await page.locator('#adaptVerify').isDisabled(),true);assert.match(await page.locator('#adaptCandidate').innerText(),/暂无提交接口/);
+ await page.locator('#adaptUrl').fill('https://fixture.test/mark');
+ await page.locator('[data-platform="browser.url"]').evaluate(el=>{if(el.value!=='https://fixture.test/mark')throw Error('URL out of sync');});
+ await page.locator('#adaptSave').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent==='网址分组已保存');
+ await page.locator('[data-tab=presets]').click();assert.equal(await page.locator('#question').inputValue(),'未保存的题目草稿');
+});

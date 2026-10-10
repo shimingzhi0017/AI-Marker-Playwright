@@ -82,8 +82,9 @@ export class AdaptationDebugger {
     this.status={phase:'recording',message:'现在请在阅卷网站手动点击提交；工具只记录，不替你提交。',candidates:[]};
     this.handler=response=>{
       if(response.request().method()!=='POST') return;
-      const url=new URL(response.url());const site=new URL(platform.page.url());
-      if(url.hostname!==site.hostname&&!(site.hostname.endsWith('zhixue.com')&&url.hostname.endsWith('.zhixue.com'))) return;
+      const url=new URL(response.url());
+      // Grading services often use a separate API host. Record responses from this page and let receipt verification reject unrelated requests.
+      try{if(response.request().frame().page()!==platform.page)return;}catch{return;}
       if(/login|logout|oauth|password/i.test(url.pathname)) return;
       (async()=>{
         try {

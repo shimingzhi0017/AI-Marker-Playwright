@@ -229,7 +229,7 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
         res.writeHead(response.status, Object.fromEntries(['content-type','content-disposition','cache-control'].map(k=>[k,response.headers.get(k)]).filter(([,v])=>v))); res.end(Buffer.from(await response.arrayBuffer())); return;
       }
       if (req.method === 'GET') {
-        if (url.pathname === '/api/state') { const { liveRecord, ...publicState } = state; text(res, 200, { ...publicState, events }); return; }
+        if (url.pathname === '/api/state') { const { liveRecord, ...publicState } = state; text(res, 200, { ...publicState, adaptationDebug:adaptationDebug.status, events }); return; }
         if (url.pathname === '/api/settings') { text(res, 200, settings()); return; }
         if (url.pathname === '/api/history') { text(res, 200, store.records()); return; }
         if (url.pathname === '/api/image') {
@@ -316,7 +316,10 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
           if(input.action==='save'){const existing=cfg.adaptationGroups.find(g=>g.id===input.group.id);const group={...input.group,platform:{...input.group.platform,verified:!!existing?.platform.verified&&existing.url===input.group.url&&fingerprint(existing.platform)===fingerprint(input.group.platform)}};if(!['http:','https:'].includes(new URL(group.url).protocol))throw Error('分组网址必须是http或https');if(existing)cfg.adaptationGroups[cfg.adaptationGroups.indexOf(existing)]=group;else cfg.adaptationGroups.push(group);cfg.browser.url=group.url;cfg.platform=group.platform;writeSettings(cfg);text(res,200,{groups:settings().adaptationGroups});return;}
           if(input.action==='delete'){cfg.adaptationGroups=cfg.adaptationGroups.filter(g=>g.id!==input.id);writeSettings(cfg);text(res,200,{groups:cfg.adaptationGroups});return;}
           if(!page)throw Error('请先打开阅卷浏览器并进入目标页面');
+          if(state.running || state.starting)throw Error('请先暂停阅卷，再进行页面调试');
+          await selectGradingPage();
           const group=cfg.adaptationGroups.find(g=>g.id===input.id);if(!group)throw Error('请选择网址分组');
+          if(adaptationDebug.groupId!==group.id){adaptationDebug.reset();adaptationDebug.groupId=group.id;}
           platform=new ZhixuePlatform(page,{...cfg,platform:group.platform},path.join(data,'diagnostics'));platform.topicTracker=topicTracker;
           if(input.action==='inspect'){text(res,200,{...await inspectPage(page),snapshot:await platform.snapshot().catch(error=>({error:error.message}))});return;}
           if(input.action==='pick'){pickerToken=crypto.randomUUID();state.adaptationPick=null;for(const frame of page.frames())await frame.evaluate(installPicker,{key:input.key,token:pickerToken}).catch(()=>{});await page.bringToFront();text(res,200,{message:'请到阅卷网页点击目标元素'});return;}
