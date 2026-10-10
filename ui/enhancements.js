@@ -97,6 +97,18 @@ export function buildLayout() {
   $('runPreset').closest('label').hidden=true;$('bind').hidden=true;
   
   $('presets').querySelector('h2').textContent='当前任务方案';
+  const scoringBase=document.createElement('div');scoringBase.className='scoring-base';
+  $('maxScore').closest('label').firstChild.textContent='题目总分';$('roundStep').closest('label').firstChild.textContent='得分步长';
+  $('roundStep').step='0.1';
+  scoringBase.append($('maxScore').closest('label'),$('roundStep').closest('label'));
+  scoringBase.insertAdjacentHTML('beforeend','<p class="hint">总分和步长与 AI 生成标准共用。步长为 1 时按整分给分，为 0.5 时允许半分。</p>');
+  $('rubric').closest('label').after(scoringBase);
+  const scoringAdvanced=document.createElement('details');scoringAdvanced.id='scoringAdvanced';scoringAdvanced.className='advanced-settings';scoringAdvanced.innerHTML='<summary>网页评分框与分数取整</summary><p class="hint">这里设置网页接收分数的输入框，不是评分标准中的小问。只有网页有多个评分框时才需要添加；单个总分框可留空。</p>';
+  const unitHeading=$('unitRows').previousElementSibling.previousElementSibling;
+  const unitHint=$('unitRows').previousElementSibling;
+  scoringAdvanced.append($('roundMethod').closest('label'),unitHeading,unitHint,$('unitRows'),$('addUnit'),$('detectUnits'),$('unitTotal'));
+  unitHeading.textContent='网页评分框';unitHint.hidden=true;
+  scoringBase.after(scoringAdvanced);
   $('workflows').querySelector('h2').textContent='当前任务评分设置';
   for(const prefix of ['primary','secondary','arbitration']){
     const input=$(prefix+'Model');input.removeAttribute('list');

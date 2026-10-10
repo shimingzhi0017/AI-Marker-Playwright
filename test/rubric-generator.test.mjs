@@ -8,6 +8,18 @@ import sharp from 'sharp';
 import {generateRubric} from '../src/rubric-generator.mjs';
 import {createApp} from '../src/server.mjs';
 import {launchBrowser} from '../src/browser.mjs';
+import {promptFor,parseResult} from '../src/domain.mjs';
+
+test('生成规则和实际模型评分遵守同一得分步长',async()=>{
+  const settings={providers:{demo:{}}},input={provider:'demo',model:'vision',question:'题目',answer:'答案',maxScore:4,roundStep:1};
+  const output=JSON.stringify({question:'题目',answer:'答案',rubric:'',warnings:[],items:[{label:'第一问',maxScore:4,criteria:'正确4分，部分正确0.5分。'}]});
+  await assert.rejects(generateRubric(settings,input,async(_provider,_model,prompt)=>{assert.match(prompt,/得分步长：1分/);return output;}),/步长/);
+  const half=await generateRubric(settings,{...input,roundStep:0.5},async()=>output);assert.match(half.rubric,/得分步长为0.5分/);
+  const config={answer:'答案',rubric:'按规则评分',scoring:{maxScore:4,roundStep:1}};
+  assert.match(promptFor(config),/得分步长：1分/);
+  await assert.rejects(generateRubric(settings,{...input,maxScore:3.5},async()=>output),/整数倍/);
+  assert.throws(()=>parseResult(JSON.stringify({score:0.5,studentAnswer:'答案',comment:'部分正确',subScores:[]}),config),/步长/);
+});
 
 test('评分标准生成验证分值并拒绝缺少题目或答案', async () => {
   const settings={providers:{demo:{}}}, input={provider:'demo',model:'vision',question:'题目',answer:'答案',maxScore:4};
@@ -66,6 +78,7 @@ test('图片经已有接口生成草稿，预览回填后保存并保留原始�
   assert.equal(await page.locator('#rubricMaxScore').inputValue(),'');
   assert.equal(await page.locator('#rubricStrictness').inputValue(),'normal');
   await page.locator('#rubricMaxScore').fill('4');
+  assert.equal(await page.locator('#rubricRoundStep').inputValue(),'1');
   await page.locator('#rubricScoreAllocation').fill('第一空2分，第二空2分，忽略图片原分值');
   await page.locator('#rubricStrictness').selectOption('lenient');
   assert.match(await page.locator('#rubricRequirements').inputValue(),/简写/);

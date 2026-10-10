@@ -106,3 +106,5 @@ aside nav button[data-tab="models"]{text-align:center}
 @media(max-width:600px){.mode-choices{grid-template-columns:1fr}.launch-pane,#grading .launch-console .runtime-settings{padding:18px}.launch-footer{padding:18px;align-items:stretch;flex-direction:column;gap:14px}.launch-submit{justify-content:space-between}.launch-console .ready-step{flex:none}.launch-console .browser-actions button,.launch-console .launch-submit button{flex:none}.launch-pane-heading h2{font-size:16px}}
 
 #websiteCard .website-address{margin:0 0 9px;font-size:11px;line-height:1.6;color:#81938a;overflow-wrap:anywhere}#websiteCard .website-address:empty{display:none}
+
+.scoring-base{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:18px 0}.scoring-base>.hint{grid-column:1/-1;margin:0}.scoring-base label{font-size:12px}#scoringAdvanced>label{max-width:300px;margin:18px 0}#scoringAdvanced h3{margin-top:20px}

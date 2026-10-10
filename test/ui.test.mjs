@@ -109,6 +109,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.locator('#rubric').fill('未保存的评分标准');
   await page.locator('#maxScore').fill('9');
   await page.locator('#roundStep').fill('0.5');
+  await page.locator('#scoringAdvanced > summary').click();
   await page.locator('#roundMethod').selectOption('floor');
   await page.locator('#answerUpload').setInputFiles({name:'draft-answer.png',mimeType:'image/png',buffer:image});
   await page.waitForFunction(()=>document.querySelectorAll('#answerReferenceImages img').length===1);
