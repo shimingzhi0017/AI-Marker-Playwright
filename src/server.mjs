@@ -203,13 +203,13 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
     try {
       if (req.headers.host !== new URL(origin).host) { text(res, 403, { error: '不允许的访问地址' }); return; }
       const url = new URL(req.url, origin);
-      if (url.pathname === '/favicon.ico') { res.writeHead(204); res.end(); return; }
+      if (url.pathname === '/favicon.ico') { res.writeHead(200, { 'Content-Type': 'image/x-icon', 'Cache-Control': 'no-store' }); res.end(fs.readFileSync(new URL('../ui/icon.ico', import.meta.url))); return; }
       if (url.pathname === '/') {
         if (req.method !== 'GET') { text(res, 405, { error: '请求方法无效' }); return; }
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': `marker=${token}; HttpOnly; SameSite=Strict; Path=/`, 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" });
         res.end(fs.readFileSync(new URL('../ui/index.html', import.meta.url))); return;
       }
-      if (['/app.js', '/provider-templates.js', '/enhancements.js', '/result-details.js', '/scoring-labels.js', '/adaptation-ui.js', '/style.css', '/feedback.js', '/icon.svg', '/icon.ico', '/icon-256.png'].includes(url.pathname) || /^\/katex\/(?:katex\.mjs|katex\.min\.css|fonts\/[A-Za-z0-9_-]+\.woff2)$/.test(url.pathname)) {
+      if (['/app.js', '/provider-templates.js', '/enhancements.js', '/result-details.js', '/scoring-labels.js', '/adaptation-ui.js', '/style.css', '/feedback.js', '/icon.svg', '/icon.ico', '/icon-256.png'].includes(url.pathname) || /^\/icon-(?:16|20|24|32|40|48|64|128|256)\.png$/.test(url.pathname) || /^\/katex\/(?:katex\.mjs|katex\.min\.css|fonts\/[A-Za-z0-9_-]+\.woff2)$/.test(url.pathname)) {
         res.writeHead(200, { 'Content-Type': /\.m?js$/.test(url.pathname) ? 'text/javascript; charset=utf-8' : url.pathname.endsWith('.woff2') ? 'font/woff2' : url.pathname.endsWith('.ico') ? 'image/x-icon' : url.pathname.endsWith('.png') ? 'image/png' : url.pathname.endsWith('.svg') ? 'image/svg+xml' : 'text/css; charset=utf-8', 'Cache-Control': 'no-store' });
         res.end(fs.readFileSync(new URL(`../ui${url.pathname}`, import.meta.url))); return;
       }
