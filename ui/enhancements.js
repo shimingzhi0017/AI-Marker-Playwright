@@ -44,7 +44,7 @@ export function buildLayout() {
   document.querySelector('#grading > .card:last-child').classList.add('event-card');
   $('addPreset').insertAdjacentHTML('afterend','<button id="copyPreset">复制</button><button id="deletePreset" class="danger">删除</button>');
   for(const field of ['question','answer','rubric']) {
-    $(field).closest('label').insertAdjacentHTML('afterend',`<div class="field-media wide"><div id="${field}Images" class="field-thumbnails"></div><label class="file-button small">添加说明图片<input id="${field}Upload" type="file" accept="image/png,image/jpeg,image/webp" multiple></label><span class="hint">点击上方输入框后可按 Ctrl+V 粘贴图片；支持 PNG、JPG、WebP，图片随方案保存</span></div>`);
+    $(field).closest('label').insertAdjacentHTML('afterend',`<div class="field-media wide"><div id="${field}ReferenceImages" class="field-thumbnails"></div><label class="file-button small">添加说明图片<input id="${field}Upload" type="file" accept="image/png,image/jpeg,image/webp" multiple></label><button id="${field}Paste" class="small">粘贴图片</button><span class="hint">点击上方输入框后可按 Ctrl+V 粘贴图片；支持 PNG、JPG、WebP，图片随方案保存</span></div>`);
   }
   $('addUnit').insertAdjacentHTML('afterend','<button id="detectUnits">从当前网页带入评分框</button><span id="unitTotal" class="hint"></span>');
   $('savePreset').closest('.footer-actions').insertAdjacentHTML('beforebegin',`<details class="advanced-settings"><summary>加分与空白检测</summary><div class="form-grid"><label class="check wide"><input id="diligenceEnabled" type="checkbox">启用勤勉加分</label><label>加分上限<input id="diligenceBonus" type="number" min="0.5" step="0.5"></label><label>衰减强度<select id="diligenceDecay"><option value="1">缓慢</option><option value="2">标准</option><option value="3">快速</option></select></label><label class="wide">勤勉评估说明<textarea id="diligenceCriteria" rows="2"></textarea></label><label class="check wide"><input id="blankEnabled" type="checkbox">启用空白检测（结果仍须确认）</label><label>范本差异阈值<input id="blankThreshold" type="number" min="0" max="1" step="0.001"></label><div><p id="blankStatus" class="hint"></p><button id="clearBlank">清除范本</button></div></div><p class="hint">空白范本可在历史记录中选择已确认的空白答卷建立。</p></details>`);
@@ -152,7 +152,7 @@ export function createEnhancements({getConfig,save,action,markDirty,renderPreset
   };
 
   function media(field) {
-    const target=$(field+'Images');target.replaceChildren();
+    const target=$(field+'ReferenceImages');target.replaceChildren();
     (images[field]||[]).forEach((value,index)=>{if(typeof value!=='string')return;const wrap=document.createElement('div'),img=document.createElement('img'),button=document.createElement('button');img.src=value.startsWith('data:')?value:`data:image/png;base64,${value}`;img.alt='方案说明图片';button.textContent='移除';button.onclick=()=>{images[field].splice(index,1);markDirty('presets');media(field);};wrap.append(img,button);target.append(wrap);});
   }
   async function addFieldImages(field, files) {
@@ -165,6 +165,14 @@ export function createEnhancements({getConfig,save,action,markDirty,renderPreset
     images[field].push(...added);markDirty('presets');media(field);
   }
   for(const field of ['question','answer','rubric']){
+    $(field+'Paste').onclick=()=>action(async()=>{
+      if(!navigator.clipboard?.read)throw Error('当前浏览器不支持读取剪贴板，请点击上方输入框后按 Ctrl+V');
+      let entries;try{entries=await navigator.clipboard.read();}catch{throw Error('无法读取剪贴板，请允许访问，或点击上方输入框后按 Ctrl+V');}
+      const files=[];
+      for(const entry of entries){const type=entry.types.find(type=>['image/png','image/jpeg','image/webp'].includes(type));if(type)files.push(await entry.getType(type));}
+      if(!files.length)throw Error('剪贴板里没有图片，请先复制图片或截图');
+      await addFieldImages(field,files);
+    });
     $(field+'Upload').onchange=()=>{const files=[...$(field+'Upload').files];action(async()=>{await addFieldImages(field,files);$(field+'Upload').value='';});};
     $(field).addEventListener('paste',event=>{
       const items=[...(event.clipboardData?.items||[])];

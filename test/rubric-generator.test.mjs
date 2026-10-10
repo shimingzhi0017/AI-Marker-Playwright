@@ -47,15 +47,21 @@ test('图片经已有接口生成草稿，预览回填后保存并保留原始�
     const event=new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true});
     element.dispatchEvent(event);if(!event.defaultPrevented)throw Error('Image paste was not handled');
   },image.toString('base64'));
-  await page.waitForFunction(()=>document.querySelectorAll('#questionImages img').length===1);
+  await page.waitForFunction(()=>document.querySelectorAll('#questionReferenceImages img').length===1);
   const textPastePrevented=await page.locator('#question').evaluate(element=>{
     const data=new DataTransfer();data.setData('text/plain','普通文字');
     const event=new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true});
     element.dispatchEvent(event);return event.defaultPrevented;
   });
   assert.equal(textPastePrevented,false);
-  await page.locator('#answerUpload').setInputFiles({name:'source.png',mimeType:'image/png',buffer:image});
-  await page.waitForFunction(()=>document.querySelectorAll('#answerImages img').length===1);
+  await page.locator('#answer').evaluate((element,base64)=>{
+    const data=new DataTransfer();data.items.add(new File([Uint8Array.from(atob(base64),char=>char.charCodeAt(0))],'answer.png',{type:'image/png'}));
+    element.dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}));
+  },image.toString('base64'));
+  await page.waitForFunction(()=>document.querySelectorAll('#answerReferenceImages img').length===1);
+  assert.equal(await page.locator('#grading #answerImages img').count(),0);
+  assert.equal(await page.locator('#presets #answerReferenceImages img').count(),1);
+  assert.equal(await page.locator('#answerImages').count(),1);
   await page.locator('#openRubricGenerator').click();await page.locator('#generateRubric').click();
   await page.locator('#rubricDraft').waitFor({state:'visible'});
   assert.equal(received.model,'vision');assert.equal(received.messages[0].content.filter(part=>part.type==='image_url').length,2);

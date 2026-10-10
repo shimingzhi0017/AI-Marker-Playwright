@@ -44,7 +44,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets['我的方案'].answer,{text:'模拟参考说明',images:[]});
     assert.equal(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets['我的方案'].scoring.items,undefined);
   await page.locator('#questionUpload').setInputFiles({name:'reference.png',mimeType:'image/png',buffer:image});
-  await page.waitForFunction(()=>document.querySelectorAll('#questionImages img').length===1);
+  await page.waitForFunction(()=>document.querySelectorAll('#questionReferenceImages img').length===1);
   await page.locator('#savePreset').click();await page.waitForFunction(()=>document.querySelector('#dirtyBadge').hidden);
   assert.match(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets['我的方案'].question.images[0],/^data:image\/png;base64,/);
   await page.locator('[data-tab=models]').click();await page.locator('#editProvider').click();await page.locator('#endpoint').fill(fixtureUrl);await page.locator('#apiKey').fill('local-fixture');await page.locator('#saveProvider').click();
@@ -108,8 +108,8 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.locator('#roundStep').fill('0.5');
   await page.locator('#roundMethod').selectOption('floor');
   await page.locator('#answerUpload').setInputFiles({name:'draft-answer.png',mimeType:'image/png',buffer:image});
-  await page.waitForFunction(()=>document.querySelectorAll('#answerImages img').length===1);
-  const questionImage=await page.locator('#questionImages img').getAttribute('src');
+  await page.waitForFunction(()=>document.querySelectorAll('#answerReferenceImages img').length===1);
+  const questionImage=await page.locator('#questionReferenceImages img').getAttribute('src');
   await page.locator('#detectUnits').click();
   await page.waitForFunction(()=>document.querySelectorAll('.unit-row').length===1);
   await page.waitForFunction(()=>document.querySelector('[data-unit=maxScore]').value==='4');
@@ -120,8 +120,8 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   assert.equal(await page.locator('#roundStep').inputValue(),'0.5');
   assert.equal(await page.locator('#roundMethod').inputValue(),'floor');
   assert.equal(await page.locator('[data-unit=roundStep]').inputValue(),'0.5');
-  assert.equal(await page.locator('#questionImages img').getAttribute('src'),questionImage);
-  assert.equal(await page.locator('#answerImages img').count(),1);
+  assert.equal(await page.locator('#questionReferenceImages img').getAttribute('src'),questionImage);
+  assert.equal(await page.locator('#answerReferenceImages img').count(),1);
   assert.equal(fs.readFileSync(path.join(root,'config.json'),'utf8'),savedBeforeImport);
   page.once('dialog',dialog=>dialog.dismiss());
   await page.locator('[data-unit=label]').fill('保留的分项');
