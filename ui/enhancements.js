@@ -1,10 +1,18 @@
+import {providerTemplates} from './provider-templates.js';
 import {setupRubricGenerator} from './rubric-generator.js';
 // Additional controls share the existing settings and API; no separate draft store is persisted.
 export function buildLayout() {
   const $ = id => document.getElementById(id);
   $('endpoint').closest('label').insertAdjacentHTML('afterend','<label class="wide">模型目录地址（可选）<input id="modelsEndpoint" type="url" placeholder="留空时根据模型接口地址自动推导"></label>');
   $('addProvider').insertAdjacentHTML('afterend','<button id="addProviderTemplate">从模板添加</button>');
-  document.body.insertAdjacentHTML('beforeend','<dialog id="providerTemplateDialog"><h2>选择 AI 接口模板</h2><p>仅添加公开接口地址和模型名称，密钥需要自行填写。模板添加后可以编辑或删除。</p><div class="actions"><button data-provider-template="火山引擎">火山引擎</button><button data-provider-template="OpenAI兼容">OpenAI兼容</button></div><div class="footer-actions"><button id="closeProviderTemplate">取消</button></div></dialog>');
+  document.body.insertAdjacentHTML('beforeend','<dialog id="providerTemplateDialog"><h2>选择 AI 接口模板</h2><p>仅添加官方公开接口地址和模型示例，密钥需要自行填写。模板可编辑或删除；模型可用性以账号为准。</p><div class="provider-template-grid"></div><div class="footer-actions"><button id="closeProviderTemplate">取消</button></div></dialog>');
+  const templateGrid=document.querySelector('.provider-template-grid');
+  for(const [name,template]of Object.entries(providerTemplates)){
+    const button=document.createElement('button');button.dataset.providerTemplate=name;
+    const title=document.createElement('strong');title.textContent=name;button.append(title);
+    if(template.note){const hint=document.createElement('span');hint.textContent=template.note;button.append(hint);}
+    templateGrid.append(button);
+  }
   $('eyebrow').hidden = true;
   document.querySelector('.workspace-controls').insertAdjacentHTML('afterbegin','<section class="task-overview" aria-label="任务概览"><div class="task-overview-heading"><h2>任务概览</h2><span>状态实时更新 · 点击切换</span></div><div id="workspaceCards" class="workspace-cards"></div></section>');
   const noticePopup=document.createElement('div');noticePopup.id='noticePopup';
