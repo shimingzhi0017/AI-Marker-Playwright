@@ -58,6 +58,7 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   await request('/api/settings',cfgB,b);
   await page.locator('#renameWorkspace').click();await page.locator('#workspaceNameInput').fill('并发任务 B');await page.locator('#workspaceDialogSave').click();await page.waitForFunction(()=>document.querySelector('#workspaceSelect').selectedOptions[0].textContent.includes('并发任务 B'));
   assert.equal((await request('/api/settings',undefined,b)).value.workspaceName,'并发任务 B');
+  await page.locator('[data-tab=grading]').click();
   await Promise.all([request('/api/open',{},'default'),request('/api/open',{},b)]);
   const starts=await Promise.all([request('/api/start',{},'default'),request('/api/start',{},b)]);assert.ok(starts.every(s=>s.status===200),JSON.stringify(starts));
   await until(async()=>(await Promise.all(['default',b].map(id=>request('/api/state',undefined,id)))).every(s=>s.value.review));

@@ -14,6 +14,7 @@ import { validateConfig, validateResult } from './domain.mjs';
 import { exportHistory, enrichStudents } from './export.mjs';
 import { chooseExportDirectory } from './export-folder.mjs';
 import { listModels } from './models.mjs';
+import { generateRubric } from './rubric-generator.mjs';
 import {adaptationTemplates,createTemplateGroup} from './adaptation-templates.mjs';
 import { blackRatio } from './blank.mjs';
 import { observeSubmissions } from './submission-observer.mjs';
@@ -31,7 +32,7 @@ function sanitizeSettings(settings) {
   if (!settings.presets[settings.active]) throw Error('请选择有效方案');
   return settings;
 }
-export async function createApp({ root = defaultRoot, browserFactory = opts => launchPersistentBrowser(opts.profile, opts.launch), gradeFunction, coordinator, child = false, sharedProvidersFile, exportDirectoryPicker = chooseExportDirectory } = {}) {
+export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defaultRoot, browserFactory = opts => launchPersistentBrowser(opts.profile, opts.launch), gradeFunction, coordinator, child = false, sharedProvidersFile, exportDirectoryPicker = chooseExportDirectory } = {}) {
   let lastExportDirectory;
   const children = new Map();
   const deletedDefaultFile = path.join(root,'default-task-deleted.json');
@@ -70,7 +71,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
   const adaptationConfig=loadSettings(file);if(!adaptationConfig.adaptationGroups){fs.copyFileSync(file,file+'.before-adaptation-groups');migrateGroups(adaptationConfig);fs.writeFileSync(file,JSON.stringify(adaptationConfig,null,2));}
   const store = new Store(data);
   coordinator.stores.add(store);
-  const state = { running: false, phase: '待开始', reason: '请导入原插件配置，或在设置中填写方案和模型。', count: 0, record: null, snapshot: null, browserOpen: false, review: false, countdown: null };
+  const state = { running: false, phase: '待开始', reason: '请导入原插件配置，或在设置中填写方案和模型。', count: 0, record: null, snapshot: null, diagnosisError: '', browserOpen: false, review: false, countdown: null };
   let context, page, platform, runner, pendingReview, timer, runPromise, submissionObserver, topicTracker, opening = false, generation = 0;
   let pickerToken;const adaptationDebug=new AdaptationDebugger(()=>platform);
   const events = [];
@@ -135,6 +136,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
       platform = new ZhixuePlatform(page, applyGroup(cfg,target.href), path.join(data, 'diagnostics'));
       platform.topicTracker = topicTracker;
       state.browserOpen = true;
+      state.snapshot = null; state.diagnosisError = '';
       await page.goto(target.href, { waitUntil: 'domcontentloaded', timeout: 45000 });
       state.reason = '请在阅卷浏览器中登录并进入阅卷页面，然后点击“检查页面”。'; note('阅卷浏览器已打开');
     } finally { opening = false; }
@@ -203,13 +205,13 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
     try {
       if (req.headers.host !== new URL(origin).host) { text(res, 403, { error: '不允许的访问地址' }); return; }
       const url = new URL(req.url, origin);
-      if (url.pathname === '/favicon.ico') { res.writeHead(204); res.end(); return; }
+      if (url.pathname === '/favicon.ico') { res.writeHead(200, { 'Content-Type': 'image/x-icon', 'Cache-Control': 'no-store' }); res.end(fs.readFileSync(new URL('../ui/icon.ico', import.meta.url))); return; }
       if (url.pathname === '/') {
         if (req.method !== 'GET') { text(res, 405, { error: '请求方法无效' }); return; }
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': `marker=${token}; HttpOnly; SameSite=Strict; Path=/`, 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" });
         res.end(fs.readFileSync(new URL('../ui/index.html', import.meta.url))); return;
       }
-      if (['/app.js', '/provider-templates.js', '/enhancements.js', '/result-details.js', '/scoring-labels.js', '/adaptation-ui.js', '/style.css', '/feedback.js', '/icon.svg', '/icon.ico', '/icon-256.png'].includes(url.pathname) || /^\/katex\/(?:katex\.mjs|katex\.min\.css|fonts\/[A-Za-z0-9_-]+\.woff2)$/.test(url.pathname)) {
+      if (['/app.js', '/provider-templates.js', '/enhancements.js', '/rubric-generator.js', '/rubric-prompts.js', '/result-details.js', '/scoring-labels.js', '/adaptation-ui.js', '/style.css', '/feedback.js', '/preset-preview.js', '/icon.svg', '/icon.ico', '/icon-256.png'].includes(url.pathname) || /^\/icon-(?:16|20|24|32|40|48|64|128|256)\.png$/.test(url.pathname) || /^\/katex\/(?:katex\.mjs|katex\.min\.css|fonts\/[A-Za-z0-9_-]+\.woff2)$/.test(url.pathname)) {
         res.writeHead(200, { 'Content-Type': /\.m?js$/.test(url.pathname) ? 'text/javascript; charset=utf-8' : url.pathname.endsWith('.woff2') ? 'font/woff2' : url.pathname.endsWith('.ico') ? 'image/x-icon' : url.pathname.endsWith('.png') ? 'image/png' : url.pathname.endsWith('.svg') ? 'image/svg+xml' : 'text/css; charset=utf-8', 'Cache-Control': 'no-store' });
         res.end(fs.readFileSync(new URL(`../ui${url.pathname}`, import.meta.url))); return;
       }
@@ -228,7 +230,7 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
         res.writeHead(response.status, Object.fromEntries(['content-type','content-disposition','cache-control'].map(k=>[k,response.headers.get(k)]).filter(([,v])=>v))); res.end(Buffer.from(await response.arrayBuffer())); return;
       }
       if (req.method === 'GET') {
-        if (url.pathname === '/api/state') { const { liveRecord, ...publicState } = state; text(res, 200, { ...publicState, events }); return; }
+        if (url.pathname === '/api/state') { const { liveRecord, ...publicState } = state; text(res, 200, { ...publicState, adaptationDebug:adaptationDebug.status, events }); return; }
         if (url.pathname === '/api/settings') { text(res, 200, settings()); return; }
         if (url.pathname === '/api/history') { text(res, 200, store.records()); return; }
         if (url.pathname === '/api/image') {
@@ -304,6 +306,32 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           if(state.running||state.starting)throw Error('请先暂停阅卷再调试');
           const cfg=settings();
           if(input.action==='templates'){text(res,200,{templates:adaptationTemplates});return;}
+          if(input.action==='select'){
+            if(opening)throw Error('浏览器正在打开，请稍后切换网站');
+            let group=cfg.adaptationGroups.find(g=>g.id===input.id);
+            if(input.templateId){
+              group=cfg.adaptationGroups.find(g=>g.templateId===input.templateId);
+              if(!group){group=createTemplateGroup(input.templateId,input.url,crypto.randomUUID());cfg.adaptationGroups.push(group);}
+            }
+            if(!group)throw Error('网站方案不存在，请刷新后重试');
+            if(!['http:','https:'].includes(new URL(group.url).protocol))throw Error('请先填写完整的网站网址并保存方案');
+            const changed=cfg.selectedAdaptationGroupId!==group.id || cfg.browser.url!==group.url;
+            cfg.selectedAdaptationGroupId=group.id;cfg.browser.url=group.url;cfg.platform=structuredClone(group.platform);writeSettings(cfg);
+            let navigationError='';
+            if(changed){
+              state.snapshot=null;state.diagnosisError='';state.record=null;finishReview('stop');
+              state.phase='待开始';state.reason='网站已切换，请进入阅卷页面后重新检查。';
+              if(context){
+                try{
+                  if(!page || page.isClosed())page=context.pages()[0] || await context.newPage();
+                  await page.goto(group.url,{waitUntil:'domcontentloaded',timeout:45000});
+                  await page.bringToFront();
+                  platform=new ZhixuePlatform(page,applyGroup(settings(),page.url()),path.join(data,'diagnostics'));platform.topicTracker=topicTracker;
+                }catch(error){navigationError=`网址已保存，浏览器跳转失败：${error.message}`;state.diagnosisError=navigationError;}
+              }
+            }
+            text(res,200,{groups:settings().adaptationGroups,selected:group.id,url:group.url,platform:group.platform,navigationError});return;
+          }
           if(input.action==='template'){
             const group=createTemplateGroup(input.templateId,input.url,crypto.randomUUID());
             // Reuse an existing set instead of creating overlapping website defaults.
@@ -312,10 +340,13 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
             cfg.adaptationGroups.push(group);cfg.browser.url=group.url;cfg.platform=group.platform;writeSettings(cfg);
             text(res,200,{groups:settings().adaptationGroups,selected:group.id});return;
           }
-          if(input.action==='save'){const existing=cfg.adaptationGroups.find(g=>g.id===input.group.id);const group={...input.group,platform:{...input.group.platform,verified:!!existing?.platform.verified&&existing.url===input.group.url&&fingerprint(existing.platform)===fingerprint(input.group.platform)}};if(!['http:','https:'].includes(new URL(group.url).protocol))throw Error('分组网址必须是http或https');if(existing)cfg.adaptationGroups[cfg.adaptationGroups.indexOf(existing)]=group;else cfg.adaptationGroups.push(group);cfg.browser.url=group.url;cfg.platform=group.platform;writeSettings(cfg);text(res,200,{groups:settings().adaptationGroups});return;}
+          if(input.action==='save'){const existing=cfg.adaptationGroups.find(g=>g.id===input.group.id);const group={...input.group,platform:{...input.group.platform,verified:!!existing?.platform.verified&&existing.url===input.group.url&&fingerprint(existing.platform)===fingerprint(input.group.platform)}};if(!['http:','https:'].includes(new URL(group.url).protocol))throw Error('分组网址必须是http或https');if(existing)cfg.adaptationGroups[cfg.adaptationGroups.indexOf(existing)]=group;else cfg.adaptationGroups.push(group);cfg.selectedAdaptationGroupId=group.id;cfg.browser.url=group.url;cfg.platform=group.platform;writeSettings(cfg);text(res,200,{groups:settings().adaptationGroups});return;}
           if(input.action==='delete'){cfg.adaptationGroups=cfg.adaptationGroups.filter(g=>g.id!==input.id);writeSettings(cfg);text(res,200,{groups:cfg.adaptationGroups});return;}
           if(!page)throw Error('请先打开阅卷浏览器并进入目标页面');
+          if(state.running || state.starting)throw Error('请先暂停阅卷，再进行页面调试');
+          await selectGradingPage();
           const group=cfg.adaptationGroups.find(g=>g.id===input.id);if(!group)throw Error('请选择网址分组');
+          if(adaptationDebug.groupId!==group.id){adaptationDebug.reset();adaptationDebug.groupId=group.id;}
           platform=new ZhixuePlatform(page,{...cfg,platform:group.platform},path.join(data,'diagnostics'));platform.topicTracker=topicTracker;
           if(input.action==='inspect'){text(res,200,{...await inspectPage(page),snapshot:await platform.snapshot().catch(error=>({error:error.message}))});return;}
           if(input.action==='pick'){pickerToken=crypto.randomUUID();state.adaptationPick=null;for(const frame of page.frames())await frame.evaluate(installPicker,{key:input.key,token:pickerToken}).catch(()=>{});await page.bringToFront();text(res,200,{message:'请到阅卷网页点击目标元素'});return;}
@@ -326,13 +357,18 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           throw Error('调试操作无效');
         }
         case '/api/diagnose': {
-          if (state.running) throw Error('请先暂停'); if (!platform) throw Error('请先打开阅卷浏览器');
-          await selectGradingPage();
-          platform=new ZhixuePlatform(page,applyGroup(settings(),page.url()),path.join(data,'diagnostics'));platform.topicTracker=topicTracker;
-          if(await platform.completed()){state.phase='阅卷完成';state.reason='本题已全部阅完，请在网站选择留在当前题或切换下一题。';note(state.reason);break;}
-          state.snapshot = await platform.snapshot();
-          state.phase = '页面已识别'; state.reason = `${state.snapshot.adapterName ? '已匹配'+state.snapshot.adapterName+'。' : ''}找到${state.snapshot.images.length}张图片、${state.snapshot.units.length}个评分框。${state.snapshot.strongIdentity ? '' : state.snapshot.submissionOnFill || state.snapshot.units.some(u=>u.type==='click') ? '此网站给分动作可能直接提交，可先评分，再在网站人工确认。' : '尚未确认稳定答卷ID，可先评分并只填分。'}`;
-          await platform.diagnostic('可视化页面诊断'); note(state.reason); break;
+          if (state.running || state.starting) throw Error('请先暂停');
+          state.snapshot = null; state.diagnosisError = '';
+          try {
+            if (!platform) throw Error('请先打开阅卷浏览器');
+            await selectGradingPage();
+            platform=new ZhixuePlatform(page,applyGroup(settings(),page.url()),path.join(data,'diagnostics'));platform.topicTracker=topicTracker;
+            if(await platform.completed()){state.phase='阅卷完成';state.reason='本题已全部阅完，请在网站选择留在当前题或切换下一题。';note(state.reason);break;}
+            state.snapshot = await platform.snapshot();
+            state.phase = '页面已识别'; state.reason = `${state.snapshot.adapterName ? '已匹配'+state.snapshot.adapterName+'。' : ''}找到${state.snapshot.images.length}张图片、${state.snapshot.units.length}个评分框。${state.snapshot.strongIdentity ? '' : state.snapshot.submissionOnFill || state.snapshot.units.some(u=>u.type==='click') ? '此网站给分动作可能直接提交，可先评分，再在网站人工确认。' : '尚未确认稳定答卷ID，可先评分并只填分。'}`;
+            await platform.diagnostic('可视化页面诊断'); note(state.reason);
+          } catch (error) { state.snapshot = null; state.diagnosisError = error.message; throw error; }
+          break;
         }
         case '/api/export-file': {
           if (!['json','csv','html'].includes(input.format)) throw Error('导出格式无效');
@@ -396,6 +432,10 @@ export async function createApp({ root = defaultRoot, browserFactory = opts => l
           cfg.presets[record.presetName].blankDetection = { enabled: true, threshold: 0.01, reference: await Promise.all(record.imageFiles.map(f => blackRatio(fs.readFileSync(f)))) };
           writeSettings(cfg); note('空白范本已保存'); break;
         }
+        case '/api/generate-rubric': {
+          if (state.running || state.starting) throw Error('请先暂停当前任务');
+          text(res, 200, await generateRubric(settings(), input)); return;
+        }
         case '/api/models': {
           if (state.running) throw Error('请先暂停'); const cfg = settings(), provider = cfg.providers[input.name];
           if (!provider) throw Error('供应商不存在');
@@ -428,7 +468,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const app = await createApp(); console.log(`可视化阅卷控制台：${app.url}\n关闭本窗口会停止控制台。`);
   let uiBrowser;
   try {
-    uiBrowser = await launchPersistentBrowser(path.join(defaultRoot, 'ui-profile'), { headless: false, viewport: null, args: [`--app=${app.url}`] });
+    uiBrowser = await launchPersistentBrowser(path.join(process.env.AI_MARKER_DATA_ROOT || defaultRoot, 'ui-profile'), { headless: false, viewport: null, args: [`--app=${app.url}`] });
     uiBrowser.on('close', () => app.close().then(() => process.exit(0)));
   } catch (error) { console.log(`自动打开窗口失败：${error.message}\n请在浏览器中打开上面的本地地址，或按首次运行说明检查浏览器。`); }
   process.once('SIGINT', () => app.close().then(async () => { await uiBrowser?.close(); process.exit(0); }));

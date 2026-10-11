@@ -35,3 +35,12 @@ test('完整区域忠实转录规则及识别疑点必须进入人工确认', as
   const tripleRunner=new Runner(platform,store,{active:'p',presets:{p:config},mode:'unattended'},async(record,mode)=>{assert.equal(mode,'unattended');return 'stop';},async()=>({...result,recognitionWarning:recognitionWarning(result),recognitionDecision:'three-way-consensus'}));
   await tripleRunner.run();
 });
+
+
+test('单评即使保留旧仲裁设置并存在识别疑点，也只调用主模型',async t=>{
+ const {grade}=await import('../src/models.mjs');const http=await import('node:http');let calls=0;
+ const server=http.createServer((req,res)=>{calls++;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({score:2,studentAnswer:'无法辨认',comment:'有疑点',subScores:[],recognition:{status:'uncertain',coverageChecked:true,notes:[],issues:[{location:'第一空',observed:'无法辨认',reason:'重叠',affectsScore:true}]}})}}]}));});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)));
+ const result=await grade({answer:'参考',rubric:'规则',scoring:{maxScore:4,units:[]},workflowId:'w'},{providers:{p:{endpoint:`http://127.0.0.1:${server.address().port}/v1`,apiKey:'test'}},workflows:{w:{model:{provider:'p',model:'primary'},recognitionPolicy:'arbitration',dualEval:{enabled:false,arbitration:{provider:'p',model:'arb'}}}}},[]);
+ assert.equal(calls,1);assert.equal(result.model,'primary');assert.equal(result.recognitionDecision,undefined);
+});

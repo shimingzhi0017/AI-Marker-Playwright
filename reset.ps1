@@ -6,7 +6,7 @@ try {
     function Assert-ProjectClosed {
         $active = Get-CimInstance Win32_Process | Where-Object {
             $_.ProcessId -ne $PID -and $_.Name -match '^(node|chrome|msedge)\.exe$' -and $_.CommandLine -and
-            ($_.CommandLine.IndexOf($resetRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0)
+            (($_.CommandLine.IndexOf($resetRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0) -or ($env:AI_MARKER_DATA_ROOT -and $_.CommandLine.IndexOf((Split-Path -Parent $env:AI_MARKER_DATA_ROOT), [StringComparison]::OrdinalIgnoreCase) -ge 0))
         }
         if ($active) { throw '本软件或专用浏览器仍在运行。请先关闭控制台、阅卷浏览器和本目录启动的程序，再双击一键还原.cmd。' }
     }
@@ -24,6 +24,7 @@ try {
     Assert-ProjectClosed
     $env:Path = [Environment]::GetEnvironmentVariable('Path','User') + ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + $env:Path
     $resetNode = Get-Command node.exe -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath (Join-Path $resetRoot 'runtime/node.exe')) { $resetNode = Get-Item -LiteralPath (Join-Path $resetRoot 'runtime/node.exe') }
     if (!$resetNode) {
         $resetPortable = Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA 'Programs') -Directory -Filter 'node-v*-win-x64' -ErrorAction SilentlyContinue |
             Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'node.exe') } |

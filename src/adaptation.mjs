@@ -27,7 +27,8 @@ export function migrateGroups(settings) {
   return settings.adaptationGroups;
 }
 export function applyGroup(settings, pageUrl) {
-  const cfg=structuredClone(settings); const group=matchingGroup(migrateGroups(cfg),pageUrl);
+  const cfg=structuredClone(settings),groups=migrateGroups(cfg),selected=groups.find(g=>g.id===cfg.selectedAdaptationGroupId);
+  const group=(selected && matchingGroup([selected],pageUrl)) || matchingGroup(groups,pageUrl);
   cfg.platform=group ? structuredClone(group.platform) : { verified:false };
   cfg.platform=resolveZhixueOptions(cfg.platform,pageUrl);
   cfg.adaptationGroupId=group?.id || null;cfg.adaptationScope=group?.url || null;
@@ -82,8 +83,9 @@ export class AdaptationDebugger {
     this.status={phase:'recording',message:'现在请在阅卷网站手动点击提交；工具只记录，不替你提交。',candidates:[]};
     this.handler=response=>{
       if(response.request().method()!=='POST') return;
-      const url=new URL(response.url());const site=new URL(platform.page.url());
-      if(url.hostname!==site.hostname&&!(site.hostname.endsWith('zhixue.com')&&url.hostname.endsWith('.zhixue.com'))) return;
+      const url=new URL(response.url());
+      // Grading services often use a separate API host. Record responses from this page and let receipt verification reject unrelated requests.
+      try{if(response.request().frame().page()!==platform.page)return;}catch{return;}
       if(/login|logout|oauth|password/i.test(url.pathname)) return;
       (async()=>{
         try {

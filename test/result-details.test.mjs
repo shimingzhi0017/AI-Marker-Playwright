@@ -23,6 +23,18 @@ test('详情显示同总分不同分项、仲裁依据、旧记录缺失和文�
   assert.equal(await page.locator('#formulaProbe mfrac').count(),2);
   assert.equal(await page.locator('#formulaProbe msub').count(),2);
   await page.locator('#formulaProbe').evaluate(el=>el.remove());
+  await page.evaluate(async()=>{
+    const {renderPresetPreview}=await import('/preset-preview.js');
+    const probe=document.createElement('div');probe.id='presetFormulaProbe';document.body.append(probe);
+    window.formulaSource=String.raw`（3）速度为：v_3=\frac{5L}{5\Delta t–\Delta t_1}=20m/s。即车速应是12.5m/s≤v≤20m/s。`;
+    renderPresetPreview(probe,window.formulaSource);
+  });
+  assert.equal(await page.locator('#presetFormulaProbe mfrac').count(),1);
+  assert.equal(await page.locator('#presetFormulaProbe msub').count(),2);
+  assert.equal(await page.locator('#presetFormulaProbe math').count(),2);
+  assert.doesNotMatch(await page.locator('#presetFormulaProbe').innerText(),/\\frac|\\Delta/);
+  assert.ok(await page.evaluate(()=>window.formulaSource.includes('–')));
+  await page.locator('#presetFormulaProbe').evaluate(el=>el.remove());
   assert.equal(await page.locator('.review-overview .review-score').count(),2);assert.equal(await page.locator('.review-score-card').count(),4);
   assert.match(await page.locator('#details').innerText(),/老师A 评分/);assert.match(await page.locator('#details').innerText(),/三评仲裁/);
   await page.locator('.review-audit > summary').click();

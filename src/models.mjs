@@ -150,12 +150,8 @@ async function gradeInternal(config, settings, images, signal, onProgress, contr
   };
   const prompt = promptFor(config);
   const useArbitration = workflow.recognitionPolicy === 'arbitration';
-  if (!workflow.dualEval?.enabled) {
-    const primary = await call(workflow.model, prompt);
-    if (!primary.recognitionWarning || !useArbitration) return primary;
-    const verdict = await call(workflow.dualEval?.arbitration, `${prompt}\n首次识别存在疑点，请重新检查原图，忠实识别实际书写并独立评分，不得脑补。本次为独立仲裁，请仅依据原始答卷图片、题目及评分标准重新识别和逐项评分，合计你自己的总分，不得平均或推测其他模型评分。保留全部无法确认内容及疑点。`,'仲裁');
-    return { ...verdict, recognitionWarning: [primary.recognitionWarning, verdict.recognitionWarning].filter(Boolean).join(' '), recognitionDecision: 'arbitration', recognitionArbitration: { primary, verdict } };
-  }
+  if (!workflow.dualEval?.enabled) return await call(workflow.model, prompt);
+
   const dual = workflow.dualEval;
   const objective = dual.questionType !== 'subjective';
   const needsDetails = objective && (config.scoring?.units?.length || 0) <= 1;

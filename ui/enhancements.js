@@ -1,9 +1,19 @@
+import {providerTemplates} from './provider-templates.js';
+import {setupRubricGenerator} from './rubric-generator.js';
+import {setupPresetPreviews} from './preset-preview.js';
 // Additional controls share the existing settings and API; no separate draft store is persisted.
 export function buildLayout() {
   const $ = id => document.getElementById(id);
   $('endpoint').closest('label').insertAdjacentHTML('afterend','<label class="wide">模型目录地址（可选）<input id="modelsEndpoint" type="url" placeholder="留空时根据模型接口地址自动推导"></label>');
   $('addProvider').insertAdjacentHTML('afterend','<button id="addProviderTemplate">从模板添加</button>');
-  document.body.insertAdjacentHTML('beforeend','<dialog id="providerTemplateDialog"><h2>选择 AI 接口模板</h2><p>仅添加公开接口地址和模型名称，密钥需要自行填写。模板添加后可以编辑或删除。</p><div class="actions"><button data-provider-template="火山引擎">火山引擎</button><button data-provider-template="OpenAI兼容">OpenAI兼容</button></div><div class="footer-actions"><button id="closeProviderTemplate">取消</button></div></dialog>');
+  document.body.insertAdjacentHTML('beforeend','<dialog id="providerTemplateDialog"><h2>选择 AI 接口模板</h2><p>仅添加官方公开接口地址和模型示例，密钥需要自行填写。模板可编辑或删除；模型可用性以账号为准。</p><div class="provider-template-grid"></div><div class="footer-actions"><button id="closeProviderTemplate">取消</button></div></dialog>');
+  const templateGrid=document.querySelector('.provider-template-grid');
+  for(const [name,template]of Object.entries(providerTemplates)){
+    const button=document.createElement('button');button.dataset.providerTemplate=name;
+    const title=document.createElement('strong');title.textContent=name;button.append(title);
+    if(template.note){const hint=document.createElement('span');hint.textContent=template.note;button.append(hint);}
+    templateGrid.append(button);
+  }
   $('eyebrow').hidden = true;
   document.querySelector('.workspace-controls').insertAdjacentHTML('afterbegin','<section class="task-overview" aria-label="任务概览"><div class="task-overview-heading"><h2>任务概览</h2><span>状态实时更新 · 点击切换</span></div><div id="workspaceCards" class="workspace-cards"></div></section>');
   const noticePopup=document.createElement('div');noticePopup.id='noticePopup';
@@ -43,7 +53,7 @@ export function buildLayout() {
   document.querySelector('#grading > .card:last-child').classList.add('event-card');
   $('addPreset').insertAdjacentHTML('afterend','<button id="copyPreset">复制</button><button id="deletePreset" class="danger">删除</button>');
   for(const field of ['question','answer','rubric']) {
-    $(field).closest('label').insertAdjacentHTML('afterend',`<div class="field-media wide"><div id="${field}Images" class="field-thumbnails"></div><label class="file-button small">添加说明图片<input id="${field}Upload" type="file" accept="image/png,image/jpeg,image/webp" multiple></label><span class="hint">图片随方案保存；支持 PNG、JPG、WebP</span></div>`);
+    $(field).closest('label').insertAdjacentHTML('afterend',`<div class="field-media wide"><div id="${field}ReferenceImages" class="field-thumbnails"></div><label class="file-button small">添加说明图片<input id="${field}Upload" type="file" accept="image/png,image/jpeg,image/webp" multiple></label><button id="${field}Paste" class="small">粘贴图片</button><span class="hint">点击上方输入框后可按 Ctrl+V 粘贴图片；支持 PNG、JPG、WebP，图片随方案保存</span></div>`);
   }
   $('addUnit').insertAdjacentHTML('afterend','<button id="detectUnits">从当前网页带入评分框</button><span id="unitTotal" class="hint"></span>');
   $('savePreset').closest('.footer-actions').insertAdjacentHTML('beforebegin',`<details class="advanced-settings"><summary>加分与空白检测</summary><div class="form-grid"><label class="check wide"><input id="diligenceEnabled" type="checkbox">启用勤勉加分</label><label>加分上限<input id="diligenceBonus" type="number" min="0.5" step="0.5"></label><label>衰减强度<select id="diligenceDecay"><option value="1">缓慢</option><option value="2">标准</option><option value="3">快速</option></select></label><label class="wide">勤勉评估说明<textarea id="diligenceCriteria" rows="2"></textarea></label><label class="check wide"><input id="blankEnabled" type="checkbox">启用空白检测（结果仍须确认）</label><label>范本差异阈值<input id="blankThreshold" type="number" min="0" max="1" step="0.001"></label><div><p id="blankStatus" class="hint"></p><button id="clearBlank">清除范本</button></div></div><p class="hint">空白范本可在历史记录中选择已确认的空白答卷建立。</p></details>`);
@@ -74,13 +84,13 @@ export function buildLayout() {
   document.addEventListener('click',e=>{if(e.target.matches('.images img,.field-thumbnails img')){$('largeImage').src=e.target.src;$('imageDialog').showModal();}});
   const sidebar=document.querySelector('aside'), oldNav=sidebar.querySelector('nav');
   const topNav=document.createElement('nav');topNav.className='task-tabs';topNav.setAttribute('aria-label','当前任务页面');
-  const workflowTab=document.createElement('button');workflowTab.dataset.tab='workflows';workflowTab.textContent='评分工作流';
-  topNav.append(oldNav.querySelector('[data-tab="grading"]'),oldNav.querySelector('[data-tab="presets"]'),workflowTab,oldNav.querySelector('[data-tab="history"]'));
+  const workflowTab=document.createElement('button');workflowTab.dataset.tab='workflows';workflowTab.textContent='评分设置';
+  topNav.append(oldNav.querySelector('[data-tab="presets"]'),workflowTab,oldNav.querySelector('[data-tab="grading"]'),oldNav.querySelector('[data-tab="history"]'));
   document.querySelector('header').after(topNav);
   const workspaceControls=document.querySelector('.workspace-controls');sidebar.insertBefore(workspaceControls,oldNav);
   const modelsButton=oldNav.querySelector('[data-tab="models"]');modelsButton.textContent='AI接口';
   const models=$('models'), grid=models.querySelector('.grid'), cards=[...grid.children];
-  const workflowSection=document.createElement('section');workflowSection.id='workflows';workflowSection.className='tab';workflowSection.hidden=true;workflowSection.append(cards[1]);models.after(workflowSection);$('presets').append(models.lastElementChild);
+  const workflowSection=document.createElement('section');workflowSection.id='workflows';workflowSection.className='tab';workflowSection.hidden=true;workflowSection.append(cards[1]);models.after(workflowSection);$('grading').append(models.lastElementChild);
   const sharedHint=document.createElement('p');sharedHint.className='hint';sharedHint.textContent='模型供应商、接口地址、密钥和模型目录适用于所有任务。修改后从下一轮阅卷生效。';cards[0].prepend(sharedHint);
   $('presetSelect').closest('.controls').hidden=true;
   $('workflowSelect').closest('.controls').hidden=true;
@@ -88,7 +98,19 @@ export function buildLayout() {
   $('runPreset').closest('label').hidden=true;$('bind').hidden=true;
   
   $('presets').querySelector('h2').textContent='当前任务方案';
-  $('workflows').querySelector('h2').textContent='当前任务评分工作流';
+  const scoringBase=document.createElement('div');scoringBase.className='scoring-base';
+  $('maxScore').closest('label').firstChild.textContent='题目总分';$('roundStep').closest('label').firstChild.textContent='得分步长';
+  $('roundStep').step='0.1';
+  scoringBase.append($('maxScore').closest('label'),$('roundStep').closest('label'));
+  scoringBase.insertAdjacentHTML('beforeend','<p class="hint">总分和步长与 AI 生成标准共用。步长为 1 时按整分给分，为 0.5 时允许半分。</p>');
+  $('rubric').closest('label').after(scoringBase);
+  const scoringAdvanced=document.createElement('details');scoringAdvanced.id='scoringAdvanced';scoringAdvanced.className='advanced-settings';scoringAdvanced.innerHTML='<summary>网页评分框与分数取整</summary><p class="hint">这里设置网页接收分数的输入框，不是评分标准中的小问。只有网页有多个评分框时才需要添加；单个总分框可留空。</p>';
+  const unitHeading=$('unitRows').previousElementSibling.previousElementSibling;
+  const unitHint=$('unitRows').previousElementSibling;
+  scoringAdvanced.append($('roundMethod').closest('label'),unitHeading,unitHint,$('unitRows'),$('addUnit'),$('detectUnits'),$('unitTotal'));
+  unitHeading.textContent='网页评分框';unitHint.hidden=true;
+  scoringBase.after(scoringAdvanced);
+  $('workflows').querySelector('h2').textContent='当前任务评分设置';
   for(const prefix of ['primary','secondary','arbitration']){
     const input=$(prefix+'Model');input.removeAttribute('list');
     const button=document.createElement('button');button.id=prefix+'ChooseModel';button.type='button';button.className='small model-choose';button.textContent='选择模型';button.dataset.modelPrefix=prefix;input.after(button);
@@ -109,6 +131,62 @@ export function buildLayout() {
   rulesGrid.insertAdjacentHTML('beforeend','<label class="wide">模型无法确认书写时<select id="recognitionPolicy"><option value="manual">交由人工确认</option><option value="arbitration">调用仲裁，按仲裁分数继续</option></select></label><p class="hint wide">有疑点时调用第三模型；三评总分及逐项分数一致则直接采用一致分数。三评不一致时，人工确认：暂停自动提交；按仲裁给分：采用仲裁有效分数。仲裁仍存疑时也采用其有效分数，保留疑点供审查。提交仍遵循当前运行模式，仲裁失败或分数无效时暂停。</p>');
   const ruleHint=workflowForm.querySelector('p.hint');if(ruleHint){ruleHint.classList.add('wide');rulesGrid.append(ruleHint);}workflowLayout.after(rules);
 
+  rules.querySelector('h3').textContent='复评与疑点处理';
+  rulesGrid.classList.add('review-policy-grid');
+  const toggle=$('dual').closest('label');toggle.classList.add('review-toggle');
+  const toggleText=document.createElement('span');toggleText.innerHTML='<strong>双模型复评</strong><small>两次独立评分，按题型规则判断是否需要仲裁</small>';
+  for(const node of [...toggle.childNodes])if(node.nodeType===Node.TEXT_NODE)node.remove();toggle.append(toggleText);
+  const comparison=document.createElement('div');comparison.className='policy-card dual-control';
+  comparison.innerHTML='<div class="policy-card-heading"><span class="policy-number">01</span><h4>分数一致性</h4></div><p class="hint">选择客观逐项核对，或主观总分差阈值。</p>';
+  comparison.append($('questionType').closest('label'),$('threshold').closest('label'));
+  const comparisonNote=document.createElement('p');comparisonNote.id='comparisonPolicyNote';comparisonNote.className='policy-note';comparison.append(comparisonNote);
+  const recognition=document.createElement('div');recognition.className='policy-card dual-control';
+  recognition.innerHTML='<div class="policy-card-heading"><span class="policy-number">02</span><h4>书写识别疑点</h4></div><p class="hint">模型无法确认书写时，选择后续处理方式。</p>';
+  const recognitionField=$('recognitionPolicy').closest('label');recognitionField.classList.remove('wide');recognition.append(recognitionField);
+  const recognitionNote=document.createElement('p');recognitionNote.id='recognitionPolicyNote';recognitionNote.className='policy-note';recognition.append(recognitionNote);
+  for(const hint of [...rulesGrid.querySelectorAll(':scope > p.hint')])hint.remove();
+  rulesGrid.append(comparison,recognition);
+  const safeguards=document.createElement('details');safeguards.className='policy-explanation';safeguards.innerHTML='<summary>查看完整处理规则</summary><ul><li>客观题逐项比较；任意分歧或缺少明细都调用仲裁，总分相同也不能跳过。</li><li>主观题总分差在设定阈值内时取平均，超出时调用仲裁。</li><li>识别有疑点时调用第三模型；三评总分及逐项一致时直接采用一致分数。</li><li>三评不一致时，按所选方式转人工或采用有效仲裁分数；疑点仍保留供审查。</li><li>提交遵循当前运行模式；仲裁失败或分数无效时暂停。</li></ul>';safeguards.classList.add('dual-control');rules.append(safeguards);
+  $('saveWorkflow').textContent='保存评分设置';
+  toolbar.classList.add('launch-console');
+  const browserStep=document.createElement('section');browserStep.className='launch-pane';browserStep.id='browserStep';
+  browserStep.innerHTML=`<div class="launch-pane-heading"><h2>连接阅卷页面</h2><span id="browserStatus" class="connection-status">未连接</span></div>
+    <p id="browserGuide" class="launch-helper">打开浏览器，登录网站并进入阅卷页面。</p><div class="actions browser-actions"></div>
+    <div class="page-check-result" aria-live="polite"><div class="check-result-heading"><strong id="checkTitle">等待页面检查</strong></div>
+    <div id="checkMetrics" class="check-metrics" hidden><div><strong id="checkImages">—</strong><span>答卷图片</span></div><div><strong id="checkUnits">—</strong><span>评分框</span></div><div><strong id="checkIdentity">—</strong><span>答卷 ID</span></div></div>
+    <p id="checkError" class="check-error" hidden></p></div>`;
+  browserStep.querySelector('.actions').append($('open'),$('diagnose'));
+  browserStep.querySelector('.page-check-result').append($('diagnosis'));
+  const runtime=document.querySelector('.runtime-settings');runtime.classList.add('launch-pane');
+  runtime.querySelector('.runtime-heading').innerHTML='<div class="launch-pane-heading"><h2>本次阅卷</h2><span id="runtimeSaved" class="runtime-saved">已保存</span></div><span id="runtimeSummary" hidden></span>';
+  const runtimeControls=runtime.querySelector('.controls');runtimeControls.className='runtime-controls';
+  const modeLabel=$('mode').closest('label');modeLabel.hidden=true;
+  const modeChoices=document.createElement('fieldset');modeChoices.className='mode-choices';modeChoices.innerHTML='<legend>提交方式</legend>';
+  for(const [value,title,description] of [['trial','人工确认','查看每份结果，由你确认提交'],['normal','倒计时提交','5 秒后提交，可随时拦停'],['unattended','无人值守','连续评分和提交，异常时暂停']]){
+    const label=document.createElement('label');label.className='mode-choice';
+    const radio=document.createElement('input');radio.type='radio';radio.name='runMode';radio.value=value;
+    const copy=document.createElement('span');const strong=document.createElement('strong');strong.textContent=title;
+    const hint=document.createElement('small');hint.textContent=description;copy.append(strong,hint);label.append(radio,copy);modeChoices.append(label);
+    radio.addEventListener('input',()=>{if(radio.checked){$('mode').value=value;$('mode').dispatchEvent(new Event('input',{bubbles:true}));}});
+  }
+  runtimeControls.prepend(modeChoices);
+  const quantity=document.createElement('div');quantity.className='quantity-settings';
+  const limitLabel=$('batchEnabled').closest('label');limitLabel.lastChild.textContent='限制阅卷份数';
+  quantity.append(limitLabel);quantity.insertAdjacentHTML('beforeend','<p id="quantitySummary" class="launch-helper">不限份数，阅卷结束后自动停止。</p>');
+  const batchField=$('batch').closest('label');batchField.id='batchField';batchField.firstChild.textContent='最多提交';
+  const batchInput=document.createElement('div');batchInput.className='batch-input';batchInput.append($('batch'));batchInput.insertAdjacentHTML('beforeend','<span>份</span>');batchField.append(batchInput);quantity.append(batchField);
+  runtimeControls.append(quantity);
+  const runtimeFooter=document.createElement('div');runtimeFooter.className='runtime-footer';runtimeFooter.innerHTML='<span>开始时自动保存本次设置</span>';
+  $('saveMode').textContent='保存设置';runtimeFooter.append($('saveMode'));runtime.append(runtimeFooter);
+  const columns=document.createElement('div');columns.className='launch-columns';columns.append(browserStep,runtime);toolbar.prepend(columns);
+  const launch=document.createElement('footer');launch.className='launch-footer';launch.id='launchFinal';
+  launch.innerHTML='<div class="launch-overview"><p id="launchStatus" aria-live="polite">完成方案、模型和页面检查后即可开始。</p></div><div class="launch-submit"><div class="actions"></div></div>';
+  launch.querySelector('.launch-overview').prepend($('readiness'));launch.querySelector('.launch-overview').append($('reason'));
+  launch.querySelector('.launch-submit').prepend($('count'));launch.querySelector('.actions').append($('start'),$('pause'));toolbar.append(launch);
+  for(const empty of toolbar.querySelectorAll(':scope > .actions,:scope > .summary'))if(!empty.children.length)empty.remove();
+  const nextSettings=document.createElement('button');nextSettings.id='nextScoringSettings';nextSettings.textContent='下一步：评分设置';nextSettings.onclick=()=>document.querySelector('[data-tab="workflows"]').click();$('savePreset').after(nextSettings);
+  const nextGrading=document.createElement('button');nextGrading.id='nextStartGrading';nextGrading.textContent='下一步：开始阅卷';nextGrading.onclick=()=>document.querySelector('[data-tab="grading"]').click();$('saveWorkflow').after(nextGrading);
+  document.querySelectorAll('.tab').forEach(el=>el.hidden=el.id!=='presets');document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab==='presets'));$('title').textContent='阅卷方案';
   const backupMenu=document.createElement('details');backupMenu.className='export-menu';backupMenu.innerHTML='<summary>配置备份</summary>';
   const backupOptions=document.createElement('div');backupOptions.className='export-options';
   const importControl=$('importFile').closest('label');importControl.before(backupMenu);backupOptions.append(importControl,$('exportConfig'));backupMenu.append(backupOptions);
@@ -116,6 +194,8 @@ export function buildLayout() {
   const providerCard=$('providerSelect').closest('.card');
   providerCard.querySelector('h2').textContent='模型供应商';
   const providerForm=$('endpoint').closest('.form-grid');
+  $('endpoint').placeholder='https://你的接口域名/v1';
+  $('endpoint').closest('label').insertAdjacentHTML('beforeend','<span class="hint">填写基础地址，软件按协议自动补充请求路径。OpenAI兼容接口通常以 /v1 结尾；其他供应商使用其提供的基础路径。完整接口地址也可使用。</span>');
   const providerDialog=document.createElement('section');providerDialog.id='providerDialog';providerDialog.hidden=true;providerDialog.setAttribute('aria-labelledby','providerDialogTitle');
   providerDialog.innerHTML='<div class="image-dialog-heading"><h2 id="providerDialogTitle">编辑接口</h2><button id="closeProvider">关闭</button></div>';
   providerCard.append(providerDialog);providerDialog.append(providerForm);
@@ -139,6 +219,8 @@ export function buildLayout() {
 
 export function createEnhancements({getConfig,save,action,markDirty,renderPreset,renderUnits,renderProvider,renderWorkflow,getSnapshot,api,refreshSettings,notice}) {
   const $=id=>document.getElementById(id);const images={};
+  setupRubricGenerator({getConfig,getImages:field=>structuredClone(images[field]||[]),action,api,markDirty});
+  setupPresetPreviews();
   const deleteDialog=document.createElement('dialog');deleteDialog.id='deleteProviderDialog';deleteDialog.setAttribute('aria-labelledby','deleteProviderTitle');
   deleteDialog.innerHTML='<h2 id="deleteProviderTitle">删除模型接口</h2><p id="deleteProviderMessage" class="hint"></p><form method="dialog" class="actions"><button value="cancel">取消</button><button id="confirmDeleteProvider" value="delete" class="danger">确认删除</button></form>';
   document.body.append(deleteDialog);
@@ -150,15 +232,43 @@ export function createEnhancements({getConfig,save,action,markDirty,renderPreset
   };
 
   function media(field) {
-    const target=$(field+'Images');target.replaceChildren();
+    const target=$(field+'ReferenceImages');target.replaceChildren();
     (images[field]||[]).forEach((value,index)=>{if(typeof value!=='string')return;const wrap=document.createElement('div'),img=document.createElement('img'),button=document.createElement('button');img.src=value.startsWith('data:')?value:`data:image/png;base64,${value}`;img.alt='方案说明图片';button.textContent='移除';button.onclick=()=>{images[field].splice(index,1);markDirty('presets');media(field);};wrap.append(img,button);target.append(wrap);});
   }
-  for(const field of ['question','answer','rubric'])$(field+'Upload').onchange=()=>action(async()=>{for(const file of $(field+'Upload').files){if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>5*1024*1024)throw Error('说明图片须为 PNG/JPG/WebP，且每张不超过5MB');images[field].push(await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);}));}markDirty('presets');media(field);$(field+'Upload').value='';});
+  async function addFieldImages(field, files) {
+    const added=[];
+    for(const file of files){
+      if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>5*1024*1024)throw Error('说明图片须为 PNG/JPG/WebP，且每张不超过5MB');
+      added.push(await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('图片读取失败，请重新添加'));reader.readAsDataURL(file);}));
+    }
+    if(!added.length)return;
+    images[field].push(...added);markDirty('presets');media(field);
+  }
+  for(const field of ['question','answer','rubric']){
+    $(field+'Paste').onclick=()=>action(async()=>{
+      if(!navigator.clipboard?.read)throw Error('当前浏览器不支持读取剪贴板，请点击上方输入框后按 Ctrl+V');
+      let entries;try{entries=await navigator.clipboard.read();}catch{throw Error('无法读取剪贴板，请允许访问，或点击上方输入框后按 Ctrl+V');}
+      const files=[];
+      for(const entry of entries){const type=entry.types.find(type=>['image/png','image/jpeg','image/webp'].includes(type));if(type)files.push(await entry.getType(type));}
+      if(!files.length)throw Error('剪贴板里没有图片，请先复制图片或截图');
+      await addFieldImages(field,files);
+    });
+    $(field+'Upload').onchange=()=>{const files=[...$(field+'Upload').files];action(async()=>{await addFieldImages(field,files);$(field+'Upload').value='';});};
+    $(field).addEventListener('paste',event=>{
+      const items=[...(event.clipboardData?.items||[])];
+      const files=items.filter(item=>item.kind==='file'&&item.type.startsWith('image/')).map(item=>item.getAsFile()).filter(Boolean);
+      if(!files.length)return;
+      event.preventDefault();action(()=>addFieldImages(field,files));
+    });
+  }
   function preset() {const p=getConfig().presets[$('presetSelect').value];for(const field of ['question','answer','rubric']){images[field]=structuredClone(p[field]?.images||[]);media(field);}const d=p.scoring?.diligence||{};$('diligenceEnabled').checked=!!d.enabled;$('diligenceBonus').value=d.maxBonus??3;$('diligenceDecay').value=d.decayPower??2;$('diligenceCriteria').value=d.criteria||'';$('blankEnabled').checked=!!p.blankDetection?.enabled;$('blankThreshold').value=p.blankDetection?.threshold??0.01;$('blankStatus').textContent=p.blankDetection?.reference?.length ? `已保存 ${p.blankDetection.reference.length} 个范本特征` : '尚未设置空白范本；启用后将交给模型评分并要求人工确认。';}
   function applyPreset(p) {for(const field of ['question','answer','rubric']){if(images[field]?.length || typeof p[field]==='object')p[field]={...(typeof p[field]==='object'?p[field]:{text:p[field]}),images:structuredClone(images[field]||[])};}p.scoring.diligence={...p.scoring.diligence,enabled:$('diligenceEnabled').checked,maxBonus:Number($('diligenceBonus').value),decayPower:Number($('diligenceDecay').value),criteria:$('diligenceCriteria').value};p.blankDetection={...p.blankDetection,enabled:$('blankEnabled').checked,threshold:Number($('blankThreshold').value)};}
   function provider() {const p=getConfig().providers[$('providerSelect').value] || {};const summary=$('providerSummary');summary.replaceChildren();const empty=!Object.keys(getConfig().providers).length;for(const id of ['editProvider','viewProviderModels','deleteProvider'])$(id).disabled=empty;if(empty){summary.textContent='尚未添加模型供应商，点击新建开始配置。';$('manualModelList').replaceChildren();return;}for(const [label,value] of [['接口状态',p.endpoint&&(p.apiKey||p.apiKeyEnv)?'已配置':'待配置'],['协议',{chat:'Chat Completions',responses:'Responses',gemini:'Gemini 原生'}[p.protocol||'chat']],['模型目录',`${(p.models||[]).length} 个模型`]]){const item=document.createElement('div'),title=document.createElement('span'),text=document.createElement('strong');title.textContent=label;text.textContent=value;item.append(title,text);summary.append(item);}$('manualModelList').replaceChildren(...(p.models||[]).map(id=>{const row=document.createElement('div'),name=document.createElement('span'),button=document.createElement('button');name.textContent=id;button.textContent='移除';button.onclick=()=>action(async()=>{p.models=p.models.filter(m=>m!==id);await save('模型目录已保存','models');provider();});row.append(name,button);return row;}));}
   function workflow() {const w=getConfig().workflows[$('workflowSelect').value];for(const [prefix,entry]of[['primary',w.model],['secondary',w.dualEval?.secondary],['arbitration',w.dualEval?.arbitration]])$(prefix+'Effort').value=entry?.reasoningEffort||'';$('outputLimit').checked=w.outputLimitEnabled!==false && !!w.maxOutputTokens;$('outputTokens').value=w.maxOutputTokens||4096;$('requestBudget').value=getConfig().requestBudget||6;$('recognitionPolicy').value=w.recognitionPolicy||'manual';dual();}
-  function dual(){const enabled=$('dual').checked;const arbitration=enabled||$('recognitionPolicy').value==='arbitration';document.querySelectorAll('.dual-control').forEach(el=>el.hidden=!enabled);$('secondaryPanel').hidden=!enabled;$('arbitrationPanel').hidden=!arbitration;for(const id of ['arbitrationProvider','arbitrationModel','arbitrationEffort'])$(id).closest('label').hidden=!arbitration;$('threshold').closest('label').hidden=!enabled||$('questionType').value!=='subjective';$('outputTokens').disabled=!$('outputLimit').checked;}
+  function dual(){
+    $('comparisonPolicyNote').textContent=$('questionType').value==='objective'?'每个小问分数一致才通过；总分相同但分项不同仍仲裁。':'两次总分差在阈值内取平均，超出阈值交由仲裁。';
+    $('recognitionPolicyNote').textContent=$('recognitionPolicy').value==='manual'?'三评一致直接给分；仍不一致则暂停自动提交，交由你确认。':'采用有效仲裁分数继续，保留识别疑点供后续审查。';
+    const enabled=$('dual').checked;const arbitration=enabled;document.querySelectorAll('.dual-control').forEach(el=>el.hidden=!enabled);$('secondaryPanel').hidden=!enabled;$('arbitrationPanel').hidden=!arbitration;for(const id of ['arbitrationProvider','arbitrationModel','arbitrationEffort'])$(id).closest('label').hidden=!arbitration;$('threshold').closest('label').hidden=!enabled||$('questionType').value!=='subjective';$('outputTokens').disabled=!$('outputLimit').checked;}
   $('recognitionPolicy').addEventListener('change',dual);$('questionType').addEventListener('change',dual);$('dual').addEventListener('change',dual);$('outputLimit').addEventListener('change',dual);
   $('toggleKey').onclick=()=>{$('apiKey').type=$('apiKey').type==='password'?'text':'password';$('toggleKey').textContent=$('apiKey').type==='password'?'显示密钥':'隐藏密钥';};
   // Only redraw scoring rows: the other form fields may contain unsaved text and images.

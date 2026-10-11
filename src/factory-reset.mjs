@@ -31,8 +31,10 @@ export function resetPersonalData(root,defaultConfig) {
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   if(process.argv[2]!=='--confirmed')throw Error('请双击一键还原.cmd，查看范围并确认');
-  const root=fileURLToPath(new URL('..',import.meta.url));
-  const config=JSON.parse(fs.readFileSync(path.join(root,'config.example.json'),'utf8'));
+  const appRoot=fileURLToPath(new URL('..',import.meta.url));
+  const root=process.env.AI_MARKER_DATA_ROOT || appRoot;
+  fs.mkdirSync(root,{recursive:true});
+  const config=JSON.parse(fs.readFileSync(path.join(appRoot,'config.example.json'),'utf8'));
   console.log('还原完成。个人资料备份：'+resetPersonalData(root,config));
   console.log('请双击“启动可视化.cmd”重新启动。');
 }
