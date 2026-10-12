@@ -1,7 +1,7 @@
 export const rubricPrompts = {
   strict: { label:'严格', text:'严格核对答案的关键条件、概念、单位和必要步骤；遗漏影响结论的要点时不给对应分。明确每项必需内容，不因表述接近而视为正确。数学等价式和含义完全相同的表述应认可，不要求逐字照抄。' },
-  normal: { label:'正常', text:'按通常教学与考试要求评分。核心概念、逻辑和结果正确即可认可合理等价表述；主观题按正确步骤给部分分。非关键措辞差异不扣分；单位、必要条件等按题目要求明确处理。' },
-  lenient: { label:'宽松', text:'在不改变正确答案的前提下，充分认可合理同义表述、数学等价式、简写和有效解法；主观题核心思路正确的步骤尽量给对应部分分。轻微措辞或非关键格式问题不扣分，但错误结论、缺失关键条件不能当作正确。' },
+  normal: { label:'正常', text:'按通常教学与考试要求评分。核心概念、逻辑和结果正确即可认可合理等价表述。非关键措辞差异不扣分；单位、必要条件等按题目要求明确处理，是否给部分分遵循所选给分方式。' },
+  lenient: { label:'宽松', text:'在不改变正确答案的前提下，充分认可合理同义表述、数学等价式、简写和有效解法。轻微措辞或非关键格式问题不扣分，但错误结论、缺失关键条件不能当作正确，不能超出所选给分方式增加部分分。' },
   custom: { label:'自定义', text:'' }
 };
 
@@ -79,4 +79,32 @@ export function rubricRequirements(subject,strictness='normal') {
   const entry=rubricSubjects[subject];
   if(!entry)throw Error('学科选项无效');
   return `学科：${entry.label}；答案要求：${level.label}。\n${entry.focus}\n${level.text}\n${entry[strictness]}\n只根据本题、参考答案和教师明确设置编写规则；模板不能增加题目未要求的条件。客观题按标准逐项判定，不能擅自增加部分分。宽严不改变总分、分值分配和得分步长，不得猜补看不清或未书写的内容。`;
+}
+
+export const rubricScoringMethods = {
+  auto: {label:'按题目自动区分', summary:'选择、填空逐项判定；解答、阅读按要点给分；写作明确等级标准。', text:'根据题目设问逐小问选择给分方式，不依据单双评设置推断题型。选择、填空等客观项逐项正确满分、错误零分；解答、阅读等主观项按必要要点或步骤给分；写作等整体评价题列出等级与维度。混合题分别说明各项方式。'},
+  answers: {label:'按答案逐项给分', summary:'逐空或逐小问核对答案，正确满分、错误零分，认可等价答案。', text:'按答案逐项给分。每个独立答案项只取满分或零分，列出标准答案、可接受的等价答案和判错边界；不拆过程分，不因思路接近增加部分分。'},
+  points: {label:'按要点／步骤给分', summary:'列清得分点、部分分和扣分边界，适合解答题、阅读与材料分析。', text:'按要点／步骤给分。主观项列出独立且可核对的知识要点、推理步骤或材料依据，说明各得分点满分、部分满足与不给分的条件。题内客观选择或填空仍正确满分、错误零分，不擅自增加过程分。'},
+  holistic: {label:'按等级综合评价', summary:'明确评价维度、等级描述和分数边界，适合作文与开放性论述。', text:'按等级综合评价。仅对写作或开放性论述等适用项设置内容、结构、论证或表达等本题必要维度，明确各等级表现、分数边界及档内给分依据，不能只写笼统的优良中差。非整体评价项仍按题意逐项给分；不强行把填空、计算结果改成等级评分。'}
+};
+
+const teacherRules = '编写顺序：先按题目顺序确定独立评分项及标准答案，再列可接受的等价表述或替代解法，最后明确给分与扣分条件。学科模板中关于步骤、过程和语言错误的要求，只在本题及所选给分方式适用时采用，不能给客观答案项添加步骤分。\n对适用的过程题明确一次错算对后续方法分的影响；若题目与教师未说明，提出建议并在warnings请教师确认。对适用的扣分项明确扣分上限，同一错误不得重复扣分；同义要点不得重复计分，各项最低零分、最高该项满分。\n忠实保留学生实际书写，完整检查题内答题区域的涂改与移位；不得猜补看不清或未书写的内容，不以标准答案反推学生答案。模板不能增加题目未要求的单位、格式或必要条件。教师分值分配、总分及得分步长必须遵守；教师补充与题意、参考答案或给分方式冲突时在warnings说明，不得静默更改。';
+
+export function rubricPolicy({subject='',strictness='normal',scoringMethod='auto',notes='',useCustomPrompt=false,customRequirements='' }={}) {
+  if(!Object.hasOwn(rubricScoringMethods,scoringMethod))throw Error('给分方式选项无效');
+  if(typeof notes!=='string'||notes.length>2000)throw Error('本题补充要求最多2000字');
+  if(typeof customRequirements!=='string'||customRequirements.length>6000)throw Error('自定义提示词最多6000字');
+  const template=useCustomPrompt?customRequirements.trim():rubricRequirements(subject,strictness);
+  if(!template)throw Error('请填写自定义提示词');
+  return `${template}\n给分方式：${rubricScoringMethods[scoringMethod].label}。${rubricScoringMethods[scoringMethod].text}\n${teacherRules}${notes.trim()?`\n本题补充要求（教师填写）：${notes.trim()}`:''}`;
+}
+
+export function rubricGenerationSettings(saved={}) {
+  const subject=Object.hasOwn(rubricSubjects,saved.subject)?saved.subject:'';
+  const strictness=Object.hasOwn(rubricPrompts,saved.strictness)&&saved.strictness!=='custom'?saved.strictness:'normal';
+  const template=rubricRequirements(subject,strictness);
+  const previousText={normal:'按通常教学与考试要求评分。核心概念、逻辑和结果正确即可认可合理等价表述；主观题按正确步骤给部分分。非关键措辞差异不扣分；单位、必要条件等按题目要求明确处理。',lenient:'在不改变正确答案的前提下，充分认可合理同义表述、数学等价式、简写和有效解法；主观题核心思路正确的步骤尽量给对应部分分。轻微措辞或非关键格式问题不扣分，但错误结论、缺失关键条件不能当作正确。'};
+  const previousTemplate=previousText[strictness]?template.replace(rubricPrompts[strictness].text,previousText[strictness]):template;
+  const legacyCustom=saved.version!==2 && typeof saved.requirements==='string' && (saved.strictness==='custom'||saved.requirements!==template&&saved.requirements!==previousTemplate);
+  return {version:2,subject,strictness,scoringMethod:Object.hasOwn(rubricScoringMethods,saved.scoringMethod)?saved.scoringMethod:'auto',notes:saved.notes||'',useCustomPrompt:saved.version===2?!!saved.useCustomPrompt:legacyCustom,customRequirements:saved.customRequirements??(legacyCustom?saved.requirements:''),scoreAllocation:saved.scoreAllocation||''};
 }

@@ -170,7 +170,7 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
     if (!snapshot) {state.phase='阅卷完成';state.reason='本题已全部阅完，请在网站选择留在当前题或切换下一题。';note(state.reason);return;}
     const preset = cfg.presets[cfg.taskScopedConfig ? cfg.active : cfg.bindings?.[snapshot.taskId] || cfg.active]; validateConfig(preset);
     const workflow = cfg.workflows[preset.workflowId];
-    for (const entry of [workflow?.model, ...(workflow?.dualEval?.enabled ? [workflow.dualEval.secondary, workflow.dualEval.arbitration] : workflow?.recognitionPolicy === 'arbitration' ? [workflow.dualEval?.arbitration] : [])]) {
+    for (const entry of [workflow?.model, ...(workflow?.dualEval?.enabled ? [workflow.dualEval.secondary, workflow.dualEval.arbitration] : [])]) {
       const provider = cfg.providers[entry?.provider];
       if (!entry?.model || !provider?.endpoint || !(provider.apiKey || process.env[provider.apiKeyEnv || ''])) throw Error('请在“模型接口”中填写接口地址、密钥和工作流模型');
     }
@@ -462,7 +462,22 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
     }
   }
   let closing;
-  return { url: origin, server, state, store, name:()=>settings().workspaceName||'任务', close: () => closing ||= (async () => { pause(); await Promise.all([...children.values()].map(c=>c.app.close())); await runPromise; adaptationDebug.stop();await submissionObserver?.close(); await context?.close(); await new Promise(resolve => server.close(resolve)); coordinator.stores.delete(store); store.close(); })() };
+  return { url: origin, server, state, store, name:()=>settings().workspaceName||'任务', close: () => closing ||= (async () => {
+    pause();
+    await Promise.all([...children.values()].map(c=>c.app.close()));
+    await runPromise;
+    adaptationDebug.stop();
+    await submissionObserver?.close();
+    topicTracker?.close();
+    await context?.close();
+    await new Promise(resolve => {
+      server.close(resolve);
+      // Browsers may preconnect without sending a request; close() alone keeps waiting for them.
+      server.closeAllConnections();
+    });
+    coordinator.stores.delete(store);
+    store.close();
+  })() };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const app = await createApp(); console.log(`可视化阅卷控制台：${app.url}\n关闭本窗口会停止控制台。`);

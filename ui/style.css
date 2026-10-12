@@ -195,3 +195,24 @@ pre{border:1px solid #e1e9e3;border-radius:10px;background:#f5f8f6;line-height:1
 @media(max-width:1100px){.preset-editor-source,.preset-editor-display{padding:18px}.preset-editor-display{border-top:1px solid #dce6df}.preset-text-preview{min-height:140px}}
 @media(max-width:800px){main{width:100%;margin-left:0}}
 @media(max-width:620px){.form-grid{gap:16px}.scoring-base{padding:16px;gap:14px}.preset-editor-source,.preset-editor-display{padding:16px}.unit-row{padding:12px;gap:8px}.unit-row>button{height:36px}.history-filter{gap:10px}.preset-editor-source textarea{min-height:180px}#scores{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Teacher-facing rubric policy, with the full prompt kept available on demand. */
+#rubricGeneratorDialog #rubricScoreAllocation{min-height:180px}
+#rubricGeneratorDialog #rubricTeacherNotes{min-height:88px;resize:vertical}
+#rubricGeneratorDialog .rubric-settings-column{gap:12px}
+#rubricGeneratorDialog #rubricMethodHint{display:block;margin-top:7px;color:#819287}
+.rubric-optional{float:right;font-size:10px;font-weight:400;color:#98a69d}
+.rubric-policy-summary{padding:12px 14px;border:1px solid #e2ebe4;border-radius:9px;background:#f5f9f6;font-size:12px;line-height:1.7}
+.rubric-policy-summary strong{color:#426950;font-size:11px;font-weight:600}
+.rubric-policy-summary p{margin:5px 0 7px;color:#607568;line-height:1.7}
+.rubric-policy-summary>span{font-size:10px;color:#8a9a90}
+#rubricGeneratorDialog .rubric-prompt-details{border:1px solid #e4ebe6;border-radius:9px;background:#fff;padding:0;margin:0}
+.rubric-prompt-details>summary{padding:11px 13px;font-size:11px;color:#65816d;cursor:pointer}
+.rubric-prompt-details>summary>span{float:right;font-size:10px;color:#91a298}
+.rubric-prompt-body{padding:0 13px 13px;display:flex;flex-direction:column;gap:12px}
+#rubricGeneratorDialog .rubric-prompt-body .check{display:flex;align-items:center;gap:7px;font-weight:400}
+#rubricGeneratorDialog .rubric-prompt-body input[type=checkbox]{height:14px;width:14px;margin:0;padding:0;flex:none}
+#rubricGeneratorDialog #rubricRequirements{min-height:210px;max-height:340px;font-size:12px;line-height:1.8}
+#rubricGeneratorDialog #rubricRequirements[readonly]{background:#f5f8f6;color:#718478}
+#rubricGeneratorDialog .rubric-generator-footer{position:sticky;bottom:0;z-index:1;box-shadow:0 -4px 16px #274c3210}
+@media(max-width:680px){#rubricGeneratorDialog #rubricScoreAllocation{min-height:120px}.rubric-policy-summary{padding:11px 12px}}

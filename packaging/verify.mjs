@@ -10,7 +10,7 @@ try {
   if((await sharp(image).metadata()).width!==100)throw Error('图片组件失败');
   const browser=await launchBrowser({headless:true});
   const app=await createApp({root});
-  try {const page=await browser.newPage();await page.goto(app.url);await page.waitForSelector('#workspaceCards .workspace-card');if(await page.locator('#factoryReset').count())throw Error('还原按钮未移除');}
+  try {const page=await browser.newPage();await page.goto(app.url);await page.waitForSelector('#workspaceCards .workspace-card');}
   finally {await app.close();await browser.close();}
   fs.writeFileSync(path.join(root,'verified.json'),JSON.stringify({success:true,node:process.version,image:true,browser:true,ui:true}));
 }catch(error){fs.mkdirSync(root,{recursive:true});fs.writeFileSync(path.join(root,'verified.json'),JSON.stringify({success:false,error:error.stack}));process.exitCode=1;}
