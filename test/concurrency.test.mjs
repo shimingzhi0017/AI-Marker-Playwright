@@ -60,6 +60,8 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   assert.equal((await request('/api/settings',undefined,b)).value.workspaceName,'并发任务 B');
   await page.locator('[data-tab=grading]').click();
   await Promise.all([request('/api/open',{},'default'),request('/api/open',{},b)]);
+  const pageA=gradingPages.find(p=>p.url()===base+'/A'),pageB=gradingPages.find(p=>p.url()===base+'/B');
+  assert.ok(pageA&&pageB,'按任务网址识别对应浏览器，不依赖并行打开顺序');
   const starts=await Promise.all([request('/api/start',{},'default'),request('/api/start',{},b)]);assert.ok(starts.every(s=>s.status===200),JSON.stringify(starts));
   await until(async()=>(await Promise.all(['default',b].map(id=>request('/api/state',undefined,id)))).every(s=>s.value.review));
   assert.equal(maxActive,2);
@@ -75,7 +77,7 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   await page.locator('#pause').click();await page.waitForFunction(()=>document.querySelector('#phase').textContent==='已暂停');assert.equal((await request('/api/state',undefined,b)).value.review,true);
   await page.locator(`.workspace-card[data-workspace="${b}"]`).click();await page.waitForFunction(()=>!document.querySelector('#fill').disabled);
   await page.locator('[data-score]').fill('3');await page.locator('#fill').click();await page.waitForFunction(()=>document.querySelector('#reason').textContent.includes('等待用户在网站提交'));
-  assert.equal(await gradingPages[1].locator('input').inputValue(),'3');assert.equal(await gradingPages[0].locator('input').inputValue(),'');
+  assert.equal(await pageB.locator('input').inputValue(),'3');assert.equal(await pageA.locator('input').inputValue(),'');
   const history=(await request('/api/history',undefined,b)).value;assert.equal(history[0].result.score,3);assert.equal(app.store.records()[0].state,'paused');
   const globalProviders=(await request('/api/settings')).value.providers;
   globalProviders['共享测试']={endpoint:base,apiKey:'fixture-shared',models:['shared-model']};
@@ -127,7 +129,7 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   assert.equal(fs.readdirSync(path.join(root,'data','exports')).length,1);
   assert.equal(fs.readdirSync(path.join(root,'sessions',b,'data','exports')).length,1);
   // Both pages now expose the exact same answer identity. Only one can reach review.
-  await gradingPages[1].goto(base+'/A');
+  await pageB.goto(base+'/A');
   await Promise.all([request('/api/start',{},'default'),request('/api/start',{},b)]);
   await until(async()=>{const states=(await Promise.all(['default',b].map(id=>request('/api/state',undefined,id)))).map(s=>s.value);return states.some(s=>s.review)&&states.some(s=>s.reason.includes('同一答卷'));});
   const both=await Promise.all(['default',b].map(id=>request('/api/state',undefined,id)));assert.equal(both.filter(s=>s.value.review).length,1);

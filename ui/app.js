@@ -6,7 +6,7 @@ import {buildLayout,createEnhancements} from './enhancements.js';
 buildLayout();buildAdaptationUI();
 const $ = id => document.getElementById(id);
 let config, state, history = [], selectedRecord, displayedRecord, currentTab = 'presets', busy = false;
-let workspace = 'default', workspaces = [], switching = false, pendingWorkspace = null;
+let workspace = 'default', workspaces = [], switching = false, pendingWorkspace = null, pendingTab = null;
 const dirty=new Set();
 let checkingPage=false, pageCheckError='';
 function markDirty(section){dirty.add(section);$('dirtyBadge').hidden=false;if(section==='grading')updateRuntimeControls();}
@@ -18,7 +18,7 @@ const states = { loading:'获取图片', grading:'模型评分', review:'待确�
 let noticeTimer;
 function notice(message, success = false) { clearTimeout(noticeTimer);$('notice').textContent = message; $('notice').className = success ? 'success' : ''; $('notice').hidden = false;if(success && !message.includes('文件保存在'))noticeTimer=setTimeout(()=>{$('notice').hidden=true;},2500); }
 async function api(url, data, id = workspace) { const response = await fetch(url === '/api/workspaces' ? url : scoped(url,id), data === undefined ? {} : { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) }); const value = await response.json(); if (!response.ok) throw Error(value.error || '请求失败'); return value; }
-async function action(fn) { if (busy) return; busy = true; try { await fn(); } catch (e) { notice(e.message); } finally { busy = false; if(pendingWorkspace!==null){const next=pendingWorkspace;pendingWorkspace=null;if(next!==workspace || currentTab==='models'){await action(()=>switchWorkspace(next));return;}} await poll(); } }
+async function action(fn) { if (busy) return; busy = true; try { await fn(); } catch (e) { notice(e.message); } finally { busy = false; if(pendingWorkspace!==null){const next=pendingWorkspace;pendingWorkspace=null;if(next!==workspace || currentTab==='models'){await action(()=>switchWorkspace(next));return;}} if(pendingTab!==null){const next=pendingTab;pendingTab=null;await action(()=>showTab(next));return;} await poll(); } }
 function options(element, values, selected) { const target=values.includes(selected)?selected:values.includes(element.value)?element.value:values[0];if(element.options.length===values.length && [...element.options].map(o=>o.value).join('\u0000')===values.join('\u0000')){if(element.value!==target&&document.activeElement!==element)element.value=target;return;} element.replaceChildren(...values.map(value => { const option = document.createElement('option'); option.value = value; option.textContent = value; return option; })); if(target!==undefined)element.value=target; }
 function textField(value) { return typeof value === 'string' ? value : value?.text || ''; }
 function updateField(value, text) { return value && typeof value === 'object' ? {...value,text} : text; }
@@ -161,7 +161,8 @@ document.querySelectorAll('[data-provider-template]').forEach(button=>button.onc
   config.providers[name]=structuredClone(providerTemplates[base]);await save('AI接口模板已添加，请填写密钥','models');
   $('providerTemplateDialog').close();renderSettings();$('providerSelect').value=name;renderProvider();$('editProvider').click();
 }));
-document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>action(async()=>{currentTab=button.dataset.tab;document.querySelector('.task-tabs').hidden=currentTab==='models';document.querySelectorAll('.tab').forEach(el=>el.hidden=el.id!==currentTab);document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el===button));$('title').textContent=labels[currentTab];$('eyebrow').textContent=`工作台 / ${labels[currentTab]}`;if(currentTab==='history')await renderHistory();}));
+async function showTab(tab){currentTab=tab;document.querySelector('.task-tabs').hidden=currentTab==='models';document.querySelectorAll('.tab').forEach(el=>el.hidden=el.id!==currentTab);document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===currentTab));$('title').textContent=labels[currentTab];$('eyebrow').textContent=`工作台 / ${labels[currentTab]}`;if(currentTab==='history')await renderHistory();}
+document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>{if(busy){pendingTab=button.dataset.tab;return;}action(()=>showTab(button.dataset.tab));});
 const handlers={
   open:async()=>{await api('/api/open',{});pageCheckError='';},
   diagnose:async()=>{checkingPage=true;pageCheckError='';renderState();try{await api('/api/diagnose',{});}catch(error){pageCheckError=error.message;}finally{checkingPage=false;}},
@@ -201,7 +202,7 @@ $('closeWorkflowModels').onclick=()=>$('workflowModelDialog').close();
 
 $('importFile').onchange=()=>action(async()=>{const file=$('importFile').files[0];if(!file)return;if(!confirm('导入将替换当前配置，是否继续？'))return;await api('/api/import',JSON.parse(await file.text()));config=await api('/api/settings');renderSettings();notice('导入成功，请核对方案及模型后开始',true);$('importFile').value='';});
 $('workspaceSelect').onchange=()=>requestWorkspace($('workspaceSelect').value);
-$('addWorkspace').onclick=()=>action(async()=>{const result=await api('/api/workspaces',{});await refreshWorkspaces();await switchWorkspace(result.id);const name=await workspaceDialog();if(name!==null){if(!name)throw Error('任务名称不能为空');await api('/api/workspace-name',{name});config.workspaceName=name;await refreshWorkspaces();}notice('新任务已创建，配置已复制。请在自己的浏览器登录并选择阅卷页面。',true);});
+$('addWorkspace').onclick=()=>action(async()=>{const result=await api('/api/workspaces',{});await refreshWorkspaces();await switchWorkspace(result.id);const name=await workspaceDialog();if(name!==null){if(!name)throw Error('任务名称不能为空');await api('/api/workspace-name',{name});config.workspaceName=name;await refreshWorkspaces();}notice('新任务已创建，已使用默认配置。请在自己的浏览器登录并选择阅卷页面。',true);});
 $('pauseAll').onclick=()=>action(async()=>{await refreshWorkspaces();await Promise.all(workspaces.map(w=>api('/api/pause',{},w.id)));notice('已请求暂停全部任务',true);});
 const enhancements=createEnhancements({getConfig:()=>config,save,action,markDirty,renderPreset,renderUnits,renderProvider,renderWorkflow,getSnapshot:()=>state.snapshot,api,refreshSettings:renderSettings,notice});
 $('historySearch').oninput=()=>action(()=>renderHistory());$('historyFilter').onchange=()=>action(()=>renderHistory());$('arbitrationFilter').onchange=()=>action(()=>renderHistory());

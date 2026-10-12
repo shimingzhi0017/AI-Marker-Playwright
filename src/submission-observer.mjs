@@ -29,7 +29,8 @@ export async function observeSubmissions(context, { directory, getPlatform, getR
   fs.mkdirSync(directory, { recursive: true });
   const file = path.join(directory, 'submission-observations.jsonl');
   const write = event => fs.appendFileSync(file, JSON.stringify({ time: new Date().toISOString(), ...redact(event) }) + '\n');
-  let closed = false, busy = false, windowUntil = 0, clickId, before, changed = false;
+  let closed = false, closing, busy = false, windowUntil = 0, clickId, before, changed = false;
+  const stopped = Promise.withResolvers(), interrupted = Symbol('observer stopped');
   const requests = new Map();
   const pending = new Set();
   const track = promise => { pending.add(promise); promise.finally(() => pending.delete(promise)).catch(() => {}); };
@@ -69,7 +70,13 @@ export async function observeSubmissions(context, { directory, getPlatform, getR
     track((async () => {
       try {
         const contentType = response.headers()['content-type'] || '';
-        write({ type: 'network-response', ...item, status: response.status(), body: /json|text\/plain/.test(contentType) ? body(await response.text()) : { omitted: 'non-JSON response' } });
+        let responseBody = { omitted: 'non-JSON response' };
+        if (/json|text\/plain/.test(contentType)) {
+          const value = await Promise.race([response.text(), stopped.promise]);
+          if (value === interrupted) throw Error('诊断已停止，未读取完整响应正文');
+          responseBody = body(value);
+        }
+        write({ type: 'network-response', ...item, status: response.status(), body: responseBody });
       } catch (error) { write({ type: 'response-unavailable', ...item, error: error.message }); }
     })());
   };
@@ -84,6 +91,7 @@ export async function observeSubmissions(context, { directory, getPlatform, getR
     try {
       const platform = getPlatform(); if (!platform) return;
       const snapshot = await platform.snapshot();
+      if (closed) return;
       if (before && snapshot.identity !== before.identity && snapshot.images.length && snapshot.images.every(i => i.ready)) {
         changed = true; write({ type: 'next-answer-observed', clickId, previousIdentity: before.identity, snapshot });
         const record = getRecord();
@@ -92,5 +100,5 @@ export async function observeSubmissions(context, { directory, getPlatform, getR
     } catch {} finally { busy = false; }
   }, intervalMs);
   write({ type: 'observer-start', note: 'Read-only; no automatic submission or success-state changes.' });
-  return { file, async close() { closed = true; clearInterval(timer); context.off('request', requestHandler); context.off('response', responseHandler); context.off('requestfailed', failedHandler); await Promise.allSettled([...pending]); } };
+  return { file, close() { return closing ||= (async () => { closed = true; clearInterval(timer); context.off('request', requestHandler); context.off('response', responseHandler); context.off('requestfailed', failedHandler); stopped.resolve(interrupted); await Promise.allSettled([...pending]); requests.clear(); })(); } };
 }
