@@ -18,7 +18,7 @@ with zipfile.ZipFile(zip_path,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as archi
         for file in sorted(source.rglob('*')):
             if file.is_file():archive.write(file,str(Path(prefix)/file.relative_to(source)))
     for directory in ['src','ui','vendor']:add_tree(repo/directory,directory)
-    for name in ['config.example.json','package.json','package-lock.json','LICENSE','THIRD-PARTY-NOTICES.md','README.md','reset.ps1','一键还原.cmd']:archive.write(repo/name,name)
+    for name in ['config.example.json','package.json','package-lock.json','LICENSE','THIRD-PARTY-NOTICES.md','README.md']:archive.write(repo/name,name)
     archive.write(repo/'packaging/verify.mjs','packaging/verify.mjs')
     for name in ['playwright','playwright-core','sharp','detect-libc','semver','@img/colour','@img/sharp-win32-x64']:add_tree(repo/'node_modules'/name,'node_modules/'+name)
     archive.write(node,'runtime/node.exe');archive.write(node.parent/'LICENSE','runtime/LICENSE')

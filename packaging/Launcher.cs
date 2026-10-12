@@ -12,7 +12,6 @@ class Launcher {
         try {
             string baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AI-Marker-Playwright");
             bool verify = Array.IndexOf(args, "--verify") >= 0;
-            bool reset = Array.IndexOf(args, "--reset") >= 0;
             string install = Path.Combine(baseDir, "app", PayloadHash.Substring(0,12));
             for(int i=0;i<args.Length-1;i++)if(args[i]=="--verify-dir" && verify)install=Path.GetFullPath(args[i+1]);
             if(!File.Exists(Path.Combine(install,"ready.txt"))) {
@@ -46,9 +45,6 @@ class Launcher {
                 info.Arguments="\""+Path.Combine(install,"packaging","verify.mjs")+"\"";
                 info.EnvironmentVariables["AI_MARKER_DATA_ROOT"]=Path.Combine(install,"verification-data");
                 info.CreateNoWindow=true;
-            } else if(reset) {
-                info.FileName="powershell.exe";
-                info.Arguments="-NoProfile -ExecutionPolicy Bypass -File \""+Path.Combine(install,"reset.ps1")+"\"";
             } else {
                 info.FileName=Path.Combine(install,"runtime","node.exe");
                 info.Arguments="\""+Path.Combine(install,"src","server.mjs")+"\"";
