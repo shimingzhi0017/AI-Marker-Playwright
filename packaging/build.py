@@ -18,8 +18,10 @@ with zipfile.ZipFile(zip_path,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as archi
         for file in sorted(source.rglob('*')):
             if file.is_file():archive.write(file,str(Path(prefix)/file.relative_to(source)))
     for directory in ['src','ui','vendor']:add_tree(repo/directory,directory)
-    for name in ['config.example.json','package.json','package-lock.json','LICENSE','THIRD-PARTY-NOTICES.md','README.md']:archive.write(repo/name,name)
+    for name in ['config.example.json','package.json','package-lock.json','LICENSE','THIRD-PARTY-NOTICES.md','README.md','测试报告.md','验证与待办.md','接口迁移核查.md']:archive.write(repo/name,name)
     archive.write(repo/'packaging/verify.mjs','packaging/verify.mjs')
+    archive.write(repo/'packaging/Launcher.cs','packaging/Launcher.cs')
+    archive.write(repo/'packaging/portable-start.cmd','启动工作台.cmd')
     for name in ['playwright','playwright-core','sharp','detect-libc','semver','@img/colour','@img/sharp-win32-x64']:add_tree(repo/'node_modules'/name,'node_modules/'+name)
     archive.write(node,'runtime/node.exe');archive.write(node.parent/'LICENSE','runtime/LICENSE')
     for entry in browser_manifest['browsers']:

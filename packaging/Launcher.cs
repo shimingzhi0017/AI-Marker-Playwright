@@ -9,9 +9,11 @@ class Launcher {
     const string PayloadHash = "__PAYLOAD_HASH__";
     [STAThread]
     static int Main(string[] args) {
+        bool verify = Array.IndexOf(args, "--verify") >= 0;
+        string errorDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AI-Marker-Playwright");
+        for(int i=0;i<args.Length-1;i++)if(args[i]=="--verify-dir" && verify)errorDir=Path.GetFullPath(args[i+1]);
         try {
             string baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AI-Marker-Playwright");
-            bool verify = Array.IndexOf(args, "--verify") >= 0;
             string install = Path.Combine(baseDir, "app", PayloadHash.Substring(0,12));
             for(int i=0;i<args.Length-1;i++)if(args[i]=="--verify-dir" && verify)install=Path.GetFullPath(args[i+1]);
             if(!File.Exists(Path.Combine(install,"ready.txt"))) {
@@ -51,6 +53,10 @@ class Launcher {
                 info.CreateNoWindow=true;
             }
             using(var process=Process.Start(info)){process.WaitForExit();if(process.ExitCode!=0&&!verify)throw new Exception("程序未能正常启动，请重新启动或检查应用目录。");return process.ExitCode;}
-        } catch(Exception error) {MessageBox.Show(error.Message,"AI阅卷工作台",MessageBoxButtons.OK,MessageBoxIcon.Error);return 1;}
+        } catch(Exception error) {
+            try {Directory.CreateDirectory(errorDir);File.WriteAllText(Path.Combine(errorDir,"launcher-error.txt"),error.ToString());}catch{}
+            if(!verify)MessageBox.Show(error.Message+"\n\n诊断文件："+Path.Combine(errorDir,"launcher-error.txt"),"AI阅卷工作台",MessageBoxButtons.OK,MessageBoxIcon.Error);
+            return 1;
+        }
     }
 }
