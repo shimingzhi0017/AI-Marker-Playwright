@@ -23,13 +23,21 @@ with zipfile.ZipFile(zip_path,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as archi
     archive.write(repo/'packaging/Launcher.cs','packaging/Launcher.cs')
     archive.write(repo/'packaging/portable-start.cmd','启动工作台.cmd')
     for name in ['playwright','playwright-core','sharp','detect-libc','semver','@img/colour','@img/sharp-win32-x64']:add_tree(repo/'node_modules'/name,'node_modules/'+name)
-    archive.write(node,'runtime/node.exe');archive.write(node.parent/'LICENSE','runtime/LICENSE')
+    archive.write(node,'runtime/node.exe')
+    node_license=node.parent/'LICENSE'
+    if node_license.exists():
+        archive.write(node_license,'runtime/LICENSE')
+    # The app launches the regular Chromium binary for both headed and headless
+    # checks. Playwright also downloads a headless shell, ffmpeg and winldd by
+    # default, but none of them are used by this project and they add hundreds
+    # of megabytes to the self-contained release.
     for entry in browser_manifest['browsers']:
-        if entry['name'] in ['chromium','chromium-headless-shell','ffmpeg','winldd']:
-            name=entry['name'].replace('-','_')+'-'+entry['revision']
-            directory=browser_cache/name
-            if not directory.exists():raise RuntimeError('Missing browser: '+name)
-            add_tree(directory,'browsers/'+name)
+        if entry['name'] != 'chromium':
+            continue
+        name=entry['name'].replace('-','_')+'-'+entry['revision']
+        directory=browser_cache/name
+        if not directory.exists():raise RuntimeError('Missing browser: '+name)
+        add_tree(directory,'browsers/'+name)
 payload_hash=hashlib.sha256(zip_path.read_bytes()).hexdigest()
 source=scratch/'Launcher.cs';source.write_text((repo/'packaging/Launcher.cs').read_text(encoding='utf-8').replace('__PAYLOAD_HASH__',payload_hash),encoding='utf-8-sig')
 stub=scratch/'Launcher.exe'

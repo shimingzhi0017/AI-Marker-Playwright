@@ -17,3 +17,8 @@ default-task-deleted.json
 archived-default-tasks/
 backups/
 *.before-*
+
+# Local build, verification and release artifacts.
+dist/
+.release-work/
+.verify-data/

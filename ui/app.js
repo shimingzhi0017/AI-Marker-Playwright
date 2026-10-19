@@ -1,11 +1,12 @@
 import {renderFeedback} from './feedback.js';
 import {providerTemplates} from './provider-templates.js';
 import {buildAdaptationUI,createAdaptationUI} from './adaptation-ui.js';
+import {createHistoryUI} from './history.js';
 import {renderResultDetails} from './result-details.js';
 import {buildLayout,createEnhancements} from './enhancements.js';
 buildLayout();buildAdaptationUI();
 const $ = id => document.getElementById(id);
-let config, state, history = [], selectedRecord, displayedRecord, currentTab = 'presets', busy = false;
+let config, state, selectedRecord, displayedRecord, currentTab = 'presets', busy = false;
 let historyPage = 1;
 let workspace = 'default', workspaces = [], switching = false, pendingWorkspace = null, pendingTab = null;
 let attentionInitialized = false, seenAttention = new Set(), alertAudio;
@@ -18,7 +19,17 @@ const scoped = (url, id = workspace) => id === 'default' ? url : url + (url.incl
 const labels = { grading: '开始阅卷', presets: '阅卷方案', models: '模型接口', workflows: '评分设置', history: '历史记录' };
 const states = { loading:'获取图片', grading:'模型评分', review:'待确认', filled:'已填分', submitted:'已提交', paused:'已暂停', uncertain:'待核对', submitting:'提交中', 'resolved-not-submitted':'已确认未提交' };
 let noticeTimer;
-function notice(message, success = false) { clearTimeout(noticeTimer);$('notice').textContent = message; $('notice').className = success ? 'success' : ''; $('notice').hidden = false;if(success && !message.includes('文件保存在'))noticeTimer=setTimeout(()=>{$('notice').hidden=true;},2500); }
+function notice(message, success = false) {
+  clearTimeout(noticeTimer);
+  const element = $('notice');
+  element.textContent = message;
+  element.className = success ? 'success' : '';
+  element.hidden = false;
+  // 提示需要留给用户阅读，但不能永久遮挡工作台；导出路径提示继续保留到手动关闭。
+  if (!message.includes('文件保存在')) {
+    noticeTimer = setTimeout(() => { element.hidden = true; }, success ? 2500 : 8000);
+  }
+}
 async function api(url, data, id = workspace) { const response = await fetch(url === '/api/workspaces' ? url : scoped(url,id), data === undefined ? {} : { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) }); const value = await response.json(); if (!response.ok) throw Error(value.error || '请求失败'); return value; }
 async function action(fn) { if (busy) return; busy = true; try { await fn(); } catch (e) { notice(e.message); } finally { busy = false; if(pendingWorkspace!==null){const next=pendingWorkspace;pendingWorkspace=null;if(next!==workspace || currentTab==='models'){await action(()=>switchWorkspace(next));return;}} if(pendingTab!==null){const next=pendingTab;pendingTab=null;await action(()=>showTab(next));return;} await poll(); } }
 function options(element, values, selected) { const target=values.includes(selected)?selected:values.includes(element.value)?element.value:values[0];if(element.options.length===values.length && [...element.options].map(o=>o.value).join('\u0000')===values.join('\u0000')){if(element.value!==target&&document.activeElement!==element)element.value=target;return;} element.replaceChildren(...values.map(value => { const option = document.createElement('option'); option.value = value; option.textContent = value; return option; })); if(target!==undefined)element.value=target; }
@@ -56,6 +67,8 @@ function renderCatalog(prefix) { const valid=!!config.providers[$(prefix+'Provid
 async function save(message, section=currentTab) { config.taskScopedConfig=true; if(section==='models') await api('/api/providers',{providers:config.providers});else await api('/api/settings',config);dirty.delete(section);$('dirtyBadge').hidden=!dirty.size;updateRuntimeControls();notice(message,true); }
 async function newName(title, group, create) { $('nameTitle').textContent = title; $('newName').value = ''; $('nameDialog').showModal(); const outcome = await new Promise(resolve => $('nameDialog').addEventListener('close',()=>resolve($('nameDialog').returnValue),{once:true})); if(outcome !== 'ok') return; const name = $('newName').value.trim(); if(!name || ['__proto__','constructor','prototype'].includes(name) || Object.hasOwn(config[group],name)) throw Error('名称不能为空或重复'); config[group][name] = create(); await save('已创建',group==='providers'?'models':group==='workflows'?'workflows':currentTab); renderSettings(); const select = {presets:'presetSelect',providers:'providerSelect',workflows:'workflowSelect'}[group]; $(select).value = name; ({presets:renderPreset,providers:renderProvider,workflows:renderWorkflow}[group])(); }
 function renderImages(target, record) { target.replaceChildren(); if (!record?.imageFiles?.length) { const el = document.createElement('div'); el.className='empty'; el.textContent='暂无存档图片'; target.append(el); return; } record.imageFiles.forEach((_,index) => { const img=document.createElement('img'); img.src=scoped(`/api/image?id=${encodeURIComponent(record.id)}&index=${index}`); img.alt=`答卷图片 ${index+1}`; target.append(img); }); }
+const historyUI = createHistoryUI({$: id => $(id), api, states, getPage: () => historyPage, setPage: value => { historyPage = value; }, setSelectedRecord: value => { selectedRecord = value; }, renderImages});
+const {renderHistory, showRecord} = historyUI;
 function playAttentionSound() {
   if ($('alertSound')?.checked === false) return;
   try {
@@ -173,18 +186,6 @@ async function switchWorkspace(id) {
   await poll();
 }
 async function poll() { if(switching)return;const id=workspace;try { const next=await api('/api/state');if(id!==workspace || switching)return;state=next;renderState();adaptationUI.poll(state);await refreshWorkspaces(); } catch(e) { $('phase').textContent='连接已断开'; notice('控制台连接已断开，请重新启动可视化程序。'); } }
-const wasArbitrated = r => r.result?.dualEval?.result === 'arbitration' || !!r.result?.recognitionArbitration || r.originalResult?.dualEval?.result === 'arbitration' || !!r.originalResult?.recognitionArbitration;
-async function renderHistory() {
-  const pageSize=Number($('historyPageSize').value)||50, params=new URLSearchParams({page:String(historyPage),pageSize:String(pageSize)});
-  const stateFilter=$('historyFilter').value, search=$('historySearch').value.trim(), arbitrated=$('arbitrationFilter').value==='arbitration';
-  if(stateFilter)params.set('state',stateFilter);if(search)params.set('search',search);if(arbitrated)params.set('arbitrated','1');
-  const result=await api('/api/history?'+params);history=result.items;historyPage=Math.min(result.page,result.totalPages);
-  $('historyEmpty').hidden=!!result.total;$('historyEmpty').textContent=result.total?'当前筛选没有匹配记录':'还没有阅卷记录';
-  $('historyCount').textContent=`共 ${result.total} 条`;$('historyPage').textContent=`第 ${result.page} / ${result.totalPages} 页`;
-  $('historyPrev').disabled=result.page<=1;$('historyNext').disabled=result.page>=result.totalPages;
-  $('historyRows').replaceChildren(...history.map(r=>{const tr=document.createElement('tr');for(const value of [new Date(r.time).toLocaleString(),r.presetName,states[r.state] || r.state,r.result?.score ?? '—']) {const td=document.createElement('td');td.textContent=value;tr.append(td);}if(wasArbitrated(r)){tr.classList.add('arbitration-row');const badge=document.createElement('span');badge.className='arbitration-badge';badge.textContent='已仲裁';tr.children[2].append(document.createTextNode(' '),badge);}const td=document.createElement('td'),button=document.createElement('button');button.textContent='查看';button.onclick=()=>showRecord(r);td.append(button);tr.append(td);return tr;}));
-}
-function showRecord(record) { selectedRecord=record; $('historyDetail').hidden=false; renderImages($('historyImages'),record); $('historyJson').textContent=JSON.stringify(record,null,2);renderResultDetails($('historyReadable'),record,true); for(const id of ['resolveYes','resolveNo']) $(id).hidden=!['uncertain','submitting'].includes(record.state);$('historyDialogTitle').textContent=wasArbitrated(record)?'评阅详情 · 已仲裁':'评阅详情';if(!$('historyDialog').open)$('historyDialog').showModal();$('historyDialog').scrollTop=0; }
 $('addProviderTemplate').onclick=()=>{if(!busy)$('providerTemplateDialog').showModal();};
 $('closeProviderTemplate').onclick=()=>$('providerTemplateDialog').close();
 document.querySelectorAll('[data-provider-template]').forEach(button=>button.onclick=()=>action(async()=>{

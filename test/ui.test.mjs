@@ -32,6 +32,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.waitForFunction(()=>document.querySelector('#phase').textContent==='待开始');
   assert.equal(await page.title(),'阅卷工作台');
   assert.equal((await page.request.get(app.url+'/app.js')).headers()['cache-control'],'no-store');
+  const historyModule=await page.request.get(app.url+'/history.js');assert.equal(historyModule.status(),200);assert.equal(historyModule.headers()['cache-control'],'no-store');
   assert.ok(await page.locator('#presets').isVisible());
   await page.locator('[data-tab=presets]').click();
   page.once('dialog',dialog=>dialog.accept());

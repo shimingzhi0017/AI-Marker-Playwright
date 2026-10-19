@@ -97,7 +97,8 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   let releasePause, pauseEntered;
   const entered=new Promise(resolve=>pauseEntered=resolve);
   const held=new Promise(resolve=>releasePause=resolve);
-  await page.route('**/api/history',async route=>{pauseEntered();await held;await route.continue();});
+  const historyRoute = url => url.pathname === '/api/history';
+  await page.route(historyRoute,async route=>{pauseEntered();await held;await route.continue();});
   await page.locator('[data-tab=history]').click();
   await entered;
   await page.locator(`.workspace-card[data-workspace="${b}"]`).click();
@@ -105,7 +106,7 @@ test('双任务并行、切换改分、单独暂停、同卷互斥、全部暂�
   assert.equal(await page.locator(`.workspace-card[data-workspace="${b}"]`).evaluate(el=>el.classList.contains('pending')),true);
   releasePause();
   await page.waitForFunction(()=>document.querySelector('#phase').textContent==='已停止');
-  await page.unroute('**/api/history');
+  await page.unroute(historyRoute);
   await page.waitForFunction(id=>document.querySelector('#workspaceSelect').value===id,b);
   assert.equal(await page.locator('#workspaceSelect').inputValue(),b);
 
