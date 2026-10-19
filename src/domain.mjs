@@ -16,12 +16,13 @@ function rubricScoringItems(config) {
   const valid=items=>items.length && items.every(item=>item.maxScore>0) &&
     new Set(items.map(item=>scoringLabelKey(item.label))).size===items.length &&
     Math.abs(items.reduce((sum,item)=>sum+item.maxScore,0)-maxScore(config))<1e-8;
+  const hasNumberedSubpoints = /^(?:\s*第\s*[（(]\d+[）)]\s*问|\s*[一二三四五六七八九十百]+[、.])[^\n]*满分\s*\d+(?:\.\d+)?\s*分[\s\S]*?(?:^|[。；;]|\s)\d+[、.]\s+/mu.test(fieldText(config.rubric));
   if(!valid(items)) {
     // Explicit all-or-nothing headings are maxima, unlike isolated deduction examples.
     const heading=/^\s*(?:[一二三四五六七八九十]+、|[①-⑳]\s*)?((?:第\s*)?[（(]\d+[）)]\s*(?:问)?[^\n：:]*)[：:]\s*(?:只能给|只给|得分为)\s*0\s*分\s*(?:或|或者|、)\s*(\d+(?:\.\d+)?)\s*分[。.]?\s*$/gmu;
     items=[...fieldText(config.rubric).matchAll(heading)].map((m,i)=>({id:`scoring-item-${i+1}`,label:m[1].trim(),maxScore:Number(m[2])}));
   }
-  if(!valid(items)) {
+  if(!valid(items) || hasNumberedSubpoints) {
     // Markdown rubric sections have explicit awarded scores within each numbered heading.
     const sections=[...fieldText(config.rubric).matchAll(/^\s*#{1,6}\s+([^\n]+)\s*$/gmu)];
     items=[];
@@ -32,6 +33,34 @@ function rubricScoringItems(config) {
       const awards=[...body.matchAll(/^\s*[-*]\s*(\d+(?:\.\d+)?)\s*分\s*[：:]/gmu)].map(m=>Number(m[1]));
       if(!awards.length){items=[];break;}
       items.push({id:`scoring-item-${items.length+1}`,label,maxScore:Math.max(...awards)});
+    }
+  }
+  if(!valid(items)) {
+    // Some rubrics put each question's maximum in its heading, then list numbered
+    // scoring points inline or in a paragraph. Extract only explicit per-point
+    // awards and require them to add up to the configured total.
+    const text=fieldText(config.rubric);
+    const headings=[...text.matchAll(/^\s*((?:第\s*[（(]\d+[）)]\s*问|[一二三四五六七八九十百]+[、.]|\d+[、.])[^\n]*?满分\s*\d+(?:\.\d+)?\s*分[^\n]*)$/gmu)];
+    items=[];
+    for(let h=0;h<headings.length;h++) {
+      const start=headings[h].index+headings[h][0].length;
+      const nextHeading=headings[h+1]?.index ?? text.length;
+      const bodyEnd=text.slice(start,nextHeading).search(/^\s*全题合计\b/gmu);
+      const end=bodyEnd<0?nextHeading:start+bodyEnd;
+      const body=text.slice(start,end);
+      const points=[...body.matchAll(/(?:^|[。；;]|\s)(\d+)[、.]\s*/gmu)];
+      if(!points.length){items=[];break;}
+      for(let i=0;i<points.length;i++) {
+        const pointStart=points[i].index+points[i][0].length;
+        const pointEnd=points[i+1]?.index ?? body.length;
+        const point=body.slice(pointStart,pointEnd).trim();
+        const award=point.match(/(?:得|共)\s*(\d+(?:\.\d+)?)\s*分/u);
+        if(!award){items=[];break;}
+        const headingLabel=headings[h][1].replace(/\s+/gu,' ').replace(/满分\s*\d+(?:\.\d+)?\s*分.*$/u,'').replace(/[：:]\s*$/u,'').trim();
+        const label=`${headingLabel}第${points[i][1]}点：${point.replace(/\s+/gu,' ').slice(0,180)}`;
+        items.push({id:`scoring-item-${items.length+1}`,label,maxScore:Number(award[1])});
+      }
+      if(!items.length)break;
     }
   }
   return items.length && items.every(item=>item.maxScore>0) &&
@@ -54,10 +83,21 @@ function applyScoringItemSchema(result, config) {
   const details = result.scoringDetails;
   if (!Array.isArray(details) || details.length !== schema.length) throw Error(`模型评分项不完整：评分标准要求${schema.length}项，请按固定编号返回。`);
   const used = new Set();
+  let positional = false;
   for (const detail of details) {
     const item = matchScoringItem(detail,schema,details);
-    if (!item || used.has(item.id) || detail.score > item.maxScore) throw Error('模型评分项编号缺失、重复、不对应或分项越界，请核对评分标准');
-    used.add(item.id); detail.originalLabel = detail.label; detail.label = item.label; detail.id = item.id; detail.maxScore = item.maxScore;
+    if (!item || used.has(item.id)) { positional = true; break; }
+    used.add(item.id);
+  }
+  if(positional) {
+    if(details.some(detail=>detail?.id!==undefined) || details.length!==schema.length || details.some((detail,index)=>!detail || typeof detail.label!=='string' || !detail.label.trim() || detail.maxScore!==schema[index].maxScore)) throw Error('模型评分项编号缺失、重复、不对应或分项越界，请核对评分标准');
+    details.forEach((detail,index)=>{ detail.originalLabel=detail.label;detail.label=schema[index].label;detail.id=schema[index].id;detail.maxScore=schema[index].maxScore; });
+  } else {
+    for(const detail of details) {
+      const item=matchScoringItem(detail,schema,details);
+      if(detail.score>item.maxScore)throw Error('模型评分项编号缺失、重复、不对应或分项越界，请核对评分标准');
+      detail.originalLabel=detail.label;detail.label=item.label;detail.id=item.id;detail.maxScore=item.maxScore;
+    }
   }
   result.scoringDetails = schema.map(item=>details.find(detail=>detail.id===item.id));
 }
@@ -132,13 +172,17 @@ export function parseResult(text, config) {
   }
   // Repair only a redundant total when independent structured totals agree.
   const configuredUnits=config.scoring?.units || [];
-  if(scoringItemSchema(config).length && configuredUnits.length===1 && Array.isArray(result?.scoringDetails) && result.scoringDetails.length && Array.isArray(result.subScores) && result.subScores.length===1) {
+  if(scoringItemSchema(config).length && configuredUnits.length<=1 && Array.isArray(result?.scoringDetails) && result.scoringDetails.length && Array.isArray(result.subScores) && (result.subScores.length===0 || result.subScores.length===1)) {
     const sum=result.scoringDetails.reduce((total,item)=>total+item.score,0);
-    if(Number.isFinite(result.score) && result.score>=0 && result.score<=maxScore(config) && result.score!==sum && result.subScores[0]?.label===configuredUnits[0].label && result.subScores[0]?.score===sum) {
+    const hasMatchingUnit = configuredUnits.length===1 && result.subScores.length === 1 && result.subScores[0]?.label === configuredUnits[0].label && result.subScores[0]?.score === sum;
+    const hasEmptyUnit = result.subScores.length === 0 && (configuredUnits.length===0 || configuredUnits.length===1);
+    if(Number.isFinite(result.score) && result.score>=0 && result.score<=maxScore(config) && result.score!==sum && (hasMatchingUnit || hasEmptyUnit)) {
       validateScoringDetails(result.scoringDetails,sum,maxScore(config));
       applyScoringItemSchema(result,config);
-      validateResult({...result,score:sum},config);
+      const repaired = { ...result, score: sum, subScores: configuredUnits.length ? [{ label: configuredUnits[0].label, score: sum }] : [] };
+      validateResult(repaired,config);
       result.reportedScore=result.score;result.score=sum;
+      result.subScores = repaired.subScores;
       result.formatWarning=`模型总分字段为${result.reportedScore}，与完整分项合计及网页总分${sum}不一致；已按两者一致的合计修正，请人工确认。`;
     }
   }

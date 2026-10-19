@@ -87,6 +87,51 @@ test('评分标准生成验证分值并拒绝缺少题目或答案', async () =>
   assert.equal(result.warnings.length,1);
 });
 
+test('结构化分项标题含复杂标点时以items校验结果为准', async () => {
+  const settings={providers:{demo:{}}}, input={provider:'demo',model:'vision',question:'题目',answer:'答案',maxScore:4};
+  const output=JSON.stringify({
+    question:'题目', answer:'答案', rubric:'模型自定义的说明', warnings:[],
+    items:[
+      {label:'第（1）问：列式与计算',maxScore:2,criteria:'列式正确得1分，计算正确得1分。'},
+      {label:'第（2）问（含单位）',maxScore:2,criteria:'结果正确且单位完整得2分。'}
+    ]
+  });
+  const result=await generateRubric(settings,input,async()=>output);
+  assert.match(result.rubric,/第（1）问：列式与计算：满分2分/);
+  assert.match(result.rubric,/第（2）问（含单位）：满分2分/);
+});
+
+test('评分标准兼容模型在JSON前后附加说明或代码块', async () => {
+  const settings={providers:{demo:{}}}, input={provider:'demo',model:'vision',question:'题目',answer:'答案',maxScore:4};
+  const payload=JSON.stringify({question:'题目',answer:'答案',rubric:'',warnings:[],items:[{label:'第一问',maxScore:4,criteria:'正确得4分。'}]});
+  for (const raw of [`以下是评分标准：\n${payload}\n请检查。`, `\n\`\`\`json\n${payload}\n\`\`\`\n`]) {
+    const result=await generateRubric(settings,input,async()=>raw);
+    assert.match(result.rubric,/第一问：满分4分/);
+  }
+});
+
+test('评分标准跳过模型思考过程中的示例JSON，读取最后一个完整对象', async () => {
+  const settings={providers:{demo:{}}}, input={provider:'demo',model:'vision',question:'题目',answer:'答案',maxScore:4};
+  const example=JSON.stringify({question:'示例',answer:'示例',rubric:'',warnings:['仅示例']});
+  const actual=JSON.stringify({question:'题目',answer:'答案',rubric:'',warnings:[],items:[{label:'第一问',maxScore:4,criteria:'正确得4分。'}]});
+  const result=await generateRubric(settings,input,async()=>`<think>输出格式示例：${example}</think>\n${actual}`);
+  assert.match(result.rubric,/第一问：满分4分/);
+  assert.equal(result.question,'题目');
+});
+
+test('评分标准归一化等价字段、字符串分值和省略的warnings', async () => {
+  const settings={providers:{demo:{}}}, input={provider:'demo',model:'vision',question:'题目',answer:'答案',maxScore:4};
+  const output=JSON.stringify({
+    questionText:'识别题目', referenceAnswer:'识别答案',
+    scoringItems:[{name:'第一问',score:'4',rule:'正确得4分。'}]
+  });
+  const result=await generateRubric(settings,input,async()=>output);
+  assert.equal(result.question,'识别题目');
+  assert.equal(result.answer,'识别答案');
+  assert.match(result.rubric,/第一问：满分4分/);
+  assert.deepEqual(result.warnings,[]);
+});
+
 test('图片经已有接口生成草稿，预览回填后保存并保留原始图片', {timeout:45000}, async t => {
   let received;
   const requestStarted=Promise.withResolvers(),reply=Promise.withResolvers();

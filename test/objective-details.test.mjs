@@ -74,6 +74,15 @@ test('单总分框客观双阅逐项比较，任意分歧或缺失必须仲裁',
   calls=[];replies={A:response([1,3]),B:response([3,3]),C:response([2,3])};
   const withinThreshold=await grade(config,settings,[],new AbortController().signal);
   assert.equal(withinThreshold.dualEval.result,'average');assert.equal(withinThreshold.score,5);assert.equal(calls.includes('C'),false);
+  calls=[];replies={
+    A:labeled(['（1）列式及定义域','（1）基本不等式求最小值'],[1,3]),
+    B:labeled(['（1）正确列出报价函数及定义域','（1）利用基本不等式得到报价下界'],[3,3]),
+    C:response([2,3])
+  };
+  const differentlyLabeled=await grade(config,settings,[],new AbortController().signal);
+  assert.equal(differentlyLabeled.dualEval.result,'average');
+  assert.deepEqual(differentlyLabeled.scoringDetails.map(item=>item.score),[2,3]);
+  assert.deepEqual(differentlyLabeled.scoringDetails.map(item=>item.label),['（1）列式及定义域','（1）基本不等式求最小值']);
   calls=[];replies.B=response([4,4]);
   const outsideThreshold=await grade(config,settings,[],new AbortController().signal);
   assert.equal(outsideThreshold.dualEval.result,'arbitration');assert.equal(outsideThreshold.score,5);assert.ok(calls.includes('C'));

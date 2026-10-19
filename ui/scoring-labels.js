@@ -7,8 +7,13 @@ export function scoringLabelKey(label) {
     // Strip an outer list index only when an explicit inner question remains.
     .replace(/^\(\s*\d+\s*\)\s*(?=第\s*(?:\(\s*\d+\s*\)|\d+\s*问))/u, '');
   const question = text.match(/^(?:第\s*)?\(\s*(\d+)\s*\)\s*(?:问\s*)?(.*)$/u) || text.match(/^第\s*(\d+)\s*问\s*(.*)$/u);
-  const suffix = question?.[2].replace(/\s+/gu, '').replace(/^([AB])空箱质量$/u, '$1质量');
-  return question ? `question:${question[1]}:${suffix}` : `literal:${text}`;
+  if (!question) return `literal:${text}`;
+  const suffix = question[2].replace(/\s+/gu, '').replace(/^([AB])空箱质量$/u, '$1质量');
+  // Models may describe the same numbered scoring point as either
+  // "第(1)问-2" or "第（1）问第2项". The question/item number is the stable
+  // identity; the remaining wording is only a display label.
+  const item = suffix.match(/^[-–—:：](\d+)/u) || suffix.match(/^第\s*(\d+)\s*(?:项|小问|步)/u);
+  return item ? `question:${question[1]}:item:${item[1]}` : `question:${question[1]}:${suffix}`;
 }
 
 const itemKey = item => typeof item.id === 'string' && item.id ? `id:${item.id}` : scoringLabelKey(item.label);

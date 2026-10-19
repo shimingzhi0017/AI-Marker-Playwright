@@ -65,6 +65,7 @@ export function renderResultDetails(container, record, history = false) {
     paragraph(container,'评分时间',record.time ? new Date(record.time).toLocaleString('zh-CN') : undefined);
   }
   paragraph(container,'模型总分 → 最终分数',`${value(result.rawScore ?? record.originalResult?.score ?? result.score)} → ${value(result.score)}`);
+  paragraph(container,'评分格式核对',result.formatNote);
   readingDetails(container, result);
   if (result.recognitionDecision === 'arbitration') paragraph(container, '存疑处理', '按当前任务设置采用仲裁分数；识别疑点仍保留，请结合原图审查。');
   if (result.recognitionDecision === 'three-way-consensus') paragraph(container, '存疑处理', '主评、复评、仲裁的总分及逐项分数均一致，按一致分数继续；识别疑点保留供审查。');
@@ -78,7 +79,15 @@ export function renderResultDetails(container, record, history = false) {
     paragraph(container,'双阅判定',`${{consensus:'逐项一致',average:'主观题阈值内平均',arbitration:'已调用仲裁'}[dual.result] || dual.result}；主评 ${value(dual.a?.score)}，复评 ${value(dual.b?.score)}，总分差 ${value(Math.abs(dual.a?.score - dual.b?.score))}。总分差不代表各项一致。`);
   }
   const finalItems = items(dual?.verdict || result), aItems = items(dual?.a), bItems = items(dual?.b);
-  const aligned = alignScoringItems(finalItems, aItems, bItems);
+  // Subjective threshold averaging combines corresponding model details by
+  // position. Models often explain the same point with different wording, so
+  // strict label matching would render every row as missing even when both
+  // models returned the same number of ordered scoring points.
+  const positionalAverage = dual?.result === 'average' && finalItems.length > 0 &&
+    finalItems.length === aItems.length && aItems.length === bItems.length
+    ? finalItems.map((item, index) => ({ label: item.label || aItems[index].label || bItems[index].label, items: [item, aItems[index], bItems[index]], ambiguous: false }))
+    : null;
+  const aligned = positionalAverage || alignScoringItems(finalItems, aItems, bItems);
   if(aligned.length) {
     container.append(node('h3',dual ? '逐项评分对照' : '逐项评分'));
     const wrap = node('div'); wrap.className='table-wrap';

@@ -71,3 +71,27 @@ test('完整分项与唯一网页总分一致才能修正冗余总分，留下�
  assert.throws(()=>parseResult(JSON.stringify({...raw,scoringDetails:[raw.scoringDetails[0]]}),cfg),/合计|不完整/);
  assert.throws(()=>parseResult(JSON.stringify({...raw,scoringDetails:raw.scoringDetails.map(x=>({...x,id:'wrong'}))}),cfg),/编号/);
 });
+
+test('唯一总分框未返回subScores时按完整小问合计补齐总分框',()=>{
+ const cfg={rubric:'内容：2分\n表达：2分',scoring:{units:[{label:'18',maxScore:4}]}};
+ const raw={score:4,subScores:[],scoringDetails:[{id:'scoring-item-1',label:'内容',score:2},{id:'scoring-item-2',label:'表达',score:1}]};
+ const parsed=parseResult(JSON.stringify(raw),cfg);
+ assert.equal(parsed.score,3);
+ assert.deepEqual(parsed.subScores,[{label:'18',score:3}]);
+ assert.equal(parsed.reportedScore,4);
+ assert.match(parsed.formatWarning,/人工确认/);
+});
+
+test('问号标题后的行内编号采分点生成固定评分清单',()=>{
+ const cfg={rubric:'第（1）问：甲工程队报价的最小值：满分8分\n1. 正确列出报价函数，得2分。2. 用基本不等式得到下界，得3分。3. 得到等号条件，得2分。4. 写出结论，得1分。\n\n第（2）问：参数范围：满分9分\n1. 建立比较不等式，共3分。2. 证明下界，得3分。3. 得出参数范围，得3分。',scoring:{maxScore:17,units:[]}};
+ const result={score:4,subScores:[],scoringDetails:Array.from({length:7},(_,i)=>({label:`第（${i<4?1:2}）问第${i<4?i+1:i-3}点：模型评分依据`,score:i===0?1:0,maxScore:[2,3,2,1,3,3,3][i]}))};
+ const parsed=parseResult(JSON.stringify(result),cfg);
+ assert.equal(parsed.scoringDetails.length,7); assert.equal(parsed.score,1); assert.equal(parsed.scoringDetails[0].id,'scoring-item-1');
+});
+
+test('非问号标题的通用分项格式也能生成固定评分清单',()=>{
+ const cfg={rubric:'一、实验设计：满分4分\n1. 变量控制，得2分。2. 数据记录，得2分。\n\n二、结论表达：满分3分\n1. 结论正确，得1分。2. 依据充分，共2分。',scoring:{maxScore:7,units:[]}};
+ const schema=scoringItemSchema(cfg);
+ assert.deepEqual(schema.map(item=>item.maxScore),[2,2,1,2]);
+ assert.equal(schema[0].label,'一、实验设计第1点：变量控制，得2分');
+});

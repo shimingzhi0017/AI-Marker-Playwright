@@ -64,6 +64,18 @@ test('详情显示同总分不同分项、仲裁依据、旧记录缺失和文�
   const repeatedRows=await page.locator('tbody tr').allInnerTexts();
   assert.match(repeatedRows[1],/0 分.*4 分.*0 分.*分数不一致/s);
   assert.ok(repeatedRows.every(row=>!row.includes('未提供')));
+  await page.evaluate(()=>{
+    const a={score:4,scoringDetails:[{label:'（1）列式及定义域',score:1},{label:'（1）基本不等式求最小值',score:3}]};
+    const b={score:6,scoringDetails:[{label:'（1）正确列出报价函数及定义域',score:3},{label:'（1）利用基本不等式得到报价下界',score:3}]};
+    const result={score:5,scoringDetails:[{label:'（1）列式及定义域',score:2},{label:'（1）基本不等式求最小值',score:3}],dualEval:{result:'average',a,b}};
+    window.renderResultDetails(document.querySelector('#details'),{result},true);
+  });
+  await page.locator('.review-audit > summary').click();
+  const averageRows=await page.locator('tbody tr').allInnerTexts();
+  assert.equal(averageRows.length,2);
+  assert.match(averageRows[0],/分数不一致/);
+  assert.match(averageRows[1],/分数一致/);
+  assert.ok(averageRows.every(row=>!row.includes('明细缺失')));
   await page.evaluate(()=>window.renderResultDetails(document.querySelector('#details'),{result:{score:2,studentAnswer:'a=[无法辨认]',recognitionWarning:'书写识别存疑，请人工确认',recognition:{status:'uncertain',coverageChecked:true,notes:['旧答案划掉，替换内容位于横线上方'],issues:[{location:'图1第（1）问右侧',observed:'a=[无法辨认]',reason:'字迹与涂抹重叠'}]}}}));
   const reading=await page.locator('#details').innerText();
   assert.match(reading,/横线上方/);assert.match(reading,/图1第（1）问右侧/);assert.match(reading,/字迹与涂抹重叠/);assert.match(reading,/人工确认/);
