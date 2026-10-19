@@ -7,6 +7,7 @@ buildLayout();buildAdaptationUI();
 const $ = id => document.getElementById(id);
 let config, state, history = [], selectedRecord, displayedRecord, currentTab = 'presets', busy = false;
 let workspace = 'default', workspaces = [], switching = false, pendingWorkspace = null, pendingTab = null;
+let attentionInitialized = false, seenAttention = new Set(), alertAudio;
 const dirty=new Set();
 let checkingPage=false, pageCheckError='';
 function markDirty(section){dirty.add(section);$('dirtyBadge').hidden=false;if(section==='grading')updateRuntimeControls();}
@@ -24,7 +25,7 @@ function textField(value) { return typeof value === 'string' ? value : value?.te
 function updateField(value, text) { return value && typeof value === 'object' ? {...value,text} : text; }
 function renderSettings() {
   options($('presetSelect'), Object.keys(config.presets), config.active); options($('providerSelect'), Object.keys(config.providers)); options($('workflowSelect'), Object.keys(config.workflows), config.presets[config.active]?.workflowId);
-  $('mode').value = config.mode || 'trial'; $('batch').value = config.batchLimit || ''; $('batchEnabled').checked=(config.batchLimit || 0)>0;updateBatchLimit();updateRuntimeControls(); options($('runPreset'),Object.keys(config.presets),config.active);
+  $('mode').value = config.mode || 'trial'; $('batch').value = config.batchLimit || ''; $('batchEnabled').checked=(config.batchLimit || 0)>0; $('alertPopup').checked=config.notifications?.popup !== false; $('alertSound').checked=config.notifications?.sound !== false; $('alertVolume').value=String(config.notifications?.volume ?? 0.6); updateBatchLimit();updateRuntimeControls(); options($('runPreset'),Object.keys(config.presets),config.active);
   renderPreset(); renderProvider(); renderWorkflow();
   $('platformFields').replaceChildren();
   const fields = { 'browser.url':'阅卷网址',frameUrlPattern:'阅卷 Frame 地址匹配',paperIdSelector:'稳定答卷 ID 选择器',taskIdSelector:'任务 ID 选择器',completionSelector:'完成提示选择器',imageSelector:'答卷图片选择器',scoreSelector:'评分框选择器',submitSelector:'提交按钮选择器',submitResponseUrlPattern:'提交响应 URL 匹配',identityRequestField:'提交请求答卷ID字段（通用平台）',scoresRequestField:'提交请求分数字段（通用平台）',identityMode:'答卷标识模式（智学网填写zhixue-network）',successField:'业务成功字段',successValue:'业务成功值（JSON）' };
@@ -54,14 +55,34 @@ function renderCatalog(prefix) { const valid=!!config.providers[$(prefix+'Provid
 async function save(message, section=currentTab) { config.taskScopedConfig=true; if(section==='models') await api('/api/providers',{providers:config.providers});else await api('/api/settings',config);dirty.delete(section);$('dirtyBadge').hidden=!dirty.size;updateRuntimeControls();notice(message,true); }
 async function newName(title, group, create) { $('nameTitle').textContent = title; $('newName').value = ''; $('nameDialog').showModal(); const outcome = await new Promise(resolve => $('nameDialog').addEventListener('close',()=>resolve($('nameDialog').returnValue),{once:true})); if(outcome !== 'ok') return; const name = $('newName').value.trim(); if(!name || ['__proto__','constructor','prototype'].includes(name) || Object.hasOwn(config[group],name)) throw Error('名称不能为空或重复'); config[group][name] = create(); await save('已创建',group==='providers'?'models':group==='workflows'?'workflows':currentTab); renderSettings(); const select = {presets:'presetSelect',providers:'providerSelect',workflows:'workflowSelect'}[group]; $(select).value = name; ({presets:renderPreset,providers:renderProvider,workflows:renderWorkflow}[group])(); }
 function renderImages(target, record) { target.replaceChildren(); if (!record?.imageFiles?.length) { const el = document.createElement('div'); el.className='empty'; el.textContent='暂无存档图片'; target.append(el); return; } record.imageFiles.forEach((_,index) => { const img=document.createElement('img'); img.src=scoped(`/api/image?id=${encodeURIComponent(record.id)}&index=${index}`); img.alt=`答卷图片 ${index+1}`; target.append(img); }); }
+function playAttentionSound() {
+  if ($('alertSound')?.checked === false) return;
+  try {
+    alertAudio ||= new (window.AudioContext || window.webkitAudioContext)();
+    const now=alertAudio.currentTime, gain=alertAudio.createGain(), oscillator=alertAudio.createOscillator();
+    gain.gain.setValueAtTime(0.0001,now);gain.gain.exponentialRampToValueAtTime(Math.max(0.02,Number($('alertVolume')?.value||0.6)*0.12),now+0.02);gain.gain.exponentialRampToValueAtTime(0.0001,now+0.55);
+    oscillator.frequency.setValueAtTime(880,now);oscillator.frequency.setValueAtTime(660,now+0.18);oscillator.connect(gain);gain.connect(alertAudio.destination);oscillator.start(now);oscillator.stop(now+0.6);
+  } catch {}
+}
+function handleAttention(events=[]) {
+  const attention=events.filter(event=>event.level==='attention');
+  if(!attentionInitialized){attention.forEach(event=>seenAttention.add(`${event.time}:${event.message}`));attentionInitialized=true;return;}
+  const next=attention.find(event=>!seenAttention.has(`${event.time}:${event.message}`));
+  attention.forEach(event=>seenAttention.add(`${event.time}:${event.message}`));
+  if(!next)return;
+  playAttentionSound();
+  if($('alertPopup')?.checked !== false) notice(`需要处理\n${next.message}`);
+}
 function renderState() {
+  handleAttention(state.events);
   $('phase').textContent=state.phase; $('reason').textContent=state.reason || ''; $('count').textContent=`本次已提交 ${state.count} 份`;
   const p=config.presets[config.taskScopedConfig?config.active:config.bindings?.[state.snapshot?.taskId]||config.active],w=config.workflows[p?.workflowId];
   const diagnosisError=pageCheckError||state.diagnosisError||'';
   const completed=state.phase==='阅卷完成';
   const pageReady=!!(state.browserOpen&&state.snapshot&&!diagnosisError&&!completed&&state.snapshot.images.length&&state.snapshot.units.length&&($('mode').value==='trial'||state.snapshot.strongIdentity));
   const modelReady=entry=>{const provider=config.providers[entry?.provider];return !!(entry?.model&&provider?.endpoint&&(provider.apiKey||provider.apiKeyEnv));};
-  const ready=[['阅卷方案',!!(textField(p?.answer).trim()&&textField(p?.rubric).trim()&&(p?.scoring?.units?.length?p.scoring.units.every(u=>u.maxScore>0):p?.scoring?.maxScore>0)),'presets'],['评分设置',modelReady(w?.model)&&(!w.dualEval?.enabled || [w.dualEval.secondary,w.dualEval.arbitration].every(modelReady)),'workflows']];
+  const unattendedReady=$('mode').value!=='unattended' || (w?.dualEval?.enabled && modelReady(w?.dualEval?.secondary) && modelReady(w?.dualEval?.arbitration));
+  const ready=[['阅卷方案',!!(textField(p?.answer).trim()&&textField(p?.rubric).trim()&&(p?.scoring?.units?.length?p.scoring.units.every(u=>u.maxScore>0):p?.scoring?.maxScore>0)),'presets'],['评分设置',modelReady(w?.model)&&(!w.dualEval?.enabled || [w.dualEval.secondary,w.dualEval.arbitration].every(modelReady))&&unattendedReady,'workflows']];
   $('readiness').replaceChildren(...ready.map(([name,ok,tab])=>{const b=document.createElement('button');b.className=ok?'ready-step complete':'ready-step';b.textContent=`${name}${ok?'已就绪':'待设置'}`;b.onclick=()=>document.querySelector(`[data-tab="${tab}"]`).click();return b;}));
   $('runtimeSummary').textContent=`${config.active} · ${{trial:'人工确认',normal:'5秒确认',unattended:'无人值守'}[config.mode||'trial']}`;
   const snapshot=state.browserOpen&&!diagnosisError&&!completed?state.snapshot:null;
@@ -177,7 +198,17 @@ const handlers={
   addUnit:()=>{addUnit();markDirty('presets');}, addPreset:()=>newName('新建方案','presets',()=>({question:'',answer:'',rubric:'',workflowId:Object.keys(config.workflows)[0],scoring:{maxScore:0,units:[],roundStep:1,roundMethod:'round'}})),addProvider:()=>newName('新建供应商','providers',()=>({protocol:'chat',endpoint:'',apiKey:'',models:[]})),addWorkflow:()=>newName('新建工作流','workflows',()=>({model:{provider:Object.keys(config.providers)[0],model:''},dualEval:{enabled:false}})),
   refreshHistory:()=>renderHistory(),
   exportConfig:()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(config,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='阅卷配置.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);},
-  blank:async()=>{if(!selectedRecord || !confirm('请先确认这份答卷确实为空白。将把图片特征作为空白检测范本，检测结果仍须人工确认。'))return;await api('/api/blank',{id:selectedRecord.id});config=await api('/api/settings');notice('空白范本已保存',true);}
+  blank:async()=>{
+    if(!selectedRecord || !confirm('请先确认这份答卷确实为空白。将把图片特征作为空白检测范本，检测结果仍须人工确认。'))return;
+    const button=$('blank'),label=button.textContent;button.disabled=true;button.textContent='正在分析答卷图片…';
+    try {
+      await api('/api/blank',{id:selectedRecord.id});
+      config=await api('/api/settings');enhancements.preset();
+      const count=config.presets[selectedRecord.presetName]?.blankDetection?.reference?.length || 0;
+      button.textContent='已保存 '+count+' 页空白范本';
+      notice(`空白范本已保存（${count}页），可在“阅卷方案 → 加分与空白检测”查看。`,true);
+    } finally {button.disabled=false;if(!button.textContent.startsWith('已保存 '))button.textContent=label;}
+  }
 };
 for(const [id,fn] of Object.entries(handlers)) $(id).onclick=()=>action(fn);
 for(const [id,decision] of [['fill','fill'],['submit','submit'],['stopReview','stop']]) $(id).onclick=()=>action(async()=>{const scores=[...document.querySelectorAll('[data-score]')].map(input=>input.value.trim()===''?NaN:Number(input.value));if(decision!=='stop'&&scores.some(s=>!Number.isFinite(s)))throw Error('请填写有效分数，不能留空');await api('/api/review',{decision,...(decision!=='stop'?{scores,comment:$('comment').value}:{}),recordId:state.record?.id,reason:$('correction').value});});
@@ -229,8 +260,9 @@ for(const link of document.querySelectorAll('a[href*="/api/export"]')) link.oncl
 async function saveRuntime(showNotice){
   const batchLimit=$('batchEnabled').checked?Number($('batch').value):0;
   if($('batchEnabled').checked&&(batchLimit<1 || !Number.isInteger(batchLimit)))throw Error('阅卷份数须为正整数');
-  if(dirty.has('grading') || config.mode!==$('mode').value || config.batchLimit!==batchLimit){
-    const next={...config,taskScopedConfig:true,mode:$('mode').value,active:$('runPreset').value,batchLimit};
+  const notifications={sound:$('alertSound')?.checked !== false,popup:$('alertPopup')?.checked !== false,volume:Math.min(1,Math.max(0,Number($('alertVolume')?.value||0.6)))};
+  if(dirty.has('grading') || config.mode!==$('mode').value || config.batchLimit!==batchLimit || JSON.stringify(config.notifications||{})!==JSON.stringify(notifications)){
+    const next={...config,taskScopedConfig:true,mode:$('mode').value,active:$('runPreset').value,batchLimit,notifications};
     await api('/api/settings',next);config=next;dirty.delete('grading');$('dirtyBadge').hidden=!dirty.size;updateRuntimeControls();
   }
   if(showNotice)notice('运行设置已保存',true);
@@ -244,5 +276,6 @@ function updateRuntimeControls(){
 function updateBatchLimit(){const enabled=$('batchEnabled').checked;$('batchField').hidden=!enabled;$('batch').disabled=!enabled;$('batch').placeholder='输入份数';$('quantitySummary').textContent=enabled?'达到设定份数后自动停止。':'不限份数，阅卷结束后自动停止。';if(!enabled)$('batch').value='';}
 $('batchEnabled').addEventListener('change',updateBatchLimit);
 $('mode').addEventListener('input',()=>{updateRuntimeControls();if(state)renderState();});
+for(const id of ['alertPopup','alertSound','alertVolume'])$(id)?.addEventListener('input',()=>markDirty('grading'));
 
 $('comment').addEventListener('input',()=>renderFeedback($('commentPreview'),$('comment').value));

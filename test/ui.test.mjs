@@ -162,6 +162,11 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   assert.equal(await page.locator('#historyDialog').evaluate(el=>el.open),true);
   assert.match(await page.locator('#historyDialogTitle').innerText(),/评阅详情/);assert.equal(await page.locator('#historyImages img').count(),1);
   assert.equal(await page.locator('#historyDetail').evaluate(el=>el.querySelector('#historyReadable').compareDocumentPosition(el.querySelector('#historyImages')) & Node.DOCUMENT_POSITION_FOLLOWING),4);
+  page.once('dialog',dialog=>dialog.accept());await page.locator('#blank').click();
+  await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('空白范本已保存'));
+  assert.equal(await page.locator('#blank').innerText(),'已保存 1 页空白范本');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets['我的方案'].blankDetection.reference.length,1);
+  assert.match(await page.locator('#blankStatus').textContent(),/已保存 1 个范本特征/);
   if(process.env.MARKER_DETAIL_PREVIEW)await page.screenshot({path:process.env.MARKER_DETAIL_PREVIEW});
   await page.keyboard.press('Escape');assert.equal(await page.locator('#historyDialog').evaluate(el=>el.open),false);
   const arbitrationRecord=app.store.records().find(r=>r.state==='paused');

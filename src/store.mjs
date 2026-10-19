@@ -32,7 +32,7 @@ export function importSettings(input) {
     const providerMap=Object.fromEntries(Object.entries(providers.providers).map(([name,provider])=>[name,{...provider,protocol:provider.protocol || 'chat',models:Array.isArray(provider.models)?provider.models:Object.keys(provider.models || {}),modelMetadata:provider.modelMetadata || (!Array.isArray(provider.models)?provider.models:{})}]));
     return { version: 1, active: presets.active, presets: presets.list, bindings: presets.bindings || {}, providers: providerMap,
     workflows: workflowMap, browser: { url: 'https://www.zhixue.com/', headless: false },
-    platform: { verified: false }, mode: 'trial', requestBudget: 6, gradingTimeoutMs: 600000 };
+    platform: { verified: false }, notifications: { sound: true, popup: true, volume: 0.6 }, mode: 'trial', requestBudget: 6, gradingTimeoutMs: 600000 };
 }
 export function loadSettings(file) {
   const config = JSON.parse(fs.readFileSync(file, 'utf8'));

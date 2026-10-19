@@ -25,6 +25,32 @@ test('双阅单路失败立即结束并取消另一请求；整份超时有明�
   assert.ok(events.some(e=>e.role==='主评'&&e.status==='completed'));assert.ok(events.some(e=>e.role==='复评'&&e.status==='completed'));
 });
 
+test('单评总分冲突会调用仲裁模型并仅在逐项一致时解除警告', async t => {
+  const details = [{ label: '第（1）问第1点', score: 2, maxScore: 2 }, { label: '第（1）问第2点', score: 3, maxScore: 3 }, { label: '第（1）问第3点', score: 2, maxScore: 2 }, { label: '第（1）问第4点', score: 1, maxScore: 1 }, { label: '第（2）问第1点', score: 1, maxScore: 3 }, { label: '第（2）问第2点', score: 0, maxScore: 3 }, { label: '第（2）问第3点', score: 0, maxScore: 3 }];
+  const replies = {
+    primary: { score: 12, studentAnswer: 'fixture', comment: '主评', subScores: [], scoringDetails: details, recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } },
+    arbitration: { score: 12, studentAnswer: 'fixture', comment: '仲裁', subScores: [], scoringDetails: details, recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } }
+  };
+  const calls = [];
+  const server = http.createServer(async (req, res) => {
+    let body = ''; for await (const chunk of req) body += chunk;
+    const model = JSON.parse(body).model; calls.push(model);
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(replies[model]) } }] }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const config = { answer: 'fixture', rubric: '第（1）问：甲队报价：满分8分\n1. 正确列式，得2分。2. 正确求最小值，得3分。3. 得到等号条件，得2分。4. 写出结论，得1分。\n\n第（2）问：乙队参数：满分9分\n1. 建立不等式，得3分。2. 证明下界，得3分。3. 得出范围，得3分。', workflowId: 'w', scoring: { maxScore: 17 } };
+  const entry = model => ({ provider: 'p', model });
+  const settings = { providers: { p: { endpoint: `http://127.0.0.1:${server.address().port}`, apiKey: 'fixture' } }, workflows: { w: { model: entry('primary'), dualEval: { enabled: false, arbitration: entry('arbitration') } } } };
+  const graded = await grade(config, settings, []);
+  assert.deepEqual(calls, ['primary', 'arbitration']);
+  assert.equal(graded.score, 9);
+  assert.equal(graded.formatWarning, undefined);
+  assert.match(graded.formatNote, /仲裁模型独立复核/);
+  assert.equal(graded.dualEval.result, 'arbitration');
+});
+
 test('模型偶发返回坏JSON时只自动重试一次并继续评分', async t => {
   let calls = 0;
   const result = { score: 2, studentAnswer: 'fixture', comment: 'fixture', subScores: [], scoringDetails: [{ label: '评分点', score: 2, maxScore: 2 }], recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } };

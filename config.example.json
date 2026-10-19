@@ -5,6 +5,7 @@
   "batchLimit": 0,
   "requestBudget": 6,
   "gradingTimeoutMs": 600000,
+  "notifications": { "sound": true, "popup": true, "volume": 0.6 },
   "browser": { "url": "https://www.zhixue.com/", "headless": false },
   "platform": {
     "verified": false,

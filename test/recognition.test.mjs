@@ -44,3 +44,26 @@ test('单评即使保留旧仲裁设置并存在识别疑点，也只调用主�
  const result=await grade({answer:'参考',rubric:'规则',scoring:{maxScore:4,units:[]},workflowId:'w'},{providers:{p:{endpoint:`http://127.0.0.1:${server.address().port}/v1`,apiKey:'test'}},workflows:{w:{model:{provider:'p',model:'primary'},recognitionPolicy:'arbitration',dualEval:{enabled:false,arbitration:{provider:'p',model:'arb'}}}}},[]);
  assert.equal(calls,1);assert.equal(result.model,'primary');assert.equal(result.recognitionDecision,undefined);
 });
+
+test('无人值守模式不会绕过未经仲裁的总分修正', async () => {
+  const config = { answer: '参考', rubric: '规则', scoring: { maxScore: 6, units: [] } };
+  const settings = { active: 'p', presets: { p: config }, mode: 'unattended', batchLimit: 1 };
+  const records = [];
+  let next = true;
+  const snapshot = { identity: 'auto-total', taskId: 't', units: [], strongIdentity: true };
+  const platform = {
+    options: { verified: true, submitResponseUrlPattern: 'commit' },
+    ready: async () => next ? (next = false, snapshot) : null,
+    images: async () => [],
+    fill: async () => {},
+    submit: async () => ({ confirmed: true })
+  };
+  const store = { records: () => records, save: record => { const i = records.findIndex(r => r.id === record.id); if (i < 0) records.push(structuredClone(record)); else records[i] = structuredClone(record); }, log: () => {}, images: async () => [] };
+  const repaired = '模型总分字段为7，与完整分项合计及网页总分6不一致；已按两者一致的合计修正，请人工确认。';
+  let reviewMode;
+  const runner = new Runner(platform, store, settings, async (_record, mode) => { reviewMode = mode; return mode === 'trial' ? 'stop' : 'submit'; }, async () => ({ score: 6, subScores: [], formatWarning: repaired, recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } }));
+  const outcome = await runner.run();
+  assert.equal(reviewMode, 'trial');
+  assert.equal(outcome.count, 0);
+  assert.equal(records.at(-1).state, 'paused');
+});

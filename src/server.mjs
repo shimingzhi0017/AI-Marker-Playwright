@@ -75,7 +75,7 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
   let context, page, platform, runner, pendingReview, timer, runPromise, submissionObserver, topicTracker, opening = false, generation = 0;
   let pickerToken;const adaptationDebug=new AdaptationDebugger(()=>platform);
   const events = [];
-  const note = message => { events.unshift({ time: new Date().toISOString(), message }); if (events.length > 80) events.pop(); };
+  const note = (message, level = 'info') => { events.unshift({ time: new Date().toISOString(), message, level }); if (events.length > 80) events.pop(); };
   const originalSave = store.save.bind(store);
   store.save = record => {
     originalSave(record);
@@ -84,6 +84,11 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
       state.phase = { loading: '正在获取图片', grading: '模型正在评分', review: '请确认评分', submitting: '正在确认提交', submitted: '已提交，等待下一份', paused: '已暂停', uncertain: '提交状态待核对', filled: '已填分' }[record.state] || record.state;
       if(record.state==='grading' && record.modelProgress)state.reason=Object.values(record.modelProgress).map(p=>`${p.role} ${p.model}：${({requesting:'等待模型返回',retrying:'网络重试中',completed:'已完成',failed:'失败',cancelled:'已取消'})[p.status] || p.status}`).join('；');
       if (record.state === 'submitted') state.count++;
+      if (record.state === 'review' && (record.result?.formatWarning || record.result?.recognitionWarning)) {
+        const warning = [record.result.formatWarning, record.result.recognitionWarning].filter(Boolean).join(' ');
+        const key = `${record.id}:${warning}`;
+        if (state.lastAttentionKey !== key) { state.lastAttentionKey = key; note(`需要处理：${warning}`, 'attention'); }
+      }
     }
   };
   function settings() { const cfg=loadSettings(file);cfg.taskScopedConfig=true;migrateGroups(cfg);cfg.providers=JSON.parse(fs.readFileSync(sharedProvidersFile,'utf8'));return cfg; }
@@ -170,6 +175,7 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
     if (!snapshot) {state.phase='阅卷完成';state.reason='本题已全部阅完，请在网站选择留在当前题或切换下一题。';note(state.reason);return;}
     const preset = cfg.presets[cfg.taskScopedConfig ? cfg.active : cfg.bindings?.[snapshot.taskId] || cfg.active]; validateConfig(preset);
     const workflow = cfg.workflows[preset.workflowId];
+    if (cfg.mode === 'unattended' && !workflow?.dualEval?.enabled) throw Error('无人值守模式需要启用“双模型复评与仲裁”，否则无法进行高精度自动阅卷');
     for (const entry of [workflow?.model, ...(workflow?.dualEval?.enabled ? [workflow.dualEval.secondary, workflow.dualEval.arbitration] : [])]) {
       const provider = cfg.providers[entry?.provider];
       if (!entry?.model || !provider?.endpoint || !(provider.apiKey || process.env[provider.apiKeyEnv || ''])) throw Error('请在“模型接口”中填写接口地址、密钥和工作流模型');
@@ -195,8 +201,8 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
     note('开始阅卷');
     runPromise = runner.run().then(result => {
       state.running = false; state.count = result.count; state.reason = result.reason; state.phase = result.completed ? '阅卷完成' : result.paused ? '已暂停' : '已停止';
-      note(result.reason); delete state.liveRecord; runner = null; finishReview('stop');
-    }).catch(error => { state.running = false; state.phase = '已暂停'; state.reason = error.message; note(error.message); finishReview('stop'); });
+      note(result.reason, result.paused ? 'attention' : 'info'); delete state.liveRecord; runner = null; finishReview('stop');
+    }).catch(error => { state.running = false; state.phase = '已暂停'; state.reason = error.message; note(error.message, 'attention'); finishReview('stop'); });
     } finally { state.starting = false; }
   }
   const token = crypto.randomBytes(24).toString('hex');
@@ -448,7 +454,7 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
         default: text(res, 404, { error: '接口不存在' }); return;
       }
       text(res, 200, { ok: true });
-    } catch (error) { note(error.message); text(res, 400, { error: error.message }); }
+    } catch (error) { note(error.message, 'attention'); text(res, 400, { error: error.message }); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); origin = `http://127.0.0.1:${server.address().port}`;
   if (!child && fs.existsSync(path.join(root,'sessions'))) {

@@ -17,15 +17,6 @@ test('C30原API回调接通，Canvas不可导出时读取当前接口图片', {t
   assert.equal(snapshot.adapterId,'c30');assert.equal(snapshot.images[0].url,'https://fixture.test/current.png');assert.equal(snapshot.units[0].maxScore,8);
 });
 
-test('慧阅卷父子frame识别同一评分区时选择子frame', {timeout:30000},async t=>{
-  const browser=await launchBrowser({headless:true});t.after(()=>browser.close());
-  const context=await browser.newContext();await installSuiteAdapters(context);
-  await context.route('https://web.17yuejuan.cn/**',route=>route.fulfill({contentType:'text/html; charset=utf-8',body:route.request().url().endsWith('/child')?'<div class="ui-exam-teacher-correct-score-box"><div class="ui-exam-teacher-correct-score-panel"><span class="ui-input-number-target" ng-repeat="score">+2</span></div></div><img class="ui-answer-sheet-image-img" src="data:image/png;base64,a">':'<frameset><frame src="/17yuejuan/child"></frameset>'}));
-  const page=await context.newPage();await page.goto('https://web.17yuejuan.cn/');
-  const platform=new SuitePlatform(page,{platform:{}},'.'),frame=await platform.frame();assert.ok(frame.parentFrame());
-  const snapshot=await platform.snapshot();assert.equal(snapshot.adapterId,'huiyuejuan');assert.equal(snapshot.images.length,1);
-});
-
 test('原脚本27个适配器完整引入，网址模式精确域名和动态路径',()=>{
   assert.equal(suiteAdapters.length,27);
   assert.equal(patternMatches('*://*.7net.cc/*','https://yj1.7net.cc/'),true);

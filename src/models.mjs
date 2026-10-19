@@ -14,6 +14,11 @@ function isRepairedTotalWarning(warning) {
   return /^模型总分字段为\d+(?:\.\d+)?，与完整分项合计及网页总分\d+(?:\.\d+)?不一致；已按两者一致的合计修正，请人工确认。$/u.test(warning || '');
 }
 
+function sameRepairResult(a, b, config) {
+  const comparable = config.scoring?.units?.length ? [a.subScores || [], b.subScores || []] : [a.scoringDetails || [], b.scoringDetails || []];
+  return a.score === b.score && comparable[0].length > 0 && comparable[0].length === comparable[1].length && sameScoringItems(comparable[0], comparable[1]);
+}
+
 function correctedRetryPrompt(prompt,error) {
   const message=String(error?.message||'');
   if(/合计不一致|无法汇总/u.test(message)) return `${prompt}\n校验重试要求：上一版各项评分与总分的合计校验失败。请重新核对每项score，按scoringDetails各项score逐项相加，令score严格等于该和；subScores必须按网页评分框完整返回且其合计也严格等于score。保留原有逐项评分判断，只修正计算或格式错误；只返回完整、合法、可解析的JSON对象。`;
@@ -71,7 +76,21 @@ async function gradeInternal(config, settings, images, signal, onProgress, contr
   };
   const prompt = promptFor(config);
   const useArbitration = workflow.recognitionPolicy === 'arbitration';
-  if (!workflow.dualEval?.enabled) return await call(workflow.model, prompt);
+  if (!workflow.dualEval?.enabled) {
+    const primary = await call(workflow.model, prompt);
+    const arbitration = workflow.dualEval?.arbitration;
+    // A repaired model total is still a scoring decision. When an arbitration
+    // model is configured, independently re-score it before unattended flow
+    // can accept the repair.
+    if (primary.formatWarning && isRepairedTotalWarning(primary.formatWarning) && arbitration?.provider && arbitration.model) {
+      const verdict = await call(arbitration, `${prompt}\n本次触发原因：模型返回的总分与完整评分明细合计不一致。请独立审阅原始答卷图片、题目和评分标准，逐项重新评分并核对合计；不要沿用主评总分，也不要只按主评结果改写。`, '仲裁');
+      if (sameRepairResult(primary, verdict, config)) {
+        return { ...primary, formatWarning: undefined, formatNote: '总分冲突已由仲裁模型独立复核，逐项分数与合计一致。', dualEval: { result: 'arbitration', a: primary, verdict } };
+      }
+      return { ...verdict, formatWarning: [primary.formatWarning, verdict.formatWarning].filter(Boolean).join(' ') || '主评与仲裁逐项评分不一致，请人工确认。', dualEval: { result: 'arbitration', a: primary, verdict } };
+    }
+    return primary;
+  }
 
   const dual = workflow.dualEval;
   const objective = dual.questionType !== 'subjective';
