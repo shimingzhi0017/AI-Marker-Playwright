@@ -25,11 +25,11 @@ test('双阅单路失败立即结束并取消另一请求；整份超时有明�
   assert.ok(events.some(e=>e.role==='主评'&&e.status==='completed'));assert.ok(events.some(e=>e.role==='复评'&&e.status==='completed'));
 });
 
-test('单评总分冲突会调用仲裁模型并仅在逐项一致时解除警告', async t => {
+test('单评总分冲突调用仲裁模型并采用仲裁模型的有效独立评分', async t => {
   const details = [{ label: '第（1）问第1点', score: 2, maxScore: 2 }, { label: '第（1）问第2点', score: 3, maxScore: 3 }, { label: '第（1）问第3点', score: 2, maxScore: 2 }, { label: '第（1）问第4点', score: 1, maxScore: 1 }, { label: '第（2）问第1点', score: 1, maxScore: 3 }, { label: '第（2）问第2点', score: 0, maxScore: 3 }, { label: '第（2）问第3点', score: 0, maxScore: 3 }];
   const replies = {
     primary: { score: 12, studentAnswer: 'fixture', comment: '主评', subScores: [], scoringDetails: details, recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } },
-    arbitration: { score: 12, studentAnswer: 'fixture', comment: '仲裁', subScores: [], scoringDetails: details, recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } }
+    arbitration: { score: 9, studentAnswer: 'fixture', comment: '仲裁', subScores: [], scoringDetails: details, recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } }
   };
   const calls = [];
   const server = http.createServer(async (req, res) => {
@@ -47,7 +47,7 @@ test('单评总分冲突会调用仲裁模型并仅在逐项一致时解除警�
   assert.deepEqual(calls, ['primary', 'arbitration']);
   assert.equal(graded.score, 9);
   assert.equal(graded.formatWarning, undefined);
-  assert.match(graded.formatNote, /仲裁模型独立复核/);
+  assert.match(graded.formatNote, /仲裁模型独立重新评分/);
   assert.equal(graded.dualEval.result, 'arbitration');
 });
 
@@ -100,13 +100,14 @@ test('单次请求超时可在整份评分期限内重试；鉴权失败不重�
   assert.equal(calls, 1);
 });
 
-test('双评逐项一致时可交叉验证并解除冗余总分字段修正的人工拦截', async t => {
+test('双评分项一致时交叉验证；发现模型总分异常则交仲裁独立评分', async t => {
   const scores = [2, 3, 2, 1, 1, 0, 0];
   const maximums = [2, 3, 2, 1, 3, 3, 3];
   const rubric = '第（1）问：甲队报价：满分8分\n1. 正确列式，得2分。2. 正确求最小值，得3分。3. 得到等号条件，得2分。4. 写出结论，得1分。\n\n第（2）问：乙队参数：满分9分\n1. 建立不等式，得3分。2. 证明下界，得3分。3. 得出范围，得3分。';
   const replies = {
     primary: { score: 9, studentAnswer: 'fixture', comment: 'fixture', subScores: [], scoringDetails: scores.map((score, i) => ({ label: `第${i < 4 ? '（1）' : '（2）'}问第${i < 4 ? i + 1 : i - 3}点`, score, maxScore: maximums[i] })), recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } },
-    secondary: { score: 12, studentAnswer: 'fixture', comment: 'fixture', subScores: [], scoringDetails: scores.map((score, i) => ({ label: `第${i < 4 ? '（1）' : '（2）'}问第${i < 4 ? i + 1 : i - 3}点`, score, maxScore: maximums[i] })), recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } }
+    secondary: { score: 12, studentAnswer: 'fixture', comment: 'fixture', subScores: [], scoringDetails: scores.map((score, i) => ({ label: `第${i < 4 ? '（1）' : '（2）'}问第${i < 4 ? i + 1 : i - 3}点`, score, maxScore: maximums[i] })), recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } },
+    arbitration: { score: 9, studentAnswer: 'fixture', comment: 'arbitrated', subScores: [], scoringDetails: scores.map((score, i) => ({ label: `第${i < 4 ? '（1）' : '（2）'}问第${i < 4 ? i + 1 : i - 3}点`, score, maxScore: maximums[i] })), recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } }
   };
   const server = http.createServer(async (req, res) => {
     let body = ''; for await (const chunk of req) body += chunk;
@@ -121,14 +122,14 @@ test('双评逐项一致时可交叉验证并解除冗余总分字段修正的�
   const settings = { requestBudget: 6, providers: { p: { endpoint: `http://127.0.0.1:${server.address().port}`, apiKey: 'fixture' } }, workflows: { w: { model: entry('primary'), dualEval: { enabled: true, questionType: 'subjective', threshold: 2, secondary: entry('secondary'), arbitration: entry('arbitration') } } } };
   const graded = await grade(config, settings, []);
   assert.equal(graded.score, 9);
-  assert.equal(graded.dualEval.result, 'average');
+  assert.equal(graded.dualEval.result, 'arbitration');
   assert.equal(graded.dualEval.b.reportedScore, 12);
   assert.equal(graded.scoringDetails.reduce((sum, item) => sum + item.score, 0), 9);
   assert.equal(graded.formatWarning, undefined);
-  assert.match(graded.formatNote, /逐项核对一致/);
+  assert.match(graded.formatNote, /仲裁模型独立重新评分/);
 
   replies.secondary = { ...replies.secondary, scoringDetails: replies.secondary.scoringDetails.map((item, i) => i === 0 ? { ...item, score: 0 } : i === 4 ? { ...item, score: 3 } : item) };
   const inconsistent = await grade(config, settings, []);
-  assert.ok(inconsistent.formatWarning);
-  assert.equal(inconsistent.formatNote, undefined);
+  assert.equal(inconsistent.dualEval.result, 'arbitration');
+  assert.equal(inconsistent.formatWarning, undefined);
 });

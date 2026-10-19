@@ -14,9 +14,8 @@ function isRepairedTotalWarning(warning) {
   return /^模型总分字段为\d+(?:\.\d+)?，与完整分项合计及网页总分\d+(?:\.\d+)?不一致；已按两者一致的合计修正，请人工确认。$/u.test(warning || '');
 }
 
-function sameRepairResult(a, b, config) {
-  const comparable = config.scoring?.units?.length ? [a.subScores || [], b.subScores || []] : [a.scoringDetails || [], b.scoringDetails || []];
-  return a.score === b.score && comparable[0].length > 0 && comparable[0].length === comparable[1].length && sameScoringItems(comparable[0], comparable[1]);
+function withoutRepairedTotalWarning(...warnings) {
+  return warnings.flatMap(warning => String(warning || '').split('\n')).filter(warning => warning && !isRepairedTotalWarning(warning)).join('\n') || undefined;
 }
 
 function correctedRetryPrompt(prompt,error) {
@@ -84,10 +83,7 @@ async function gradeInternal(config, settings, images, signal, onProgress, contr
     // can accept the repair.
     if (primary.formatWarning && isRepairedTotalWarning(primary.formatWarning) && arbitration?.provider && arbitration.model) {
       const verdict = await call(arbitration, `${prompt}\n本次触发原因：模型返回的总分与完整评分明细合计不一致。请独立审阅原始答卷图片、题目和评分标准，逐项重新评分并核对合计；不要沿用主评总分，也不要只按主评结果改写。`, '仲裁');
-      if (sameRepairResult(primary, verdict, config)) {
-        return { ...primary, formatWarning: undefined, formatNote: '总分冲突已由仲裁模型独立复核，逐项分数与合计一致。', dualEval: { result: 'arbitration', a: primary, verdict } };
-      }
-      return { ...verdict, formatWarning: [primary.formatWarning, verdict.formatWarning].filter(Boolean).join(' ') || '主评与仲裁逐项评分不一致，请人工确认。', dualEval: { result: 'arbitration', a: primary, verdict } };
+      return { ...verdict, formatWarning: verdict.formatWarning, formatNote: verdict.formatWarning ? undefined : '主评总分异常已交仲裁模型独立重新评分；采用仲裁结果。', dualEval: { result: 'arbitration', a: primary, verdict } };
     }
     return primary;
   }
@@ -105,10 +101,13 @@ async function gradeInternal(config, settings, images, signal, onProgress, contr
   const items = result => result.scoringDetails?.length ? result.scoringDetails : needsDetails ? [] : result.subScores || [];
   const aItems = items(a), bItems = items(b);
   const match = sameScoringItems;
+  const repairedTotalWarnings = [a.formatWarning, b.formatWarning].filter(isRepairedTotalWarning);
+  // A repaired total is a material scoring anomaly. Always send it to the
+  // configured arbitrator, even when the two initial scores otherwise agree.
+  const repairedTotalNeedsArbitration = repairedTotalWarnings.length > 0;
   const same = a.score === b.score && match(a.subScores || [], b.subScores || []) && aItems.length > 0 && match(aItems, bItems);
-  if (!readingWarning && (dual.questionType !== 'subjective' ? same : diff <= (dual.threshold ?? 2))) {
-    if (dual.questionType !== 'subjective') return { ...a, recognitionWarning: readingWarning, formatWarning: a.formatWarning || b.formatWarning, dualEval: { result: 'consensus', a, b } };
-    const repairedTotalWarnings = [a.formatWarning, b.formatWarning].filter(isRepairedTotalWarning);
+  if (!readingWarning && !repairedTotalNeedsArbitration && (dual.questionType !== 'subjective' ? same : diff <= (dual.threshold ?? 2))) {
+    if (dual.questionType !== 'subjective') return { ...a, recognitionWarning: readingWarning, formatWarning: withoutRepairedTotalWarning(a.formatWarning,b.formatWarning), dualEval: { result: 'consensus', a, b } };
     const corroboratesRepair = a.score === b.score && aItems.length > 0 && sameScoringItems(aItems, bItems) && repairedTotalWarnings.length > 0;
     const remainingFormatWarnings = [a.formatWarning, b.formatWarning].filter(warning => warning && !(corroboratesRepair && isRepairedTotalWarning(warning)));
     const formatNote = corroboratesRepair
@@ -126,7 +125,7 @@ async function gradeInternal(config, settings, images, signal, onProgress, contr
     const result = { ...a, recognitionWarning: readingWarning, formatWarning: remainingFormatWarnings.join('\n') || undefined, formatNote, score: subScores.length ? subScores.reduce((s, u) => s + u.score, 0) : (a.score + b.score) / 2, subScores, scoringDetails, comment: `${a.comment || ''}\n${b.comment || ''}`, dualEval: { result: 'average', a, b } };
     return validateResult(result, config);
   }
-  const verdict = await call(dual.arbitration, `${dualPrompt}\n本次触发原因：${readingWarning ? '识别存疑' : '评分分歧或评分明细不完整'}。请仅依据原始答卷图片、题目及评分标准独立重新识别和逐项评分，合计你自己的总分，不得平均或推测其他模型评分。`,'仲裁');
+  const verdict = await call(dual.arbitration, `${dualPrompt}\n本次触发原因：${repairedTotalNeedsArbitration ? '模型返回的总分与完整分项合计不一致' : readingWarning ? '识别存疑' : '评分分歧或评分明细不完整'}。请仅依据原始答卷图片、题目及评分标准独立重新识别和逐项评分，合计你自己的总分，不得平均或推测其他模型评分。`,'仲裁');
   if (needsDetails && !verdict.scoringDetails?.length) {
     const error = Error('客观题仲裁模型未返回逐项评分明细，已停止；不能仅按总分继续');
     error.modelResponse = { model: dual.arbitration.model, rawResponse: verdict.rawResponse }; throw error;
@@ -135,5 +134,8 @@ async function gradeInternal(config, settings, images, signal, onProgress, contr
   const tripleSame = a.score === b.score && a.score === verdict.score &&
     match(a.subScores || [], b.subScores || []) && match(a.subScores || [], verdict.subScores || []) &&
     comparable(a).length > 0 && match(comparable(a), comparable(b)) && match(comparable(a), comparable(verdict));
-  return { ...verdict, formatWarning:[a.formatWarning,b.formatWarning,verdict.formatWarning].filter(Boolean).join(' '), recognitionWarning: [readingWarning, verdict.recognitionWarning].filter(Boolean).join(' '), recognitionDecision: tripleSame ? 'three-way-consensus' : useArbitration && (readingWarning || verdict.recognitionWarning) ? 'arbitration' : undefined, dualEval: { result: 'arbitration', threeWayConsensus: tripleSame, a, b, verdict } };
+  const formatWarning = repairedTotalNeedsArbitration && !verdict.formatWarning
+    ? withoutRepairedTotalWarning(a.formatWarning,b.formatWarning)
+    : [a.formatWarning,b.formatWarning,verdict.formatWarning].filter(Boolean).join(' ') || undefined;
+  return { ...verdict, formatWarning, formatNote: repairedTotalNeedsArbitration && !formatWarning ? '总分冲突已由仲裁模型独立重新评分；采用仲裁结果。' : undefined, recognitionWarning: [readingWarning, verdict.recognitionWarning].filter(Boolean).join(' '), recognitionDecision: tripleSame ? 'three-way-consensus' : useArbitration && (readingWarning || verdict.recognitionWarning) ? 'arbitration' : undefined, dualEval: { result: 'arbitration', threeWayConsensus: tripleSame, a, b, verdict } };
 }

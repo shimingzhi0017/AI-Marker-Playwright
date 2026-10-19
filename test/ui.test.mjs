@@ -175,6 +175,11 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.locator('#arbitrationFilter').selectOption('arbitration');await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===1);
   await page.locator('#historyRows button').click();assert.match(await page.locator('#historyDialogTitle').innerText(),/已仲裁/);
   await page.locator('#closeHistory').click();await page.locator('#arbitrationFilter').selectOption('');await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===2);
+  for(let i=0;i<53;i++)app.store.save({id:`pagination-${i}`,state:'submitted',time:new Date().toISOString(),presetName:'分页测试',result:{score:1,studentAnswer:'分页记录',comment:''}});
+  await page.locator('#historyPageSize').selectOption('25');await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===25);assert.match(await page.locator('#historyPage').textContent(),/第 1 \/ 3 页/);
+  await page.locator('#historyNext').click();await page.waitForFunction(()=>document.querySelector('#historyPage').textContent.includes('第 2 / 3 页'));assert.equal(await page.locator('#historyRows tr').count(),25);
+  await page.locator('#historySearch').fill('分页记录');await page.waitForFunction(()=>document.querySelector('#historyCount').textContent==='共 53 条'&&document.querySelector('#historyPage').textContent.includes('第 1 / 3 页'));
+  app.store.db.prepare("DELETE FROM records WHERE id LIKE 'pagination-%'").run();await page.locator('#historySearch').fill('');await page.waitForFunction(()=>document.querySelectorAll('#historyRows tr').length===2);
   const exported=await page.request.get(`${app.url}/api/export?format=json`);assert.equal(exported.status(),200);assert.equal((await exported.json()).length,2);
   assert.equal(await page.getByRole('link',{name:'CSV',exact:true}).isVisible(),false);
   await page.locator('#exportMenu > summary').click();

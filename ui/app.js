@@ -6,6 +6,7 @@ import {buildLayout,createEnhancements} from './enhancements.js';
 buildLayout();buildAdaptationUI();
 const $ = id => document.getElementById(id);
 let config, state, history = [], selectedRecord, displayedRecord, currentTab = 'presets', busy = false;
+let historyPage = 1;
 let workspace = 'default', workspaces = [], switching = false, pendingWorkspace = null, pendingTab = null;
 let attentionInitialized = false, seenAttention = new Set(), alertAudio;
 const dirty=new Set();
@@ -173,7 +174,16 @@ async function switchWorkspace(id) {
 }
 async function poll() { if(switching)return;const id=workspace;try { const next=await api('/api/state');if(id!==workspace || switching)return;state=next;renderState();adaptationUI.poll(state);await refreshWorkspaces(); } catch(e) { $('phase').textContent='连接已断开'; notice('控制台连接已断开，请重新启动可视化程序。'); } }
 const wasArbitrated = r => r.result?.dualEval?.result === 'arbitration' || !!r.result?.recognitionArbitration || r.originalResult?.dualEval?.result === 'arbitration' || !!r.originalResult?.recognitionArbitration;
-async function renderHistory() { history=await api('/api/history'); $('historyEmpty').hidden=!!history.length; $('historyRows').replaceChildren(...history.filter(r=>(!$('arbitrationFilter').value || wasArbitrated(r))&&(!$('historyFilter').value||r.state===$('historyFilter').value)&&[r.presetName,r.result?.studentAnswer,r.result?.comment].join(' ').toLowerCase().includes($('historySearch').value.toLowerCase())).map(r=>{const tr=document.createElement('tr');for(const value of [new Date(r.time).toLocaleString(),r.presetName,states[r.state] || r.state,r.result?.score ?? '—']) {const td=document.createElement('td');td.textContent=value;tr.append(td);}if(wasArbitrated(r)){tr.classList.add('arbitration-row');const badge=document.createElement('span');badge.className='arbitration-badge';badge.textContent='已仲裁';tr.children[2].append(document.createTextNode(' '),badge);}const td=document.createElement('td'),button=document.createElement('button');button.textContent='查看';button.onclick=()=>showRecord(r);td.append(button);tr.append(td);return tr;})); }
+async function renderHistory() {
+  const pageSize=Number($('historyPageSize').value)||50, params=new URLSearchParams({page:String(historyPage),pageSize:String(pageSize)});
+  const stateFilter=$('historyFilter').value, search=$('historySearch').value.trim(), arbitrated=$('arbitrationFilter').value==='arbitration';
+  if(stateFilter)params.set('state',stateFilter);if(search)params.set('search',search);if(arbitrated)params.set('arbitrated','1');
+  const result=await api('/api/history?'+params);history=result.items;historyPage=Math.min(result.page,result.totalPages);
+  $('historyEmpty').hidden=!!result.total;$('historyEmpty').textContent=result.total?'当前筛选没有匹配记录':'还没有阅卷记录';
+  $('historyCount').textContent=`共 ${result.total} 条`;$('historyPage').textContent=`第 ${result.page} / ${result.totalPages} 页`;
+  $('historyPrev').disabled=result.page<=1;$('historyNext').disabled=result.page>=result.totalPages;
+  $('historyRows').replaceChildren(...history.map(r=>{const tr=document.createElement('tr');for(const value of [new Date(r.time).toLocaleString(),r.presetName,states[r.state] || r.state,r.result?.score ?? '—']) {const td=document.createElement('td');td.textContent=value;tr.append(td);}if(wasArbitrated(r)){tr.classList.add('arbitration-row');const badge=document.createElement('span');badge.className='arbitration-badge';badge.textContent='已仲裁';tr.children[2].append(document.createTextNode(' '),badge);}const td=document.createElement('td'),button=document.createElement('button');button.textContent='查看';button.onclick=()=>showRecord(r);td.append(button);tr.append(td);return tr;}));
+}
 function showRecord(record) { selectedRecord=record; $('historyDetail').hidden=false; renderImages($('historyImages'),record); $('historyJson').textContent=JSON.stringify(record,null,2);renderResultDetails($('historyReadable'),record,true); for(const id of ['resolveYes','resolveNo']) $(id).hidden=!['uncertain','submitting'].includes(record.state);$('historyDialogTitle').textContent=wasArbitrated(record)?'评阅详情 · 已仲裁':'评阅详情';if(!$('historyDialog').open)$('historyDialog').showModal();$('historyDialog').scrollTop=0; }
 $('addProviderTemplate').onclick=()=>{if(!busy)$('providerTemplateDialog').showModal();};
 $('closeProviderTemplate').onclick=()=>$('providerTemplateDialog').close();
@@ -196,7 +206,7 @@ const handlers={
   fetchModels:async()=>{await handlers.saveProvider();await api('/api/models',{name:$('providerSelect').value});const selected=$('providerSelect').value;config=await api('/api/settings');$('providerSelect').value=selected;renderProvider();for(const p of ['primary','secondary','arbitration'])renderCatalog(p);notice('模型目录已更新',true);},
   savePlatform:async()=>{config.platform ||= {};config.browser ||= {};for(const input of document.querySelectorAll('[data-platform]')){const key=input.dataset.platform;if(key==='browser.url')config.browser.url=input.value;else config.platform[key]=key==='successValue'?JSON.parse(input.value):input.value;}config.platform.verified=$('verified').checked;await save('页面适配已保存','presets');},
   addUnit:()=>{addUnit();markDirty('presets');}, addPreset:()=>newName('新建方案','presets',()=>({question:'',answer:'',rubric:'',workflowId:Object.keys(config.workflows)[0],scoring:{maxScore:0,units:[],roundStep:1,roundMethod:'round'}})),addProvider:()=>newName('新建供应商','providers',()=>({protocol:'chat',endpoint:'',apiKey:'',models:[]})),addWorkflow:()=>newName('新建工作流','workflows',()=>({model:{provider:Object.keys(config.providers)[0],model:''},dualEval:{enabled:false}})),
-  refreshHistory:()=>renderHistory(),
+  refreshHistory:()=>{historyPage=1;return renderHistory();},
   exportConfig:()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(config,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='阅卷配置.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);},
   blank:async()=>{
     if(!selectedRecord || !confirm('请先确认这份答卷确实为空白。将把图片特征作为空白检测范本，检测结果仍须人工确认。'))return;
@@ -236,7 +246,7 @@ $('workspaceSelect').onchange=()=>requestWorkspace($('workspaceSelect').value);
 $('addWorkspace').onclick=()=>action(async()=>{const result=await api('/api/workspaces',{});await refreshWorkspaces();await switchWorkspace(result.id);const name=await workspaceDialog();if(name!==null){if(!name)throw Error('任务名称不能为空');await api('/api/workspace-name',{name});config.workspaceName=name;await refreshWorkspaces();}notice('新任务已创建，已使用默认配置。请在自己的浏览器登录并选择阅卷页面。',true);});
 $('pauseAll').onclick=()=>action(async()=>{await refreshWorkspaces();await Promise.all(workspaces.map(w=>api('/api/pause',{},w.id)));notice('已请求暂停全部任务',true);});
 const enhancements=createEnhancements({getConfig:()=>config,save,action,markDirty,renderPreset,renderUnits,renderProvider,renderWorkflow,getSnapshot:()=>state.snapshot,api,refreshSettings:renderSettings,notice});
-$('historySearch').oninput=()=>action(()=>renderHistory());$('historyFilter').onchange=()=>action(()=>renderHistory());$('arbitrationFilter').onchange=()=>action(()=>renderHistory());
+$('historySearch').oninput=()=>action(()=>{historyPage=1;return renderHistory();});$('historyFilter').onchange=()=>action(()=>{historyPage=1;return renderHistory();});$('arbitrationFilter').onchange=()=>action(()=>{historyPage=1;return renderHistory();});$('historyPageSize').onchange=()=>action(()=>{historyPage=1;return renderHistory();});$('historyPrev').onclick=()=>action(()=>{historyPage=Math.max(1,historyPage-1);return renderHistory();});$('historyNext').onclick=()=>action(()=>{historyPage++;return renderHistory();});
 async function workspaceDialog(deleting=false) {
   const current=workspaces.find(w=>w.id===workspace),dialog=$('workspaceDialog');
   $('workspaceDialogTitle').textContent=deleting?'删除任务':'重命名任务';

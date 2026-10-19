@@ -238,7 +238,15 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
       if (req.method === 'GET') {
         if (url.pathname === '/api/state') { const { liveRecord, ...publicState } = state; text(res, 200, { ...publicState, adaptationDebug:adaptationDebug.status, events }); return; }
         if (url.pathname === '/api/settings') { text(res, 200, settings()); return; }
-        if (url.pathname === '/api/history') { text(res, 200, store.records()); return; }
+        if (url.pathname === '/api/history') {
+          const hasPaging = ['page', 'pageSize', 'state', 'search', 'arbitrated'].some(key => url.searchParams.has(key));
+          if (!hasPaging) { text(res, 200, store.records()); return; }
+          text(res, 200, store.historyPage({
+            page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize'),
+            state: url.searchParams.get('state') || '', search: url.searchParams.get('search') || '',
+            arbitrated: url.searchParams.get('arbitrated') === '1'
+          })); return;
+        }
         if (url.pathname === '/api/image') {
           const record = store.records().find(r => r.id === url.searchParams.get('id'));
           const image = record?.imageFiles?.[Number(url.searchParams.get('index') || 0)];

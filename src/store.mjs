@@ -12,6 +12,23 @@ export class Store {
     this.db.prepare('INSERT INTO records VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,data=excluded.data,updated=excluded.updated').run(record.id, record.state, JSON.stringify(record), new Date().toISOString());
   }
   records() { return this.db.prepare('SELECT data FROM records ORDER BY updated DESC').all().map(r => JSON.parse(r.data)); }
+  historyPage({ page = 1, pageSize = 50, state = '', search = '', arbitrated = false } = {}) {
+    page = Math.max(1, Math.floor(Number(page) || 1));
+    pageSize = Math.min(200, Math.max(1, Math.floor(Number(pageSize) || 50)));
+    const clauses = [], params = [];
+    if (state) { clauses.push('state = ?'); params.push(state); }
+    if (search) {
+      const escaped = String(search).replace(/[\\%_]/g, '\\$&').toLowerCase();
+      clauses.push("lower(coalesce(json_extract(data,'$.presetName'),'') || ' ' || coalesce(json_extract(data,'$.result.studentAnswer'),'') || ' ' || coalesce(json_extract(data,'$.result.comment'),'')) LIKE ? ESCAPE '\\'"); params.push(`%${escaped}%`);
+    }
+    if (arbitrated) clauses.push("(json_extract(data,'$.result.dualEval.result') = 'arbitration' OR json_extract(data,'$.result.recognitionArbitration') IS NOT NULL OR json_extract(data,'$.originalResult.dualEval.result') = 'arbitration' OR json_extract(data,'$.originalResult.recognitionArbitration') IS NOT NULL)");
+    const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
+    const total = this.db.prepare(`SELECT COUNT(*) AS count FROM records${where}`).get(...params).count;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    page = Math.min(page, totalPages);
+    const rows = this.db.prepare(`SELECT data FROM records${where} ORDER BY updated DESC LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize);
+    return { items: rows.map(r => JSON.parse(r.data)), total, page, pageSize, totalPages };
+  }
   log(event, details = {}) { fs.appendFileSync(path.join(this.dir, 'events.jsonl'), JSON.stringify({ time: new Date().toISOString(), event, ...details }) + '\n'); }
   async images(id, images) {
     const dir = path.join(this.dir, 'images', id); fs.mkdirSync(dir, { recursive: true });
