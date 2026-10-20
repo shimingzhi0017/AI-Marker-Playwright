@@ -1,8 +1,9 @@
-import {renderFeedback} from './feedback.js';
+import {renderFeedback, renderInlineFeedback} from './feedback.js';
 import { alignScoringItems } from './scoring-labels.js';
 const items = result => result?.scoringDetails?.length ? result.scoringDetails : result?.subScores || [];
 const value = score => Number.isFinite(score) ? `${score} 分` : '未提供';
 function node(tag, text) { const el = document.createElement(tag); if(text !== undefined) el.textContent = text; return el; }
+function formattedNode(tag, text) { const el = node(tag); renderInlineFeedback(el, text); return el; }
 function paragraph(container, title, text) {
   if(text === undefined || text === null || text === '') return;
   const content=node('div');renderFeedback(content,text);container.append(node('h3',title),content);
@@ -42,6 +43,17 @@ function historyOverview(container,record) {
   } else if(result.recognitionArbitration) {
     const section=node('section');section.className='review-section';section.append(node('h3','识别复核'));
     reviewCard(section,'首次评分',result.recognitionArbitration.primary);reviewCard(section,'仲裁结果',result.recognitionArbitration.verdict,true);container.append(section);
+  }
+  const finalItems=items(result.dualEval?.verdict || result);
+  if(finalItems.length){
+    const section=node('section');section.className='review-section review-item-summary';section.append(node('h3','分项得分'));
+    const list=node('div');list.className='review-item-list';
+    for(const item of finalItems){
+      const row=node('div');row.className='review-item-row';
+      row.append(formattedNode('span',String(item.label || '未命名评分项')),node('strong',`${value(item.score)}${Number.isFinite(item.maxScore)?` / ${item.maxScore} 分`:''}`));
+      list.append(row);
+    }
+    section.append(list);container.append(section);
   }
   historySection(container,'识别答案',result.studentAnswer || '未能识别');
   historySection(container,'AI评语',result.comment || '无');
@@ -97,7 +109,11 @@ export function renderResultDetails(container, record, history = false) {
     for(const {label, items: [f, a, b], ambiguous} of aligned) {
       const row=node('tr');
       const cells=dual ? [label,value(a?.score),value(b?.score),value(f?.score),ambiguous ? '标签重复，需人工核对' : a && b ? a.score === b.score ? '分数一致' : '分数不一致' : '明细缺失或标签不对应'] : [label,value(f?.score),value(f?.maxScore),f?.reason || f?.comment || '见下方评分依据'];
-      cells.forEach(t=>row.append(node('td',t)));tbody.append(row);
+      cells.forEach((t,index)=>{
+        const cell=index===0 || (!dual && index===3) ? formattedNode('td',t) : node('td',t);
+        if(index===0)cell.className='scoring-label-cell';
+        row.append(cell);
+      });tbody.append(row);
     }
     table.append(tbody);wrap.append(table);container.append(wrap);
   } else paragraph(container,'逐项评分','此记录未保存逐项明细；不能从总分补推各项得分。');

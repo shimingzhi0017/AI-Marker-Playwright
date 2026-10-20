@@ -4,6 +4,31 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
+import { folderDialogResult } from '../src/export-folder.mjs';
+
+test('文件夹选择器忽略 PowerShell 的正常 stderr 进度并保留选择结果', () => {
+  const directory = path.join(os.tmpdir(), '导出目录');
+  const stdout = Buffer.from(directory, 'utf8').toString('base64');
+  assert.equal(folderDialogResult({
+    code: 0,
+    stdout,
+    stderr: '#< CLIXML\r\n<Objs Version="1.1.0.1" xmlns="http://schemas.microsoft.com/powershell/2004/04"></Objs>'
+  }), directory);
+  assert.equal(folderDialogResult({ code: 0, stdout: '', stderr: '#< CLIXML\r\n正常进度' }), null);
+});
+
+test('文件夹选择器取消和真实错误有明确结果', () => {
+  assert.equal(folderDialogResult({ code: 0, stdout: '', stderr: '' }), null);
+  const message = '窗口不可用';
+  const encoded = Buffer.from(message, 'utf8').toString('base64');
+  assert.throws(
+    () => folderDialogResult({ code: 1, stdout: `AI_MARKER_DIALOG_ERROR:${encoded}` }),
+    new RegExp(message)
+  );
+  assert.throws(() => folderDialogResult({ code: 1, stdout: '', stderr: '拒绝访问' }), /拒绝访问/);
+  assert.throws(() => folderDialogResult({ code: 0, stdout: 'not-a-path' }), /结果无效/);
+});
+
 
 test('自选导出目录、取消不写文件、保留自动文件名及格式校验', async t => {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'marker-folder-'));

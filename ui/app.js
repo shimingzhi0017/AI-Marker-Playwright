@@ -97,7 +97,7 @@ function renderState() {
   const modelReady=entry=>{const provider=config.providers[entry?.provider];return !!(entry?.model&&provider?.endpoint&&(provider.apiKey||provider.apiKeyEnv));};
   const unattendedReady=$('mode').value!=='unattended' || (w?.dualEval?.enabled && modelReady(w?.dualEval?.secondary) && modelReady(w?.dualEval?.arbitration));
   const ready=[['阅卷方案',!!(textField(p?.answer).trim()&&textField(p?.rubric).trim()&&(p?.scoring?.units?.length?p.scoring.units.every(u=>u.maxScore>0):p?.scoring?.maxScore>0)),'presets'],['评分设置',modelReady(w?.model)&&(!w.dualEval?.enabled || [w.dualEval.secondary,w.dualEval.arbitration].every(modelReady))&&unattendedReady,'workflows']];
-  $('readiness').replaceChildren(...ready.map(([name,ok,tab])=>{const b=document.createElement('button');b.className=ok?'ready-step complete':'ready-step';b.textContent=`${name}${ok?'已就绪':'待设置'}`;b.onclick=()=>document.querySelector(`[data-tab="${tab}"]`).click();return b;}));
+  $('readiness').replaceChildren(...ready.map(([name,ok,tab],index)=>{const b=document.createElement('button');b.className=ok?'ready-step complete':'ready-step';b.setAttribute('aria-label',`${name}${ok?'已就绪':'待设置'}，点击打开${name}`);b.innerHTML=`<span class="ready-step-number">${index+1}</span><span>${name}</span><span class="ready-step-state">${ok?'已就绪':'待设置'}</span>`;b.onclick=()=>document.querySelector(`[data-tab="${tab}"]`).click();return b;}));
   $('runtimeSummary').textContent=`${config.active} · ${{trial:'人工确认',normal:'5秒确认',unattended:'无人值守'}[config.mode||'trial']}`;
   const snapshot=state.browserOpen&&!diagnosisError&&!completed?state.snapshot:null;
   $('browserStatus').textContent=state.browserOpen?'浏览器已连接':'未连接';$('browserStatus').classList.toggle('connected',!!state.browserOpen);

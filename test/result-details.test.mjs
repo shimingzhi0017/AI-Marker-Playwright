@@ -44,6 +44,23 @@ test('详情显示同总分不同分项、仲裁依据、旧记录缺失和文�
   await page.locator('.review-audit > summary').click();
   assert.match(await page.locator('#details').innerText(),/未保存逐项明细/);
   await page.evaluate(()=>{
+    const formulaLabel=String.raw`第（1）问：甲工程队报价的最小值第1点：正确列出\(y=3\left(150\times 2x+400\times\frac{12}{x}\right)+7200=900\left(x+\frac{16}{x}\right)+7200\)，并注明\(2\le x\le 6\)，得2分`;
+    const a={score:2,scoringDetails:[{label:formulaLabel,score:2}]};
+    const b={score:2,scoringDetails:[{label:formulaLabel,score:2}]};
+    window.renderResultDetails(document.querySelector('#details'),{result:{score:2,scoringDetails:[{label:formulaLabel,score:2}],dualEval:{result:'consensus',a,b}}},true);
+  });
+  await page.locator('.review-audit > summary').click();
+  assert.equal(await page.locator('tbody td:first-child math').count(),2);
+  assert.doesNotMatch(await page.locator('tbody td:first-child').first().innerText(),/\\frac|\\left|\\times/);
+  await page.evaluate(()=>{
+    const label=String.raw`第（1）问：正确列出 y=3\left(150\times 2x+400\times\frac{12}{x}\right)+7200=900\left(x+\frac{16}{x}\right)+7200，并注明 2\le x\le 6，得2分`;
+    const details={score:2,scoringDetails:[{label,score:2}]};
+    window.renderResultDetails(document.querySelector('#details'),{result:{...details,dualEval:{result:'consensus',a:details,b:details}}},true);
+  });
+  await page.locator('.review-audit > summary').click();
+  assert.ok(await page.locator('tbody td:first-child math').count()>=1);
+  assert.doesNotMatch(await page.locator('tbody td:first-child').first().innerText(),/\\frac|\\left|\\times/);
+  await page.evaluate(()=>{
     const a={score:0,scoringDetails:['①第（1）问','②第（2）问','③第（3）问A空箱质量','④第（3）问B空箱质量'].map(label=>({label,score:0}))};
     const b={score:2,scoringDetails:['（1）','（2）','（3）A空箱质量','（3）B空箱质量'].map((label,i)=>({label,score:i===0?2:0}))};
     window.renderResultDetails(document.querySelector('#details'),{result:{...a,dualEval:{result:'arbitration',a,b,verdict:a}}},true);
