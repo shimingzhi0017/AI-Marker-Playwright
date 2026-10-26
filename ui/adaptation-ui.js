@@ -41,18 +41,17 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
   deleteDialog.innerHTML='<h2>删除自定义网站</h2><p id="deleteWebsiteMessage"></p><form method="dialog" class="actions"><button value="cancel">取消</button><button value="delete" class="danger">确认删除</button></form>';
   document.body.append(deleteDialog);
   let templates=[];
+  const isDefaultZhixueGroup=g=>!!g&&!g.templateId&&/^(?:https?:\/\/)?(?:www\.)?zhixue\.com\//i.test(g.url)&&['默认页面配置','原有页面配置','智学网'].includes(g.name);
   function websiteOptions(){
     if(!getConfig())return;
     const select=$('adaptWebsite'), group=current();
+    const defaultZhixue=groups().find(isDefaultZhixueGroup);
     select.replaceChildren(
       Object.assign(document.createElement('option'),{value:'',textContent:'请选择阅卷网站'}),
-      ...templates.map(t=>Object.assign(document.createElement('option'),{value:'template:'+t.id,textContent:t.id==='zhixue'?'智学网（内置方案）':t.name})),
-      ...groups().filter(g=>!g.templateId).map(g=>{
-        const isDefaultZhixue=/^(?:https?:\/\/)?(?:www\.)?zhixue\.com\//i.test(g.url)&&['默认页面配置','原有页面配置','智学网'].includes(g.name);
-        return Object.assign(document.createElement('option'),{value:'group:'+g.id,textContent:isDefaultZhixue?'智学网（默认配置）':g.name+'（自定义）'});
-      })
+      ...templates.map(t=>Object.assign(document.createElement('option'),{value:t.id==='zhixue'?'zhixue':'template:'+t.id,textContent:t.id==='zhixue'?'智学网':t.name})),
+      ...groups().filter(g=>!g.templateId&&!isDefaultZhixueGroup(g)).map(g=>Object.assign(document.createElement('option'),{value:'group:'+g.id,textContent:g.name+'（自定义）'}))
     );
-    const preferred=getConfig()?.selectedAdaptationGroupId?(group?.templateId?'template:'+group.templateId:group?'group:'+group.id:''):'';
+    const preferred=getConfig()?.selectedAdaptationGroupId?(group?.templateId==='zhixue'||isDefaultZhixueGroup(group)?'zhixue':group?.templateId?'template:'+group.templateId:group?'group:'+group.id:''):'';
     select.value=[...select.options].some(option=>option.value===preferred)?preferred:'';
   }
   api('/api/adaptation',{action:'templates'}).then(result=>{templates=result.templates;websiteOptions();}).catch(error=>notice(error.message));
@@ -67,6 +66,13 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
   }
   $('adaptWebsite').onchange=()=>action(async()=>{
     const value=$('adaptWebsite').value;
+    if(value==='zhixue'){
+      const group=current(),legacy=groups().find(isDefaultZhixueGroup),builtin=groups().find(g=>g.templateId==='zhixue');
+      if(isDefaultZhixueGroup(group)){await selectWebsite({id:group.id});return;}
+      if(legacy){await selectWebsite({id:legacy.id});return;}
+      if(builtin){await selectWebsite({id:builtin.id});return;}
+      await selectWebsite({templateId:'zhixue'});return;
+    }
     if(value.startsWith('group:')){await selectWebsite({id:value.slice(6)});return;}
     if(!value.startsWith('template:'))return;
     const id=value.slice(9),existing=groups().find(g=>g.templateId===id);
@@ -84,6 +90,8 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
   function current(){return groups().find(g=>g.id===selected);}
   function render() {
     const list=groups();if(!list.some(g=>g.id===selected))selected=list.find(g=>g.id===getConfig()?.selectedAdaptationGroupId)?.id || list.find(g=>g.url===getConfig()?.browser?.url)?.id || list[0]?.id;
+    const defaultZhixue=list.find(isDefaultZhixueGroup);
+    if(current()?.templateId==='zhixue'&&defaultZhixue)selected=defaultZhixue.id;
     $('adaptGroup').replaceChildren(...list.map(g=>{const option=document.createElement('option');option.value=g.id;option.textContent=g.name;return option;}));$('adaptGroup').value=selected || '';
     websiteOptions();
     recorded=false;showRecording({candidates:[],message:'尚未录制提交接口；先检查页面并完成测试填分。'});
