@@ -4,7 +4,7 @@ export function buildAdaptationUI() {
   const heading=document.createElement('h2');heading.textContent='选择阅卷网站';card.prepend(heading);
   const root=document.createElement('div');root.id='adaptationWizard';root.innerHTML=`
   <p class="hint">选择内置网站方案即可带入整套适配规则；也可添加自定义方案，按步骤自行调试。</p>
-  <div class="controls"><label>网站方案<select id="adaptGroup"></select></label><button id="adaptTemplate">从内置方案添加</button><button id="adaptNew">新建自定义方案</button><button id="adaptDelete">删除方案</button></div>
+  <div class="controls"><label>网站方案<select id="adaptGroup"></select></label><button id="adaptTemplate">从内置方案添加</button><button id="adaptDelete">删除方案</button></div>
   <div class="form-grid"><label>分组名称<input id="adaptName"></label><label>匹配网址<input id="adaptUrl" placeholder="https://网站/阅卷路径"></label></div>
   <p class="hint">相同域名按路径及#路由前缀匹配，优先使用更具体的分组。考试参数不参与匹配。</p>
   <div class="actions"><button id="adaptSave" class="primary">保存分组</button><button id="adaptInspect">1. 检查页面</button></div>
@@ -21,7 +21,7 @@ export function buildAdaptationUI() {
   <details><summary>页面识别报告</summary><pre id="adaptReport"></pre></details></details>`;
   document.body.insertAdjacentHTML('beforeend','<dialog id="adaptTemplateDialog"><h2>添加网站适配方案</h2><label>网站<select id="adaptTemplateSelect"></select></label><p id="adaptTemplateStatus" class="hint"></p><label>实际阅卷网址<input id="adaptTemplateUrl" type="url" placeholder="填写网站或内网部署地址"></label><div class="footer-actions"><button id="adaptTemplateCancel">取消</button><button id="adaptTemplateAdd" class="primary">添加方案</button></div></dialog>');
   card.append(root);advanced.append(fields,document.getElementById('verified').closest('label'));card.append(advanced);
-  const settings=document.createElement('details');settings.id='adaptAdvancedSettings';settings.innerHTML='<summary>高级设置与自定义网站</summary>';
+  const settings=document.createElement('details');settings.id='adaptAdvancedSettings';settings.innerHTML='<summary>规则与调试设置</summary>';
   const websiteControls=document.createElement('div');websiteControls.className='controls';websiteControls.innerHTML='<label>选择阅卷网站<select id="adaptWebsite"><option value="">正在加载网站…</option></select></label><button id="adaptAddCustom">添加自定义网站</button>';
   const intro=root.querySelector('p.hint');intro.textContent='选择内置网站即可使用对应适配规则；未列出的网站可添加自定义方案。';
   websiteControls.append(document.getElementById('adaptDelete'));
@@ -81,7 +81,7 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
     if(!template.url){$('adaptTemplateSelect').replaceChildren(...templates.map(t=>Object.assign(document.createElement('option'),{value:t.id,textContent:t.name})));$('adaptTemplateSelect').value=id;templatePreview();$('adaptTemplateDialog').showModal();return;}
     await selectWebsite({templateId:id,url:template.url});
   });
-  $('adaptAddCustom').onclick=()=>{$('adaptNew').click();$('adaptAdvancedSettings').open=true;$('adaptCustomSteps').open=true;$('adaptName').focus();};
+  $('adaptAddCustom').onclick=()=>{selected=crypto.randomUUID();getConfig().adaptationGroups.push({id:selected,name:'新网址分组',url:'https://',platform:{verified:false}});render();$('adaptAdvancedSettings').open=true;$('adaptCustomSteps').open=true;$('adaptName').focus();markDirty('grading');};
   function templatePreview(){const template=templates.find(t=>t.id===$('adaptTemplateSelect').value);$('adaptTemplateStatus').textContent=template?.status || '';$('adaptTemplateUrl').value=template?.url || '';}
   $('adaptTemplate').onclick=()=>action(async()=>{templates=(await api('/api/adaptation',{action:'templates'})).templates;$('adaptTemplateSelect').replaceChildren(...templates.map(t=>{const o=document.createElement('option');o.value=t.id;o.textContent=t.name;return o;}));templatePreview();$('adaptTemplateDialog').showModal();});
   $('adaptTemplateSelect').onchange=templatePreview;$('adaptTemplateCancel').onclick=()=>$('adaptTemplateDialog').close();
@@ -107,7 +107,6 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
   async function save(){const group=read();try{if(!['http:','https:'].includes(new URL(group.url).protocol))throw Error();}catch{throw Error('请先填写完整的阅卷网址，例如 https://网站域名/阅卷路径');}const result=await api('/api/adaptation',{action:'save',group});getConfig().adaptationGroups=result.groups;getConfig().platform=result.groups.find(g=>g.id===group.id).platform;getConfig().browser.url=group.url;getConfig().selectedAdaptationGroupId=group.id;selected=group.id;render();return group;}
   const run=fn=>action(async()=>{try{await fn();}catch(error){$('adaptStatus').textContent=error.message;throw error;}});
   $('adaptGroup').onchange=()=>action(()=>selectWebsite({id:$('adaptGroup').value}));
-  $('adaptNew').onclick=()=>{selected=crypto.randomUUID();getConfig().adaptationGroups.push({id:selected,name:'新网址分组',url:'https://',platform:{verified:false}});render();$('adaptAdvancedSettings').open=true;markDirty('grading');};
   $('adaptDelete').onclick=()=>{
     const group=current();if(!group || group.templateId)return;
     const id=group.id;

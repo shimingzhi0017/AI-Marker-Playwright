@@ -306,8 +306,11 @@ test('调试网址同步、空录制提示和保存不清空阅卷方案草稿',
  await page.locator('[data-tab=presets]').click();await page.locator('#question').fill('未保存的题目草稿');
  await page.locator('[data-tab=grading]').click();await page.locator('#adaptAddCustom').click();
  assert.equal(await page.locator('#adaptVerify').isDisabled(),true);assert.match(await page.locator('#adaptCandidate').innerText(),/暂无提交接口/);
- await page.locator('#adaptUrl').fill('https://fixture.test/mark');
+ await page.locator('#adaptName').fill('测试阅卷网站');await page.locator('#adaptUrl').fill('https://fixture.test/mark');
  await page.locator('[data-platform="browser.url"]').evaluate(el=>{if(el.value!=='https://fixture.test/mark')throw Error('URL out of sync');});
  await page.locator('#adaptSave').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent==='网址分组已保存');
  await page.locator('[data-tab=presets]').click();assert.equal(await page.locator('#question').inputValue(),'未保存的题目草稿');
+ await page.reload();await page.locator('[data-tab=grading]').click();
+ assert.ok((await page.locator('#adaptGroup option').allTextContents()).includes('测试阅卷网站'));
+ assert.equal(await page.locator('#adaptName').inputValue(),'测试阅卷网站');
 });

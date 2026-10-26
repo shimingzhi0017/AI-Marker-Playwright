@@ -232,6 +232,7 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   await page.locator('#adaptTemplateAdd').click();await page.waitForFunction(()=>document.querySelector('#adaptStatus').textContent.includes('智学网内置方案'));
   assert.equal(await page.locator('#adaptCustomSteps').evaluate(el=>el.open),false);
   await page.locator('#adaptAddCustom').click();
-  assert.equal(await page.locator('#adaptNew').isVisible(),true);
+  assert.equal(await page.locator('#adaptNew').count(),0);
+  assert.equal(await page.locator('#adaptAdvancedSettings > summary').innerText(),'规则与调试设置');
   await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
 });
