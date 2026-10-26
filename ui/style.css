@@ -804,7 +804,6 @@ dialog .footer-actions{margin:0;padding:14px 20px;border-top:1px solid var(--lin
 #rubricScoreAllocation{min-height:150px}
 #rubricRequirements{min-height:170px}
 #rubricTeacherNotes{min-height:70px}
-#rubricPromptDetails{display:none}
 .rubric-subject-level{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .rubric-editable{float:right;color:var(--faint);font-size:9px;font-weight:400}
 .rubric-optional{color:var(--faint);font-size:9px;font-weight:400}
