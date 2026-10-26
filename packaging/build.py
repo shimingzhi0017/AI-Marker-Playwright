@@ -1,6 +1,7 @@
 """Build a clean Windows x64 self-extracting executable using installed runtimes."""
 from pathlib import Path
 import argparse, hashlib, json, shutil, struct, subprocess, zipfile, os
+from pathlib import PurePosixPath
 
 parser=argparse.ArgumentParser()
 parser.add_argument('--output',required=True)
@@ -16,7 +17,12 @@ zip_path=scratch/'payload.zip'
 with zipfile.ZipFile(zip_path,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as archive:
     def add_tree(source,prefix):
         for file in sorted(source.rglob('*')):
-            if file.is_file():archive.write(file,str(Path(prefix)/file.relative_to(source)))
+            if file.is_file():
+                # ZIP entry names must use forward slashes on every host. Using
+                # pathlib.Path here emits backslashes on Windows; .NET's ZIP
+                # extractor then fails to recreate the expected directory tree.
+                entry=PurePosixPath(prefix,*file.relative_to(source).parts).as_posix()
+                archive.write(file,entry)
     for directory in ['src','ui','vendor']:add_tree(repo/directory,directory)
     for name in ['config.example.json','package.json','package-lock.json','LICENSE','THIRD-PARTY-NOTICES.md','README.md','测试报告.md','验证与待办.md','接口迁移核查.md']:archive.write(repo/name,name)
     archive.write(repo/'packaging/verify.mjs','packaging/verify.mjs')
@@ -39,6 +45,11 @@ with zipfile.ZipFile(zip_path,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as archi
         if not directory.exists():raise RuntimeError('Missing browser: '+name)
         add_tree(directory,'browsers/'+name)
 payload_hash=hashlib.sha256(zip_path.read_bytes()).hexdigest()
+with zipfile.ZipFile(zip_path) as archive:
+    names=set(archive.namelist())
+    required={'src/server.mjs','packaging/verify.mjs','runtime/node.exe'}
+    missing=required-names
+    if missing:raise RuntimeError('Release payload is missing required files: '+', '.join(sorted(missing)))
 source=scratch/'Launcher.cs';source.write_text((repo/'packaging/Launcher.cs').read_text(encoding='utf-8').replace('__PAYLOAD_HASH__',payload_hash),encoding='utf-8-sig')
 stub=scratch/'Launcher.exe'
 compiler=Path(os.environ['WINDIR'])/'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
