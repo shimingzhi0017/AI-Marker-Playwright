@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.IO.Compression;
 using System.Diagnostics;
+using System.ComponentModel;
 using System.Security.Cryptography;
 using System.Windows.Forms;
 
@@ -52,10 +53,25 @@ class Launcher {
                 info.Arguments="\""+Path.Combine(install,"src","server.mjs")+"\"";
                 info.CreateNoWindow=true;
             }
-            using(var process=Process.Start(info)){process.WaitForExit();if(process.ExitCode!=0&&!verify)throw new Exception("程序未能正常启动，请重新启动或检查应用目录。");return process.ExitCode;}
+            Process process=null;
+            for(int attempt=1;attempt<=4;attempt++) {
+                try {process=Process.Start(info);break;}
+                catch(Win32Exception error) {
+                    // Windows Defender may briefly hold a freshly extracted executable while scanning it.
+                    if(error.NativeErrorCode!=5 || attempt==4)throw;
+                    System.Threading.Thread.Sleep(750*attempt);
+                }
+            }
+            using(process) {
+                process.WaitForExit();
+                if(process.ExitCode!=0&&!verify)throw new Exception("工作台进程已启动，但异常退出（退出代码 "+process.ExitCode+"）。请检查诊断文件。\n\n程序路径："+info.FileName);
+                return process.ExitCode;
+            }
         } catch(Exception error) {
-            try {Directory.CreateDirectory(errorDir);File.WriteAllText(Path.Combine(errorDir,"launcher-error.txt"),error.ToString());}catch{}
-            if(!verify)MessageBox.Show(error.Message+"\n\n诊断文件："+Path.Combine(errorDir,"launcher-error.txt"),"AI阅卷工作台",MessageBoxButtons.OK,MessageBoxIcon.Error);
+            string logPath=Path.Combine(errorDir,"launcher-error.txt");
+            string diagnostic="时间："+DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss zzz")+"\r\n启动器："+Application.ExecutablePath+"\r\n安装目录："+Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"AI-Marker-Playwright","app",PayloadHash.Substring(0,12))+"\r\n\r\n"+error.ToString();
+            try {Directory.CreateDirectory(errorDir);File.WriteAllText(logPath,diagnostic);}catch{}
+            if(!verify)MessageBox.Show(error.Message+"\n\n诊断文件："+logPath,"AI阅卷工作台",MessageBoxButtons.OK,MessageBoxIcon.Error);
             return 1;
         }
     }
