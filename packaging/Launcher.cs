@@ -53,6 +53,8 @@ class Launcher {
                 info.Arguments="\""+Path.Combine(install,"src","server.mjs")+"\"";
                 info.CreateNoWindow=true;
             }
+            info.RedirectStandardOutput=true;
+            info.RedirectStandardError=true;
             Process process=null;
             for(int attempt=1;attempt<=4;attempt++) {
                 try {process=Process.Start(info);break;}
@@ -63,8 +65,11 @@ class Launcher {
                 }
             }
             using(process) {
+                var stdoutTask=process.StandardOutput.ReadToEndAsync();
+                var stderrTask=process.StandardError.ReadToEndAsync();
                 process.WaitForExit();
-                if(process.ExitCode!=0&&!verify)throw new Exception("工作台进程已启动，但异常退出（退出代码 "+process.ExitCode+"）。请检查诊断文件。\n\n程序路径："+info.FileName);
+                string stdout=stdoutTask.Result,stderr=stderrTask.Result;
+                if(process.ExitCode!=0&&!verify)throw new Exception("工作台进程已启动，但异常退出（退出代码 "+process.ExitCode+"）。\n\n程序路径："+info.FileName+"\n\n错误输出："+((stderr+"\n"+stdout).Trim()));
                 return process.ExitCode;
             }
         } catch(Exception error) {

@@ -99,7 +99,6 @@ aside nav{display:grid;gap:2px;min-width:0}
 .global-nav{margin:0}
 .task-tabs{margin:0}
 .task-nav-label{display:block}
-aside:has(.task-tabs[hidden]) .task-nav-label{display:none}
 aside nav button{
   width:100%;min-height:38px;padding:8px 11px;
   border:1px solid transparent;border-radius:var(--radius-sm);
@@ -644,7 +643,7 @@ dialog .footer-actions{margin:0;padding:14px 20px;border-top:1px solid var(--lin
 .event-card h2{font-size:13px;margin-bottom:6px}
 
 /* ---------- 8. AI 接口 / 全局设置 ---------- */
-#models{max-width:1080px}
+#models{max-width:var(--content)}
 #models .grid{grid-template-columns:1fr}
 #models .card{padding:22px}
 #models .card>h2{font-size:18px;margin-bottom:12px}

@@ -52,7 +52,10 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   assert.match(JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets['我的方案'].question.images[0],/^data:image\/png;base64,/);
   await page.locator('[data-tab=models]').click();await page.locator('#editProvider').click();await page.locator('#endpoint').fill(fixtureUrl);await page.locator('#apiKey').fill('local-fixture');await page.locator('#saveProvider').click();
   await page.waitForFunction(()=>document.querySelector('#notice').textContent==='供应商已保存');
-  assert.equal(await page.locator('.task-tabs').isVisible(),false);
+  assert.equal(await page.locator('.task-tabs').isVisible(),true);
+  const alignment=await page.evaluate(()=>({header:document.querySelector('main>header').getBoundingClientRect(),content:document.querySelector('#models').getBoundingClientRect()}));
+  assert.ok(Math.abs(alignment.header.left-alignment.content.left)<1,'AI 接口页面应与顶部栏左边缘对齐');
+  if(process.env.MARKER_AI_SETTINGS_PREVIEW)await page.screenshot({path:process.env.MARKER_AI_SETTINGS_PREVIEW});
   await page.locator('#editProvider').click();
   assert.ok(await page.locator('#endpoint').isVisible());
   await page.locator('#endpoint').fill(fixtureUrl+'/edited');

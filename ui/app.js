@@ -193,7 +193,7 @@ document.querySelectorAll('[data-provider-template]').forEach(button=>button.onc
   config.providers[name]=structuredClone(providerTemplates[base]);await save('AI接口模板已添加，请填写密钥','models');
   $('providerTemplateDialog').close();renderSettings();$('providerSelect').value=name;renderProvider();$('editProvider').click();
 }));
-async function showTab(tab){currentTab=tab;document.querySelector('.task-tabs').hidden=currentTab==='models';document.querySelectorAll('.tab').forEach(el=>el.hidden=el.id!==currentTab);document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===currentTab));$('title').textContent=labels[currentTab];$('eyebrow').textContent=`工作台 / ${labels[currentTab]}`;if(currentTab==='history')await renderHistory();}
+async function showTab(tab){currentTab=tab;document.querySelector('.task-tabs').hidden=false;document.querySelectorAll('.tab').forEach(el=>el.hidden=el.id!==currentTab);document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===currentTab));$('title').textContent=labels[currentTab];$('eyebrow').textContent=`工作台 / ${labels[currentTab]}`;if(currentTab==='history')await renderHistory();}
 document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>{if(busy){pendingTab=button.dataset.tab;return;}action(()=>showTab(button.dataset.tab));});
 const handlers={
   open:async()=>{await api('/api/open',{});pageCheckError='';},

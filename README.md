@@ -1,10 +1,10 @@
 # AI阅卷工作台
 
-面向教师的本地可视化 AI 阅卷工作台。当前主版本：**v2026.10.28**。
+面向教师的本地可视化 AI 阅卷工作台。当前主版本：**v2026.10.29**。
 
 从“开始阅卷”主流程出发，完成评分方案、模型配置、页面检查、自动评分、人工确认、历史追踪与结果导出。
 
-[下载 Windows 单文件版](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/latest/download/AI-Marker-Playwright.exe) · [下载便携版 ZIP](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/latest/download/AI-Marker-Playwright-portable.zip) · [查看 v2026.10.28 发布说明](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/tag/v2026.10.28)
+[下载 Windows 单文件版](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/latest/download/AI-Marker-Playwright.exe) · [下载便携版 ZIP](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/latest/download/AI-Marker-Playwright-portable.zip) · [查看 v2026.10.29 发布说明](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/tag/v2026.10.29)
 
 ## 当前版本亮点
 
