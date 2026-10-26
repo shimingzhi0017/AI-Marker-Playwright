@@ -45,7 +45,8 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
     if(!getConfig())return;
     const select=$('adaptWebsite'), group=current();
     select.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'请选择阅卷网站'}),...templates.map(t=>Object.assign(document.createElement('option'),{value:'template:'+t.id,textContent:t.name})),...groups().filter(g=>!g.templateId).map(g=>Object.assign(document.createElement('option'),{value:'group:'+g.id,textContent:g.name+'（自定义）'})));
-    select.value=group?.templateId?'template:'+group.templateId:group?'group:'+group.id:'';
+    const preferred=getConfig()?.selectedAdaptationGroupId?(group?.templateId?'template:'+group.templateId:group?'group:'+group.id:''):'';
+    select.value=[...select.options].some(option=>option.value===preferred)?preferred:'';
   }
   api('/api/adaptation',{action:'templates'}).then(result=>{templates=result.templates;websiteOptions();}).catch(error=>notice(error.message));
   async function selectWebsite(input){
