@@ -1,10 +1,10 @@
 # AI阅卷工作台
 
-面向教师的本地可视化 AI 阅卷工作台。当前主版本：**v2026.10.29**。
+面向教师的本地可视化 AI 阅卷工作台。当前主版本：**v2026.10.30**。
 
 从“开始阅卷”主流程出发，完成评分方案、模型配置、页面检查、自动评分、人工确认、历史追踪与结果导出。
 
-[下载 Windows 单文件版](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/latest/download/AI-Marker-Playwright.exe) · [下载便携版 ZIP](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/latest/download/AI-Marker-Playwright-portable.zip) · [查看 v2026.10.29 发布说明](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/tag/v2026.10.29)
+[下载 Windows 便携版 ZIP](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/latest/download/AI-Marker-Playwright-portable.zip) · [查看 v2026.10.30 发布说明](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/tag/v2026.10.30)
 
 ## 当前版本亮点
 
@@ -13,11 +13,11 @@
 - **单双评与仲裁**：支持主评、复评、客观题逐项比对、主观题分差判断及仲裁。
 - **人工确认**：评分结果、识别内容和评分理由可在提交前检查与修改。
 - **任务与历史**：支持独立并发任务、暂停、历史详情以及 JSON、CSV、带图 HTML 导出。
-- **Windows 发布包**：单文件 EXE 和便携 ZIP 均内置运行所需组件，首次启动会完成环境检查。
+- **Windows 便携版**：ZIP 内置运行所需组件，解压后双击“启动工作台.cmd”即可使用，无需单独安装 Node.js。
 
 ## 快速开始
 
-1. 下载 EXE 或 ZIP。ZIP 请先“全部解压”到普通文件夹。
+1. 下载便携版 ZIP，并先“全部解压”到普通文件夹。
 2. 启动工作台，配置 AI 接口和阅卷方案。
 3. 打开专用阅卷浏览器，登录并进入阅卷页面。
 4. 点击“检查页面”，确认识别结果后开始阅卷。
