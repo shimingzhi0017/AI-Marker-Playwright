@@ -393,7 +393,7 @@ dialog .footer-actions{margin:0;padding:14px 20px;border-top:1px solid var(--lin
 #largeImage{display:block;max-width:100%;max-height:calc(94vh - 60px);margin:0 auto;object-fit:contain}
 
 /* ---------- 5. 阅卷方案 ---------- */
-#presets{max-width:1200px}
+#presets{max-width:var(--content)}
 #presets .preset-shell{padding:0;border:0;border-radius:0;background:transparent;margin:0}
 #presets .preset-shell>.card-heading{align-items:flex-start;margin:0 0 6px;padding:0}
 #presets .preset-shell>.card-heading h2{font-size:16px;font-weight:650;letter-spacing:0;color:var(--ink-2)}
@@ -463,7 +463,7 @@ dialog .footer-actions{margin:0;padding:14px 20px;border-top:1px solid var(--lin
 #presets #nextScoringSettings{min-width:132px}
 
 /* ---------- 6. 评分设置 ---------- */
-#workflows{max-width:1040px}
+#workflows{max-width:var(--content)}
 #workflows .card{padding:22px}
 #workflows .card>h2{font-size:16px;font-weight:650;color:var(--ink-2);margin-bottom:14px}
 .workflow-status{
@@ -500,7 +500,7 @@ dialog .footer-actions{margin:0;padding:14px 20px;border-top:1px solid var(--lin
 #nextStartGrading{min-width:132px}
 
 /* ---------- 7. 开始阅卷 ---------- */
-#grading{max-width:1280px}
+#grading{max-width:var(--content)}
 #grading .launch-console{padding:0;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);overflow:hidden;box-shadow:none}
 .launch-checklist{padding:18px 22px;border-bottom:1px solid var(--line);background:var(--surface)}
 .launch-checklist .section-heading{margin-bottom:10px}
@@ -685,7 +685,7 @@ dialog .footer-actions{margin:0;padding:14px 20px;border-top:1px solid var(--lin
 #providerDialog #modelsEndpoint{font-size:12px}
 
 /* ---------- 9. 历史记录 ---------- */
-#history{max-width:1280px}
+#history{max-width:var(--content)}
 #history>.card{padding:20px 22px}
 #history .card-heading{align-items:flex-start;margin-bottom:14px}
 #history .card-heading h2{font-size:16px;font-weight:650;color:var(--ink-2)}
