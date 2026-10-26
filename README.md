@@ -1,16 +1,16 @@
 # AI-Marker-Playwright · AI阅卷工作台
 
-面向教师的本地可视化 AI 阅卷软件，当前推荐下载 `v2026.10.19-beta1` Beta 版。默认进入“开始阅卷”主流程，需要时再返回“阅卷方案”和“评分设置”，支持模型评分、双评仲裁、人工确认、连续阅卷、历史导出与独立并发任务。
+面向教师的本地可视化 AI 阅卷软件，当前主版本为 `v2026.10.26`。默认进入“开始阅卷”主流程，需要时再返回“阅卷方案”和“评分设置”，支持模型评分、双评仲裁、人工确认、连续阅卷、历史导出与独立并发任务。
 
-[下载 Windows Beta 版](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/download/v2026.10.19-beta1/AI-Marker-Playwright-beta.exe) · [Beta 发布说明](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/tag/v2026.10.19-beta1) · [测试报告](测试报告.md) · [验证与待办](验证与待办.md)
+[下载 Windows 单文件版](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/download/v2026.10.26/AI-Marker-Playwright.exe) · [下载便携 ZIP](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/download/v2026.10.26/AI-Marker-Playwright-portable.zip) · [正式发布说明](https://github.com/shimingzhi0017/AI-Marker-Playwright/releases/tag/v2026.10.26) · [测试报告](测试报告.md) · [验证与待办](验证与待办.md)
 
 ## 下载与使用
 
-> 当前首页推荐下载的是 `v2026.10.19-beta1` Beta 版。旧版 `v2026.10.12` 已不再推荐使用；如果浏览器仍显示旧下载地址，请刷新 GitHub 首页缓存后再点击上面的直链。
+> 当前首页推荐下载的是 `v2026.10.26`。旧版 `v2026.10.12` 和 Beta 标记版本已不再作为主版本推荐。
 
 | 版本 | 使用方式 |
 | --- | --- |
-| 单文件 EXE | 在发布页下载 EXE，双击启动；当前构建约250 MB（随 Chromium 版本变化），首次启动等待解压，内置 Node.js、Chromium 及依赖 |
+| 单文件 EXE | 下载后双击启动；当前构建约255 MB（随 Chromium 版本变化），首次启动等待解压，内置 Node.js、Chromium 及依赖 |
 | 便携 ZIP | 下载后全部解压，双击“启动工作台.cmd”；无需另装Node.js，内置浏览器受限时尝试本机Edge |
 | 源码版 | 适合开发及修改，按下方“源码安装环境”准备Node.js并启动 |
 
