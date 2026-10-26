@@ -9,7 +9,7 @@ test('断线有限重试、持续失败诊断、鉴权不重试及暂停取消',
     calls++;
     if(mode==='reset'||mode==='once'&&calls===1){req.socket.destroy();return;}
     if(mode==='auth'){res.writeHead(401);res.end('{}');return;}
-    if(mode==='slow'){setTimeout(()=>{if(!res.destroyed)res.end('{}');},100);return;}
+    if(mode==='slow'){setTimeout(()=>{if(!res.destroyed)res.end('{}');},1500);return;}
     res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:'{"score":2}'}}]}));
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)));
@@ -20,7 +20,7 @@ test('断线有限重试、持续失败诊断、鉴权不重试及暂停取消',
   calls=0;await assert.rejects(call(undefined,{remaining:1}),/网络连接/);assert.equal(calls,1);
   mode='auth';calls=0;await assert.rejects(call(),/HTTP 401/);assert.equal(calls,1);
   mode='reset';calls=0;const controller=new AbortController();const pending=call(controller.signal);setTimeout(()=>controller.abort(Error('用户暂停')),100);await assert.rejects(pending,/用户暂停/);assert.equal(calls,1);
-  mode='slow';calls=0;await assert.rejects(requestModel({...provider,timeoutMs:100},'fixture','prompt',[]),/请求超时/);assert.equal(calls,1);
+  mode='slow';calls=0;await assert.rejects(requestModel({...provider,timeoutMs:1000},'fixture','prompt',[]),/请求超时/);assert.equal(calls,1);
 });
 
 test('无效JSON和合计冲突重试时发送针对性纠错提示',async t=>{
