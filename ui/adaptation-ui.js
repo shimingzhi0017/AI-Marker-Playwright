@@ -44,7 +44,14 @@ export function createAdaptationUI({getConfig,api,action,notice,refresh,markDirt
   function websiteOptions(){
     if(!getConfig())return;
     const select=$('adaptWebsite'), group=current();
-    select.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'请选择阅卷网站'}),...templates.map(t=>Object.assign(document.createElement('option'),{value:'template:'+t.id,textContent:t.name})),...groups().filter(g=>!g.templateId).map(g=>Object.assign(document.createElement('option'),{value:'group:'+g.id,textContent:g.name+'（自定义）'})));
+    select.replaceChildren(
+      Object.assign(document.createElement('option'),{value:'',textContent:'请选择阅卷网站'}),
+      ...templates.map(t=>Object.assign(document.createElement('option'),{value:'template:'+t.id,textContent:t.id==='zhixue'?'智学网（内置方案）':t.name})),
+      ...groups().filter(g=>!g.templateId).map(g=>{
+        const isDefaultZhixue=/^(?:https?:\/\/)?(?:www\.)?zhixue\.com\//i.test(g.url)&&['默认页面配置','原有页面配置','智学网'].includes(g.name);
+        return Object.assign(document.createElement('option'),{value:'group:'+g.id,textContent:isDefaultZhixue?'智学网（默认配置）':g.name+'（自定义）'});
+      })
+    );
     const preferred=getConfig()?.selectedAdaptationGroupId?(group?.templateId?'template:'+group.templateId:group?'group:'+group.id:''):'';
     select.value=[...select.options].some(option=>option.value===preferred)?preferred:'';
   }

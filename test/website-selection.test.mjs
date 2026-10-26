@@ -23,7 +23,8 @@ test('网站选择保存网址、切换已打开浏览器、保留草稿并在�
   cfg.adaptationGroups=[
     {id:'first',name:'网站一',url:'https://fixture.test/first',platform:{scoreSelector:'#first',verified:false}},
     {id:'second',name:'网站二',url:'https://fixture.test/second',platform:{scoreSelector:'#second',verified:false}},
-    {id:'builtin',name:'智学网',templateId:'zhixue',url:'https://www.zhixue.com/',platform:{verified:false}}
+    {id:'builtin',name:'智学网',templateId:'zhixue',url:'https://www.zhixue.com/',platform:{verified:false}},
+    {id:'legacy-default',name:'默认页面配置',url:'https://www.zhixue.com/',platform:{taskIdSelector:'#legacy-topic',verified:false}}
   ];
   fs.writeFileSync(path.join(root,'config.json'),JSON.stringify(cfg));
   const browser=await launchBrowser({headless:true});let gradingPage,context;
@@ -37,6 +38,8 @@ test('网站选择保存网址、切换已打开浏览器、保留草稿并在�
   await page.goto(app.url);await page.waitForFunction(()=>document.querySelector('#adaptWebsite').options.length>20);
   assert.equal(await page.locator('#adaptWebsite').inputValue(),'');
   assert.equal(await page.locator('#adaptWebsite option').first().innerText(),'请选择阅卷网站');
+  assert.equal(await page.locator('#adaptWebsite option[value="template:zhixue"]').innerText(),'智学网（内置方案）');
+  assert.equal(await page.locator('#adaptWebsite option[value="group:legacy-default"]').innerText(),'智学网（默认配置）');
   assert.ok(await page.locator('#adaptGroup').count());
   await page.locator('[data-tab=presets]').click();
   await page.locator('#question').fill('未保存的题目草稿');
