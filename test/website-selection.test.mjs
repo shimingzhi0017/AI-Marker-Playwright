@@ -35,6 +35,7 @@ test('网站选择保存网址、切换已打开浏览器、保留草稿并在�
   const page=await browser.newPage({viewport:{width:1440,height:950}});page.setDefaultTimeout(6000);
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto(app.url);await page.waitForFunction(()=>document.querySelector('#adaptWebsite').options.length>20);
+  await page.locator('[data-tab=presets]').click();
   await page.locator('#question').fill('未保存的题目草稿');
   await page.locator('[data-tab=grading]').click();
   await page.locator('[name=runMode][value=normal]').check();

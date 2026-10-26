@@ -250,7 +250,7 @@ export function buildLayout() {
   for(const empty of toolbar.querySelectorAll(':scope > .actions,:scope > .summary'))if(!empty.children.length)empty.remove();
   const nextSettings=document.createElement('button');nextSettings.id='nextScoringSettings';nextSettings.textContent='下一步：评分设置';nextSettings.onclick=()=>document.querySelector('[data-tab="workflows"]').click();$('savePreset').after(nextSettings);
   const nextGrading=document.createElement('button');nextGrading.id='nextStartGrading';nextGrading.textContent='下一步：开始阅卷';nextGrading.onclick=()=>document.querySelector('[data-tab="grading"]').click();$('saveWorkflow').after(nextGrading);
-  document.querySelectorAll('.tab').forEach(el=>el.hidden=el.id!=='presets');document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab==='presets'));$('title').textContent='阅卷方案';
+  document.querySelectorAll('.tab').forEach(el=>el.hidden=el.id!=='grading');document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab==='grading'));$('title').textContent='开始阅卷';
   const backupMenu=document.createElement('details');backupMenu.className='export-menu';backupMenu.innerHTML='<summary>配置备份</summary>';
   const backupOptions=document.createElement('div');backupOptions.className='export-options';
   const importControl=$('importFile').closest('label');importControl.before(backupMenu);backupOptions.append(importControl,$('exportConfig'));backupMenu.append(backupOptions);

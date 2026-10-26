@@ -33,7 +33,9 @@ test('可视化配置、评分改分、填分、暂停、历史和来源校验',
   assert.equal(await page.title(),'阅卷工作台');
   assert.equal((await page.request.get(app.url+'/app.js')).headers()['cache-control'],'no-store');
   const historyModule=await page.request.get(app.url+'/history.js');assert.equal(historyModule.status(),200);assert.equal(historyModule.headers()['cache-control'],'no-store');
-  assert.ok(await page.locator('#presets').isVisible());
+  assert.ok(await page.locator('#grading').isVisible());
+  assert.ok(await page.locator('#presets').isHidden());
+  assert.equal(await page.locator('[data-tab=grading]').getAttribute('class'),'active');
   await page.locator('[data-tab=presets]').click();
   page.once('dialog',dialog=>dialog.accept());
   await page.locator('#importFile').setInputFiles({name:'fixture-config.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({presets:{active:'我的方案',list:{'我的方案':{answer:{text:'',images:[]},rubric:'',scoring:{maxScore:0,units:[],items:[{id:'old-item',label:'旧题评分点',maxScore:4}]},workflowId:'我的工作流'}}},providers:{providers:{'个人接口':{protocol:'chat',endpoint:'',models:[]}}},workflows:{workflows:{'我的工作流':{id:'我的工作流',model:{provider:'个人接口',model:''}}}}}))});

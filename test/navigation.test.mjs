@@ -13,6 +13,7 @@ test('保存等待中仍可选择顶部栏目，操作完成后应用最后一�
   t.after(async()=>{released.resolve();await browser.close();await app.close();fs.rmSync(root,{recursive:true,force:true});});
   const page=await browser.newPage();
   await page.goto(app.url);await page.waitForFunction(()=>document.querySelector('#phase').textContent==='待开始');
+  await page.locator('[data-tab=presets]').click();
   await page.route('**/api/settings',async route=>{
     if(route.request().method()==='POST'){entered.resolve();await released.promise;}
     await route.continue();

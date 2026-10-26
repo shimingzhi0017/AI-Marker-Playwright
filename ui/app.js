@@ -6,7 +6,7 @@ import {renderResultDetails} from './result-details.js';
 import {buildLayout,createEnhancements} from './enhancements.js';
 buildLayout();buildAdaptationUI();
 const $ = id => document.getElementById(id);
-let config, state, selectedRecord, displayedRecord, currentTab = 'presets', busy = false;
+let config, state, selectedRecord, displayedRecord, currentTab = 'grading', busy = false;
 let historyPage = 1;
 let workspace = 'default', workspaces = [], switching = false, pendingWorkspace = null, pendingTab = null;
 let attentionInitialized = false, seenAttention = new Set(), alertAudio;
