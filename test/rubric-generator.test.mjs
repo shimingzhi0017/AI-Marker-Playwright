@@ -39,7 +39,7 @@ test('教师给分方式独立于双评题型，特殊要求和评分边界进�
     assert.ok(prompt.includes(method.text));assert.match(prompt,/单位缺失只扣一次/);assert.match(prompt,/同一错误不得重复扣分/);
     assert.match(prompt,/不得猜补/);assert.match(prompt,/具体题型根据本题设问确定/);assert.ok(result.rubric.includes(method.label));
     if(scoringMethod==='answers')assert.match(prompt,/不拆过程分/);
-    if(scoringMethod==='points')assert.match(prompt,/客观选择或填空仍正确满分、错误零分/);
+    if(scoringMethod==='points')assert.match(prompt,/客观选择或填空仍按独立答案项判定，正确满分、错误零分/);
     if(scoringMethod==='holistic')assert.match(prompt,/分数边界及档内给分依据/);
     await generateRubric(settings,{...input,scoringMethod,questionType:'subjective'},async(_provider,_model,text)=>{assert.equal(text,prompt);return output;});
   }

@@ -9,10 +9,31 @@ const $ = id => document.getElementById(id);
 let config, state, selectedRecord, displayedRecord, currentTab = 'grading', busy = false;
 let historyPage = 1;
 let workspace = 'default', workspaces = [], switching = false, pendingWorkspace = null, pendingTab = null;
+let pendingContinuation=null,savingContinuation=null;
 let attentionInitialized = false, seenAttention = new Set(), alertAudio;
 const dirty=new Set();
+const dirtyRevisions=new Map();
+const saveSections = {
+  presets: {statusId:'presetSaveStatus', savedMessage:'方案已保存'},
+  workflows: {statusId:'workflowSaveStatus', savedMessage:'评分设置已保存'}
+};
+const continuations = {
+  nextScoringSettings: {section:'presets', saveHandler:'savePreset', tab:'workflows'},
+  nextStartGrading: {section:'workflows', saveHandler:'saveWorkflow', tab:'grading'}
+};
+const continuationControls = new Set(Object.entries(continuations).flatMap(([id, step]) => [id, step.saveHandler]));
+function setSaveStatus(section, message) {
+  const status = $(saveSections[section]?.statusId);
+  if (status) status.textContent = message;
+}
 let checkingPage=false, pageCheckError='';
-function markDirty(section){dirty.add(section);$('dirtyBadge').hidden=false;if(section==='grading')updateRuntimeControls();}
+function markDirty(section) {
+  dirty.add(section);
+  dirtyRevisions.set(section, (dirtyRevisions.get(section) || 0) + 1);
+  $('dirtyBadge').hidden = false;
+  setSaveStatus(section, '有未保存修改，点击下一步将自动保存');
+  if (section === 'grading') updateRuntimeControls();
+}
 document.querySelectorAll('#presets,#models,#workflows,#providerDialog,.runtime-settings').forEach(section=>section.addEventListener('input',e=>{if(!['presetSelect','providerSelect','workflowSelect','importFile'].includes(e.target.id))markDirty(section.id==='providerDialog'?'models':section.id||'grading');}));
 window.addEventListener('beforeunload',e=>{if(dirty.size){e.preventDefault();e.returnValue='';}});
 const scoped = (url, id = workspace) => id === 'default' ? url : url + (url.includes('?') ? '&' : '?') + 'workspace=' + encodeURIComponent(id);
@@ -31,7 +52,41 @@ function notice(message, success = false) {
   }
 }
 async function api(url, data, id = workspace) { const response = await fetch(url === '/api/workspaces' ? url : scoped(url,id), data === undefined ? {} : { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) }); const value = await response.json(); if (!response.ok) throw Error(value.error || '请求失败'); return value; }
-async function action(fn) { if (busy) return; busy = true; try { await fn(); } catch (e) { notice(e.message); } finally { busy = false; if(pendingWorkspace!==null){const next=pendingWorkspace;pendingWorkspace=null;if(next!==workspace || currentTab==='models'){await action(()=>switchWorkspace(next));return;}} if(pendingTab!==null){const next=pendingTab;pendingTab=null;await action(()=>showTab(next));return;} await poll(); } }
+async function action(fn) {
+  if (busy) return;
+  busy = true;
+  try {
+    await fn();
+  } catch (error) {
+    if (pendingContinuation) {
+      setSaveStatus(continuations[pendingContinuation.id].section, `当前操作失败：${error.message}；尚未自动保存，请重试`);
+      pendingContinuation = null;
+    }
+    notice(error.message);
+  } finally {
+    busy = false;
+    await drainPendingActions();
+  }
+}
+async function drainPendingActions() {
+  // Save the current task before processing queued workspace or tab changes.
+  if (pendingContinuation !== null) {
+    const next = pendingContinuation;
+    pendingContinuation = null;
+    if (next.workspace === workspace) return action(handlers[next.id]);
+  }
+  if (pendingWorkspace !== null) {
+    const next = pendingWorkspace;
+    pendingWorkspace = null;
+    if (next !== workspace || currentTab === 'models') return action(() => switchWorkspace(next));
+  }
+  if (pendingTab !== null) {
+    const next = pendingTab;
+    pendingTab = null;
+    return action(() => showTab(next));
+  }
+  await poll();
+}
 function options(element, values, selected) { const target=values.includes(selected)?selected:values.includes(element.value)?element.value:values[0];if(element.options.length===values.length && [...element.options].map(o=>o.value).join('\u0000')===values.join('\u0000')){if(element.value!==target&&document.activeElement!==element)element.value=target;return;} element.replaceChildren(...values.map(value => { const option = document.createElement('option'); option.value = value; option.textContent = value; return option; })); if(target!==undefined)element.value=target; }
 function textField(value) { return typeof value === 'string' ? value : value?.text || ''; }
 function updateField(value, text) { return value && typeof value === 'object' ? {...value,text} : text; }
@@ -64,7 +119,18 @@ function renderWorkflow() {
   $('dual').checked=!!w.dualEval?.enabled;$('questionType').value=w.dualEval?.questionType || 'subjective';$('threshold').value=w.dualEval?.threshold ?? 2;enhancements.workflow();
 }
 function renderCatalog(prefix) { const valid=!!config.providers[$(prefix+'Provider').value];$(prefix+'Model').disabled=!valid;$(prefix+'ChooseModel').disabled=!valid;options($(prefix+'Models'),config.providers[$(prefix+'Provider').value]?.models || []); }
-async function save(message, section=currentTab) { config.taskScopedConfig=true; if(section==='models') await api('/api/providers',{providers:config.providers});else await api('/api/settings',config);dirty.delete(section);$('dirtyBadge').hidden=!dirty.size;updateRuntimeControls();notice(message,true); }
+async function save(message, section=currentTab) {
+  config.taskScopedConfig = true;
+  const revision = dirtyRevisions.get(section) || 0;
+  if (section === 'models') await api('/api/providers', {providers:config.providers});
+  else await api('/api/settings', config);
+  // Only acknowledge the revision sent, not edits made during the request.
+  if (revision === (dirtyRevisions.get(section) || 0)) dirty.delete(section);
+  $('dirtyBadge').hidden = !dirty.size;
+  updateRuntimeControls();
+  setSaveStatus(section, dirty.has(section) ? '仍有新修改待保存' : saveSections[section]?.savedMessage);
+  notice(dirty.has(section) ? '上一次修改已保存，仍有新修改待保存' : message, true);
+}
 async function newName(title, group, create) { $('nameTitle').textContent = title; $('newName').value = ''; $('nameDialog').showModal(); const outcome = await new Promise(resolve => $('nameDialog').addEventListener('close',()=>resolve($('nameDialog').returnValue),{once:true})); if(outcome !== 'ok') return; const name = $('newName').value.trim(); if(!name || ['__proto__','constructor','prototype'].includes(name) || Object.hasOwn(config[group],name)) throw Error('名称不能为空或重复'); config[group][name] = create(); await save('已创建',group==='providers'?'models':group==='workflows'?'workflows':currentTab); renderSettings(); const select = {presets:'presetSelect',providers:'providerSelect',workflows:'workflowSelect'}[group]; $(select).value = name; ({presets:renderPreset,providers:renderProvider,workflows:renderWorkflow}[group])(); }
 function renderImages(target, record) { target.replaceChildren(); if (!record?.imageFiles?.length) { const el = document.createElement('div'); el.className='empty'; el.textContent='暂无存档图片'; target.append(el); return; } record.imageFiles.forEach((_,index) => { const img=document.createElement('img'); img.src=scoped(`/api/image?id=${encodeURIComponent(record.id)}&index=${index}`); img.alt=`答卷图片 ${index+1}`; target.append(img); }); }
 const historyUI = createHistoryUI({$: id => $(id), api, states, getPage: () => historyPage, setPage: value => { historyPage = value; }, setSelectedRecord: value => { selectedRecord = value; }, renderImages});
@@ -111,7 +177,7 @@ function renderState() {
   $('launchStatus').textContent=state.running?'正在阅卷，可随时暂停。':state.phase==='阅卷完成'?'本题阅卷已结束。':!ready.every(([,ok])=>ok)?`请先完成${ready.filter(([,ok])=>!ok).map(([name])=>name).join('、')}。`:!state.browserOpen?'下一步：打开阅卷浏览器。':!pageReady?'下一步：检查阅卷页面并完成识别。':'准备就绪，可以开始阅卷。';
   $('start').disabled=state.running || state.starting || checkingPage || !pageReady || !ready.every(([,ok])=>ok); $('pause').disabled=!(state.running || state.starting); $('diagnose').disabled=state.running || state.starting || checkingPage || !state.browserOpen; $('open').disabled=state.running || state.starting;
   $('diagnose').textContent=checkingPage?'检查中…':'检查页面';updateRuntimeControls();
-  for(const id of ['saveMode','savePreset','saveProvider','saveWorkflow','savePlatform','fetchModels','addPreset','addProvider','addProviderTemplate','addWorkflow','bind','deletePreset','deleteProvider','deleteWorkflow','copyPreset','detectUnits','clearBlank','addModelId']) $(id).disabled=state.running||state.starting;
+  for(const id of ['saveMode','savePreset','nextScoringSettings','nextStartGrading','saveProvider','saveWorkflow','savePlatform','fetchModels','addPreset','addProvider','addProviderTemplate','addWorkflow','bind','deletePreset','deleteProvider','deleteWorkflow','copyPreset','detectUnits','clearBlank','addModelId']) $(id).disabled=state.running||state.starting||!!savingContinuation&&continuationControls.has(id);
   $('importFile').disabled=state.running||state.starting;
   $('deleteWorkspace').disabled=state.running||state.starting;
   $('deleteWorkspace').title=state.running||state.starting?'请先暂停此任务':'从任务列表移除，资料归档保留';
@@ -195,7 +261,28 @@ document.querySelectorAll('[data-provider-template]').forEach(button=>button.onc
 }));
 async function showTab(tab){currentTab=tab;document.querySelector('.task-tabs').hidden=false;document.querySelectorAll('.tab').forEach(el=>el.hidden=el.id!==currentTab);document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===currentTab));$('title').textContent=labels[currentTab];$('eyebrow').textContent=`工作台 / ${labels[currentTab]}`;if(currentTab==='history')await renderHistory();}
 document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>{if(busy){pendingTab=button.dataset.tab;return;}action(()=>showTab(button.dataset.tab));});
+async function saveAndContinue(id) {
+  const {section, saveHandler, tab} = continuations[id];
+  const button=$(id),label=button.textContent;
+  savingContinuation=id;button.textContent='正在保存…';setSaveStatus(section,'正在保存，请稍候…');renderState();
+  try {
+    // Edits made while a request is pending must also reach disk before leaving.
+    do {await handlers[saveHandler]();} while(dirty.has(section));
+    await showTab(tab);
+  } catch(error) {setSaveStatus(section,`保存失败：${error.message}；修改已保留，请重试`);throw error;}
+  finally {savingContinuation=null;button.textContent=label;renderState();}
+}
+function requestContinuation(id) {
+  if(busy) {
+    if(savingContinuation===id)return;
+    pendingContinuation={id,workspace};
+    setSaveStatus(continuations[id].section,'正在完成当前操作，随后自动保存并进入下一步');
+    return;
+  }
+  return action(handlers[id]);
+}
 const handlers={
+  ...Object.fromEntries(Object.keys(continuations).map(id => [id, () => saveAndContinue(id)])),
   open:async()=>{await api('/api/open',{});pageCheckError='';},
   diagnose:async()=>{checkingPage=true;pageCheckError='';renderState();try{await api('/api/diagnose',{});}catch(error){pageCheckError=error.message;}finally{checkingPage=false;}},
   start:async()=>{if([...dirty].some(section=>section!=='grading'))throw Error('有未保存的配置，请先保存对应页面再开始阅卷');await saveRuntime(false);return api('/api/start',{});},pause:()=>api('/api/pause',{}),
@@ -221,7 +308,7 @@ const handlers={
     } finally {button.disabled=false;if(!button.textContent.startsWith('已保存 '))button.textContent=label;}
   }
 };
-for(const [id,fn] of Object.entries(handlers)) $(id).onclick=()=>action(fn);
+for(const [id,fn] of Object.entries(handlers)) $(id).onclick=()=>Object.hasOwn(continuations,id)?requestContinuation(id):action(fn);
 for(const [id,decision] of [['fill','fill'],['submit','submit'],['stopReview','stop']]) $(id).onclick=()=>action(async()=>{const scores=[...document.querySelectorAll('[data-score]')].map(input=>input.value.trim()===''?NaN:Number(input.value));if(decision!=='stop'&&scores.some(s=>!Number.isFinite(s)))throw Error('请填写有效分数，不能留空');await api('/api/review',{decision,...(decision!=='stop'?{scores,comment:$('comment').value}:{}),recordId:state.record?.id,reason:$('correction').value});});
 for(const [id,outcome] of [['resolveYes','submitted'],['resolveNo','not-submitted']]) $(id).onclick=()=>action(async()=>{if(!confirm('请确认已在阅卷网站核对这份记录的实际提交状态。'))return;await api('/api/resolve',{id:selectedRecord.id,outcome});await renderHistory();$('historyDetail').hidden=true;});
 $('presetSelect').onchange=()=>{if(dirty.has('presets')&&!confirm('放弃当前方案未保存修改？')){$('presetSelect').value=config.active;return;}dirty.delete('presets');$('dirtyBadge').hidden=!dirty.size;renderPreset();};$('providerSelect').onchange=renderProvider;$('workflowSelect').onchange=renderWorkflow;

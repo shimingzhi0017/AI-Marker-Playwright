@@ -63,11 +63,14 @@ test('Markdown小问标题与明确给分规则生成固定编号，兼容大题
   }
 });
 
-test('完整分项与唯一网页总分一致才能修正冗余总分，留下人工确认警告',()=>{
+test('完整固定分项可以修正冗余总分与唯一网页总分，留下人工确认警告',()=>{
  const cfg={rubric:'内容：2分\n表达：2分',scoring:{units:[{label:'12',maxScore:4}]}};
  const raw={score:2,subScores:[{label:'12',score:4}],scoringDetails:[{id:'scoring-item-1',label:'内容',score:2},{id:'scoring-item-2',label:'表达',score:2}]};
  const parsed=parseResult(JSON.stringify(raw),cfg);assert.equal(parsed.score,4);assert.equal(parsed.reportedScore,2);assert.match(parsed.formatWarning,/人工确认/);
- assert.throws(()=>parseResult(JSON.stringify({...raw,subScores:[{label:'12',score:2}]}),cfg),/合计/);
+ const repaired=parseResult(JSON.stringify({...raw,subScores:[{label:'12',score:2}]}),cfg);
+ assert.equal(repaired.score,4);assert.deepEqual(repaired.subScores,[{label:'12',score:4}]);
+ assert.equal(repaired.reportedScore,2);assert.deepEqual(repaired.reportedSubScores,[{label:'12',score:2}]);
+ assert.match(repaired.formatWarning,/人工确认/);
  assert.throws(()=>parseResult(JSON.stringify({...raw,scoringDetails:[raw.scoringDetails[0]]}),cfg),/合计|不完整/);
  assert.throws(()=>parseResult(JSON.stringify({...raw,scoringDetails:raw.scoringDetails.map(x=>({...x,id:'wrong'}))}),cfg),/编号/);
 });
@@ -82,16 +85,19 @@ test('唯一总分框未返回subScores时按完整小问合计补齐总分框',
  assert.match(parsed.formatWarning,/人工确认/);
 });
 
-test('问号标题后的行内编号采分点生成固定评分清单',()=>{
+test('小问标题内的行内编号采分点归入该小问，生成两个顶层评分项',()=>{
  const cfg={rubric:'第（1）问：甲工程队报价的最小值：满分8分\n1. 正确列出报价函数，得2分。2. 用基本不等式得到下界，得3分。3. 得到等号条件，得2分。4. 写出结论，得1分。\n\n第（2）问：参数范围：满分9分\n1. 建立比较不等式，共3分。2. 证明下界，得3分。3. 得出参数范围，得3分。',scoring:{maxScore:17,units:[]}};
- const result={score:4,subScores:[],scoringDetails:Array.from({length:7},(_,i)=>({label:`第（${i<4?1:2}）问第${i<4?i+1:i-3}点：模型评分依据`,score:i===0?1:0,maxScore:[2,3,2,1,3,3,3][i]}))};
+ const schema=scoringItemSchema(cfg);assert.deepEqual(schema.map(item=>item.maxScore),[8,9]);
+ const result={score:4,subScores:[],scoringDetails:schema.map((item,i)=>({...item,score:i===0?1:0}))};
  const parsed=parseResult(JSON.stringify(result),cfg);
- assert.equal(parsed.scoringDetails.length,7); assert.equal(parsed.score,1); assert.equal(parsed.scoringDetails[0].id,'scoring-item-1');
+ assert.equal(parsed.scoringDetails.length,2);assert.equal(parsed.score,1);assert.equal(parsed.reportedScore,4);
+ assert.deepEqual(parsed.scoringDetails.map(item=>item.id),schema.map(item=>item.id));
+ assert.throws(()=>parseResult(JSON.stringify({...result,scoringDetails:Array.from({length:7},(_,i)=>({label:`内部步骤${i+1}`,score:i===0?1:0,maxScore:[2,3,2,1,3,3,3][i]}))}),cfg),/评分项不完整/);
 });
 
-test('非问号标题的通用分项格式也能生成固定评分清单',()=>{
+test('通用分项标题按标题满分汇总，内部采分点不额外拆项',()=>{
  const cfg={rubric:'一、实验设计：满分4分\n1. 变量控制，得2分。2. 数据记录，得2分。\n\n二、结论表达：满分3分\n1. 结论正确，得1分。2. 依据充分，共2分。',scoring:{maxScore:7,units:[]}};
  const schema=scoringItemSchema(cfg);
- assert.deepEqual(schema.map(item=>item.maxScore),[2,2,1,2]);
- assert.equal(schema[0].label,'一、实验设计第1点：变量控制，得2分');
+ assert.deepEqual(schema.map(item=>item.maxScore),[4,3]);
+ assert.deepEqual(schema.map(item=>item.label),['实验设计','结论表达']);
 });

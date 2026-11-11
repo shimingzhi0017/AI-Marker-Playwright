@@ -69,7 +69,11 @@ test('OSS签名更新不产生新答卷标识，裁剪与资源路径仍参与�
 test('零分、小数与单元合计校验', () => {
   assert.equal(calculate(parseResult(JSON.stringify(result([0, 0])), config), config).score, 0);
   assert.equal(calculate(result([0.5, 1]), config).score, 1.5);
-  assert.throws(() => parseResult(JSON.stringify({ ...result([1, 1]), score: 3 }), config), /合计/);
+  const repaired=parseResult(JSON.stringify({ ...result([1, 1]), score: 3 }), config);
+  assert.equal(repaired.score,2);
+  assert.equal(repaired.reportedScore,3);
+  assert.deepEqual(repaired.subScores,result([1,1]).subScores);
+  assert.match(repaired.formatWarning,/已按分项合计修正，请人工确认/);
   assert.throws(() => parseResult(JSON.stringify(result([3, 0])), config), /无效/);
   assert.throws(() => parseResult('【得分】2', config), /JSON/);
 });

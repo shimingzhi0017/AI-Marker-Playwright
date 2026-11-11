@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { scoringLabelKey, matchScoringItem } from '../ui/scoring-labels.js';
+import { solutionGradingPolicy, rubricSubjects } from '../ui/rubric-prompts.js';
 
 const context = vm.createContext({ console });
 vm.runInContext(fs.readFileSync(new URL('../vendor/prompt.js', import.meta.url), 'utf8'), context);
@@ -10,12 +11,25 @@ export const fieldImages = context.collectFieldImages;
 function rubricScoringItems(config) {
   // Read only explicit item maxima; never infer points from deductions or examples.
   const number = '(?:[①-⑳]|\\d+[.、．]|[（(]\\d+[）)]|[一二三四五六七八九十]+、)';
-  const pattern = new RegExp(`^\\s*(?:${number}\\s*)?([^\\n：:]+)[：:]\\s*(?:满分\\s*)?(\\d+(?:\\.\\d+)?)\\s*分[。.]?\\s*$`, 'gmu');
+  const pattern = new RegExp(`^\\s*(?:${number}\\s*)?([^\\n]+?)[：:]\\s*(?:满分\\s*)?(\\d+(?:\\.\\d+)?)\\s*分[。.]?\\s*$`, 'gmu');
   let items = [...fieldText(config.rubric).matchAll(pattern)]
     .map((match, index) => ({ id: `scoring-item-${index + 1}`, label: match[1].trim(), maxScore: Number(match[2]) }));
   const valid=items=>items.length && items.every(item=>item.maxScore>0) &&
     new Set(items.map(item=>scoringLabelKey(item.label))).size===items.length &&
     Math.abs(items.reduce((sum,item)=>sum+item.maxScore,0)-maxScore(config))<1e-8;
+  // A constructed-response question may list several named criteria, each
+  // carrying part of that question's maximum. Keep those criteria nested in
+  // the rubric, but expose one score detail for the top-level question.
+  const questionNumber=item=>item.label.match(/^\s*第\s*[（(](\d+)[）)]\s*问(?=\s|[：:]|$)/u)?.[1];
+  const grouped=new Map();
+  for(const item of items) {
+    const number=questionNumber(item);
+    if(!number || /第\s*[（(]?\d+[）)]?\s*(?:空|填空)|\b[Ａ-ＺA-Z]\s*空/u.test(item.label))continue;
+    const group=grouped.get(number)||[];group.push(item);grouped.set(number,group);
+  }
+  const groupedItems=items.filter(item=>!questionNumber(item)||/第\s*[（(]?\d+[）)]?\s*(?:空|填空)|\b[Ａ-ＺA-Z]\s*空/u.test(item.label))
+    .concat([...grouped].map(([number,group])=>({id:`scoring-item-question-${number}`,label:`第（${number}）问`,maxScore:group.reduce((sum,item)=>sum+item.maxScore,0)})));
+  if(valid(groupedItems))return groupedItems;
   const hasNumberedSubpoints = /^(?:\s*第\s*[（(]\d+[）)]\s*问|\s*[一二三四五六七八九十百]+[、.])[^\n]*满分\s*\d+(?:\.\d+)?\s*分[\s\S]*?(?:^|[。；;]|\s)\d+[、.]\s+/mu.test(fieldText(config.rubric));
   if(!valid(items)) {
     // Explicit all-or-nothing headings are maxima, unlike isolated deduction examples.
@@ -121,16 +135,21 @@ export function promptFor(config) {
   const original = units.length > 1 ? context.buildSubQuestionPrompt(cfg) : context.buildStructuredPrompt(cfg);
   const input = original.split('===== 输出要求 =====')[0];
   const diligence = config.scoring?.diligence;
+  const rubricMode=fieldText(config.rubric).match(/(?:评分口径|答案要求)[：:]\s*(宽松|正常|严格|自定义)/u)?.[1];
+  const gradingMode=({宽松:'lenient',正常:'normal',严格:'strict'})[rubricMode] || config.rubricGeneration?.strictness || 'normal';
+  const rubricSubject=fieldText(config.rubric).match(/^[\t ]*学科[：:][\t ]*([^。；;\r\n]+)/mu)?.[1]?.trim();
+  const gradingSubject=rubricSubject ? Object.entries(rubricSubjects).find(([,entry])=>entry.label===rubricSubject)?.[0] || '' : config.rubricGeneration?.subject || '';
+  const solutionPolicy=solutionGradingPolicy({subject:gradingSubject,strictness:gradingMode,useCustomPrompt:rubricMode==='自定义'||!rubricMode&&!!config.rubricGeneration?.useCustomPrompt});
   const step=config.scoring?.roundStep || 1;
-  const stepPrompt=`\n得分步长：${step}分。步骤给分、扣分、scoringDetails逐项得分和总分必须为${step}分的非负整数倍；步长1只允许整分，不得自行给0.5分。若旧标准分值与步长冲突，按当前步长及${config.scoring?.roundMethod || 'round'}取整方式处理并在理由说明。网页评分框分别遵守：${JSON.stringify(units.map(u=>({label:u.label,roundStep:u.roundStep||step})))}。`;
+  const stepPrompt=`\n${solutionPolicy}\n得分步长：${step}分。步骤给分、扣分、scoringDetails逐项得分和总分必须为${step}分的非负整数倍；步长1只允许整分，不得自行给0.5分。若旧标准分值与步长冲突，按当前步长及${config.scoring?.roundMethod || 'round'}取整方式处理并在理由说明。网页评分框分别遵守：${JSON.stringify(units.map(u=>({label:u.label,roundStep:u.roundStep||step})))}。`;
 
   const diligencePrompt = diligence?.enabled ? `\ndiligenceLevel为1到5的整数，参考标准：${diligence.criteria || '字数较多且书写较为工整'}；学生答案不超过15字或未作答时为1。` : '\ndiligenceLevel固定为0。';
   const unitPrompt = `\n网页评分框共${units.length}个，标签、满分和顺序为：${JSON.stringify(units.map(u => ({ label: u.label, maxScore: u.maxScore })))}。subScores对应网页评分框，不对应评分标准中的小问或评分点。${units.length === 1 ? `只有一个总分框时，subScores必须仅有一项，label固定为${JSON.stringify(units[0].label)}，score等于总分；小问明细写在scoringDetails里，comment只补充说明。` : ''}`;
-  const readingPrompt = `\n书写识别要求：仅检查提供的学生答题图片范围，逐张扫描整个区域，包括横线上方、右侧、边缘、涂抹旁和箭头指向的位置，不得只读取预设填空位置；不扩大答题范围。先忠实转录学生实际保留的书写，再对照参考答案评分。明确删除的旧内容不得计入；归属明确的替代答案必须保留。不得根据参考答案、常见公式或语义补齐、纠正、改写学生的字词、数字、符号或缺失步骤。无法辨认处写[无法辨认]，不得当成空白或自行猜测；无法确定答案归属、是否删除或替换且可能影响得分时必须报告疑点。判定采用适度宽松标准：可辨认的潦草字、位置偏移、横线上方或右侧作答、明确划掉的旧答案、清楚的箭头或替换关系，只写入notes，不属于评分疑点。明确写错、漏步骤或未作答，按标准给分或扣分，不因答案不正确而报告识别疑点。局部看不清但不参与计分、且不影响任何评分点结论时只记录说明；只有无法确认的有效答案、关键数字或符号可能改变得分时才报告评分疑点，不要求每个笔画都完美清晰。禁止利用参考答案猜测仍然适用。\n必须返回recognition对象：{status:"clear"或"uncertain",coverageChecked:true或false,notes:[实际观察到的涂改或位置说明],issues:[{location:图片序号及区域或小问位置,observed:实际可见内容,reason:无法确认的原因,affectsScore:true或false,impactReason:对具体评分点的影响说明}]}。仅在完整检查了所有题图区域且没有影响评分的识别疑点时status为clear、coverageChecked为true；有影响评分的疑点时status为uncertain，issues逐项列出；affectsScore为false必须具体说明为什么不影响任何评分点，不得把关键答案看不清标为无影响。studentAnswer仅记录可见的有效作答及无法辨认标记；只负责报告识别情况，不自行决定复评、仲裁或提交；程序按当前单双评设置处理：单评不调用复评和仲裁，影响评分的识别疑点转人工确认；双评结合三评一致性及人工/仲裁设置处理。不得为普通书写差异机械报告uncertain。`;
+  const readingPrompt = `\n书写识别要求：仅检查提供的学生答题图片范围，逐张扫描整个区域，包括横线上方、右侧、边缘、涂抹旁和箭头指向的位置，不得只读取预设填空位置；不扩大答题范围。先忠实转录学生实际保留的书写，再对照参考答案评分。明确删除的旧内容不得计入；归属明确的替代内容必须保留。不得根据参考答案、常见公式或语义补齐、纠正、改写学生的字词、数字、符号或缺失步骤。无法辨认处写[无法辨认]，不得当成空白或自行猜测；无法确定答案归属、是否删除或替换且可能影响得分时必须报告疑点。判定采用适度宽松标准：可辨认的潦草字、位置偏移、横线上方或右侧作答、明确划掉的旧答案、清楚的箭头或替换关系，只写入notes，不属于评分疑点。明确写错、漏步骤或未作答，按标准给分或扣分，不因答案不正确而报告识别疑点。局部看不清但不参与计分、且不影响任何评分点结论时只记录说明；只有无法确认的有效答案、关键数字或符号可能改变得分时才报告评分疑点，不要求每个笔画都完美清晰。解答题应按评分标准评价推理和得分步骤；学生采用与参考答案不同的方法时，先独立核验该方法是否符合题设、数学或学科规律及结论，不得仅因方法与参考答案不同而扣分。对正确、完整且适用于本题的等价解法，按同一评分要点给分；若题目明确要求特定方法、过程或证明形式，则遵守该要求。禁止利用参考答案猜测学生未写内容仍然适用。\n必须返回recognition对象：{status:"clear"或"uncertain",coverageChecked:true或false,notes:[实际观察到的涂改或位置说明],issues:[{location:图片序号及区域或小问位置,observed:实际可见内容,reason:无法确认的原因,affectsScore:true或false,impactReason:对具体评分点的影响说明}]}。仅在完整检查了所有题图区域且没有影响评分的识别疑点时status为clear、coverageChecked为true；有影响评分的疑点时status为uncertain，issues逐项列出；affectsScore为false必须具体说明为什么不影响任何评分点，不得把关键答案看不清标为无影响。studentAnswer仅记录可见的有效作答及无法辨认标记；只负责报告识别情况，不自行决定复评、仲裁或提交；程序按当前单双评设置处理：单评不调用复评和仲裁，影响评分的识别疑点转人工确认；双评结合三评一致性及人工/仲裁设置处理。不得为普通书写差异机械报告uncertain。`;
   const schema = scoringItemSchema(config);
-  const schemaPrompt = schema.length ? `\n当前任务评分标准确定的评分项共${schema.length}项：${JSON.stringify(schema)}。scoringDetails必须逐项返回{id,label,score,maxScore,studentAnswer,reason}，id严格复制清单固定编号，一项一次不得遗漏，不得自创新编号；label只用于展示，禁止改名。主评、复评、仲裁共用同一清单，按清单顺序返回。` : '\nscoringDetails必须根据当前评分标准的独立计分项逐项返回{label,score,maxScore,studentAnswer,reason}。数量由当前评分标准决定，没有固定数量；不得沿用其他题目的分项，不得擅自合并或拆分评分点。每项满分依照标准，总分为各项得分之和。网页评分框数量不决定评分明细数量。';
+  const schemaPrompt = (schema.length ? `\n当前任务评分标准确定的评分项共${schema.length}项：${JSON.stringify(schema)}。scoringDetails必须逐项返回{id,label,score,maxScore,studentAnswer,reason}，id严格复制清单固定编号，一项一次不得遗漏，不得自创新编号；label只用于展示，禁止改名。主评、复评、仲裁共用同一清单，按清单顺序返回。` : '\nscoringDetails必须根据当前评分标准的独立计分项逐项返回{label,score,maxScore,studentAnswer,reason}。数量由当前评分标准决定，没有固定数量；不得沿用其他题目的分项，不得擅自合并或拆分评分点。每项满分依照标准，总分为各项得分之和。网页评分框数量不决定评分明细数量。') + '\n先完成scoringDetails逐项判断并输出，再将这些score相加，最后输出总分score和网页评分框subScores。不得先估计总分再倒推明细；识别存疑也必须给出单一的当前评分，可能增加的分数仅在识别疑点中说明，不计入当前合计。';
   return input + stepPrompt + diligencePrompt + unitPrompt + readingPrompt + schemaPrompt + `\n读取完整答题区，忽略明确划掉的旧内容，识别归属明确的替代内容；模糊内容不得猜测。严格按照评分标准评分。comment每个评分项独占一段，使用换行分点论述，末尾总分另起一段。涉及公式必须使用LaTeX数学标记（行内用$...$，分式用\\frac{分子}{分母}，上下标用_{...}和^{...}）；JSON中的反斜杠必须正确转义。不得输出代码块。comment按评分标准逐项写明满分、学生答案、给分或扣分依据和该项得分，最后列出总分计算；不得只给总分或笼统评价。\n唯一输出格式为JSON对象，不要返回Markdown或【得分】等段落。score必须是JSON数字，不能是字符串、空值或“数值总分”等占位文字，范围为0到${maxScore(config)}。subScores按下列标签和顺序返回，分数之和必须等于score；无评分单元时返回空数组。示例中的0仅说明数字类型，不代表本份应得0分。\n` +
-    JSON.stringify({ studentAnswer: '实际识别内容', recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] }, score: 0, comment: '逐项评分依据和分数计算', diligenceLevel: 0, subScores: units.map(u => ({ label: u.label, score: 0 })), ...(schema.length ? {scoringDetails:schema.map(item=>({...item,score:0,studentAnswer:'实际识别内容',reason:'依据当前标准'}))} : {}) });
+    JSON.stringify({ studentAnswer: '实际识别内容', recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] }, ...(schema.length ? {scoringDetails:schema.map(item=>({...item,score:0,studentAnswer:'实际识别内容',reason:'依据当前标准'}))} : {}), score: 0, comment: '逐项评分依据和分数计算', diligenceLevel: 0, subScores: units.map(u => ({ label: u.label, score: 0 })) });
 }
 export function validateResult(result, config) {
   if (!result || !Number.isFinite(result.score)) throw Error(`模型总分无效：score必须是数字，收到${result?.score === undefined ? '缺失字段' : JSON.stringify(result.score)}；本题满分${maxScore(config)}。`);
@@ -168,22 +187,53 @@ export function parseResult(text, config) {
   if (result && typeof result === 'object') {
     result.score = numeric(result.score);
     if (Array.isArray(result.subScores)) result.subScores.forEach(unit => { if (unit && typeof unit === 'object') unit.score = numeric(unit.score); });
-    if (Array.isArray(result.scoringDetails)) result.scoringDetails.forEach(unit => { if (unit && typeof unit === 'object') unit.score = numeric(unit.score); });
+    if (Array.isArray(result.scoringDetails)) result.scoringDetails.forEach(unit => { if (unit && typeof unit === 'object') { unit.score = numeric(unit.score); if (unit.maxScore !== undefined) unit.maxScore = numeric(unit.maxScore); } });
   }
-  // Repair only a redundant total when independent structured totals agree.
+  // Repair a redundant total only with a fixed rubric schema or a complete set
+  // of explicit item maxima. Keep the warning so independent review is required.
   const configuredUnits=config.scoring?.units || [];
-  if(scoringItemSchema(config).length && configuredUnits.length<=1 && Array.isArray(result?.scoringDetails) && result.scoringDetails.length && Array.isArray(result.subScores) && (result.subScores.length===0 || result.subScores.length===1)) {
+  const schema = scoringItemSchema(config);
+  const details = result?.scoringDetails;
+  const hasCompleteMaxima = Array.isArray(details) && details.length > 0 &&
+    details.every(item => item && Number.isFinite(item.maxScore) && item.maxScore > 0 && Number.isFinite(item.score) && item.score >= 0 && item.score <= item.maxScore) &&
+    Math.abs(details.reduce((sum, item) => sum + item.maxScore, 0) - maxScore(config)) < 1e-8;
+  if((schema.length || hasCompleteMaxima) && configuredUnits.length<=1 && Array.isArray(result?.scoringDetails) && result.scoringDetails.length && (result.subScores === undefined || Array.isArray(result.subScores) && result.subScores.length<=1)) {
+    // Match every rubric item before using its sum as the authoritative total.
+    // No per-item score is changed when correcting redundant total fields.
+    applyScoringItemSchema(result,config);
     const sum=result.scoringDetails.reduce((total,item)=>total+item.score,0);
-    const hasMatchingUnit = configuredUnits.length===1 && result.subScores.length === 1 && result.subScores[0]?.label === configuredUnits[0].label && result.subScores[0]?.score === sum;
-    const hasEmptyUnit = result.subScores.length === 0 && (configuredUnits.length===0 || configuredUnits.length===1);
-    if(Number.isFinite(result.score) && result.score>=0 && result.score<=maxScore(config) && result.score!==sum && (hasMatchingUnit || hasEmptyUnit)) {
+    const subScores = result.subScores || [];
+    const hasMatchingUnit = configuredUnits.length===1 && subScores.length === 1 && subScores[0]?.label === configuredUnits[0].label && subScores[0]?.score === sum;
+    const hasEmptyUnit = subScores.length === 0;
+    const hasRedundantUnit = schema.length && configuredUnits.length===1 && subScores.length===1 && subScores[0]?.label===configuredUnits[0].label && Number.isFinite(subScores[0]?.score) && subScores[0].score>=0 && subScores[0].score<=configuredUnits[0].maxScore;
+    if(Number.isFinite(result.score) && result.score>=0 && result.score<=maxScore(config) && (hasMatchingUnit || hasEmptyUnit || hasRedundantUnit)) {
       validateScoringDetails(result.scoringDetails,sum,maxScore(config));
-      applyScoringItemSchema(result,config);
       const repaired = { ...result, score: sum, subScores: configuredUnits.length ? [{ label: configuredUnits[0].label, score: sum }] : [] };
       validateResult(repaired,config);
-      result.reportedScore=result.score;result.score=sum;
+      if (Math.abs(result.score-sum)>1e-8 || subScores.some(item=>Math.abs(item.score-sum)>1e-8)) {
+        result.reportedScore=result.score;
+        result.reportedSubScores=structuredClone(subScores);
+        const field = Math.abs(result.reportedScore-sum)>1e-8 ? `模型总分字段为${result.reportedScore}` : `模型网页总分字段为${subScores[0].score}`;
+        result.formatWarning=`${field}，与完整分项合计${sum}不一致；已按分项合计修正，请人工确认。`;
+      }
+      result.score=sum;
       result.subScores = repaired.subScores;
-      result.formatWarning=`模型总分字段为${result.reportedScore}，与完整分项合计及网页总分${sum}不一致；已按两者一致的合计修正，请人工确认。`;
+    }
+  }
+  // With multiple webpage fields, their configured labels and maxima define
+  // the complete set. Recompute only the total; never distribute points among
+  // fields. If rubric details are also present, both representations must agree.
+  if (configuredUnits.length>1 && Array.isArray(result?.subScores) && result.subScores.length===configuredUnits.length) {
+    const sum=result.subScores.reduce((total,item)=>total+item?.score,0);
+    const repaired={...result,score:sum};
+    validateResult(repaired,config);
+    applyScoringItemSchema(repaired,config);
+    if (repaired.scoringDetails!==undefined) validateScoringDetails(repaired.scoringDetails,sum,maxScore(config));
+    if (Number.isFinite(result.score) && result.score>=0 && result.score<=maxScore(config) && Math.abs(result.score-sum)>1e-8) {
+      result.reportedScore=result.score;
+      result.reportedSubScores=structuredClone(result.subScores);
+      result.score=sum;
+      result.formatWarning=`模型总分字段为${result.reportedScore}，与完整分项合计${sum}不一致；已按分项合计修正，请人工确认。`;
     }
   }
   if (result?.scoringDetails !== undefined) validateScoringDetails(result.scoringDetails, result.score, maxScore(config));
@@ -207,6 +257,7 @@ export function parseResult(text, config) {
 }
 export function validateScoringDetails(details, score, maximum) {
   if (!Array.isArray(details) || !details.length || details.some(s => !s || typeof s.label !== 'string' || !s.label.trim() || !Number.isFinite(s.score) || s.score < 0 || s.score > maximum) || new Set(details.map(s => s.label)).size !== details.length) throw Error('模型小问评分明细无效，无法逐项核对');
+  if (details.some(s => s.maxScore !== undefined && (!Number.isFinite(s.maxScore) || s.maxScore<=0 || s.maxScore>maximum || s.score>s.maxScore))) throw Error('模型小问评分明细无效：分项满分无效或得分越界');
   if (Math.abs(details.reduce((sum, s) => sum + s.score, 0) - score) > 1e-8) throw Error('模型总分与小问明细合计不一致，无法汇总');
 }
 export function calculate(result, config) {

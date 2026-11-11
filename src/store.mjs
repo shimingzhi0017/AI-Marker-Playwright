@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 
 export class Store {
@@ -7,9 +8,62 @@ export class Store {
     this.dir = path.resolve(dir); fs.mkdirSync(this.dir, { recursive: true });
     this.db = new DatabaseSync(path.join(this.dir, 'history.sqlite'));
     this.db.exec('CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, state TEXT NOT NULL, data TEXT NOT NULL, updated TEXT NOT NULL)');
+    this.db.exec('CREATE TABLE IF NOT EXISTS store_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS submission_numbers (sequence INTEGER PRIMARY KEY AUTOINCREMENT, record_id TEXT NOT NULL UNIQUE)');
+    this.db.prepare('INSERT OR IGNORE INTO store_metadata(key,value) VALUES(?,?)').run('submissionPrefix',crypto.randomBytes(4).toString('hex').toUpperCase());
+    this.submissionPrefix=this.db.prepare('SELECT value FROM store_metadata WHERE key=?').get('submissionPrefix').value;
+    this.findSubmissionNumber = this.db.prepare('SELECT sequence FROM submission_numbers WHERE record_id=?');
+    this.insertSubmissionNumber = this.db.prepare('INSERT INTO submission_numbers(record_id) VALUES(?)');
+    this.upsertRecord = this.db.prepare('INSERT INTO records VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,data=excluded.data,updated=excluded.updated');
+    try {
+      this.transaction(() => this.backfillSubmissionNumbers());
+    } catch(error) { this.db.close();throw error; }
+  }
+  transaction(write) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const result = write();
+      this.db.exec('COMMIT');
+      return result;
+    } catch(error) { this.db.exec('ROLLBACK');throw error; }
+  }
+  backfillSubmissionNumbers() {
+    // Only repair missing or inconsistent numbers; leave settled history untouched.
+    const rows = this.db.prepare(`
+      SELECT r.id,r.data FROM records r
+      LEFT JOIN submission_numbers n ON n.record_id=r.id
+      WHERE r.state='submitted' AND (
+        n.sequence IS NULL OR json_extract(r.data,'$.submissionNumber') IS NOT n.sequence
+        OR json_extract(r.data,'$.submissionCode') IS NOT (? || '-' || printf('%06d',n.sequence))
+      )
+      ORDER BY coalesce(json_extract(r.data,'$.time'),r.updated),r.id
+    `).all(this.submissionPrefix);
+    const update = this.db.prepare('UPDATE records SET data=? WHERE id=?');
+    for (const row of rows) {
+      const record = JSON.parse(row.data);
+      this.assignSubmissionNumber(record);
+      update.run(JSON.stringify(record),row.id);
+    }
+  }
+  assignSubmissionNumber(record) {
+    let row=this.findSubmissionNumber.get(record.id);
+    if(!row && record.state!=='submitted')return;
+    if(!row) {
+      const inserted=this.insertSubmissionNumber.run(record.id);
+      row={sequence:Number(inserted.lastInsertRowid)};
+    }
+    record.submissionNumber=row.sequence;
+    record.submissionCode=`${this.submissionPrefix}-${String(row.sequence).padStart(6,'0')}`;
   }
   save(record) {
-    this.db.prepare('INSERT INTO records VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,data=excluded.data,updated=excluded.updated').run(record.id, record.state, JSON.stringify(record), new Date().toISOString());
+    const saved={...record};
+    this.transaction(() => {
+      this.assignSubmissionNumber(saved);
+      this.upsertRecord.run(saved.id, saved.state, JSON.stringify(saved), new Date().toISOString());
+    });
+    if(saved.submissionCode) {
+      record.submissionCode=saved.submissionCode;
+      record.submissionNumber=saved.submissionNumber;
+    }
   }
   records() { return this.db.prepare('SELECT data FROM records ORDER BY updated DESC').all().map(r => JSON.parse(r.data)); }
   historyPage({ page = 1, pageSize = 50, state = '', search = '', arbitrated = false } = {}) {
@@ -19,7 +73,8 @@ export class Store {
     if (state) { clauses.push('state = ?'); params.push(state); }
     if (search) {
       const escaped = String(search).replace(/[\\%_]/g, '\\$&').toLowerCase();
-      clauses.push("lower(coalesce(json_extract(data,'$.presetName'),'') || ' ' || coalesce(json_extract(data,'$.result.studentAnswer'),'') || ' ' || coalesce(json_extract(data,'$.result.comment'),'')) LIKE ? ESCAPE '\\'"); params.push(`%${escaped}%`);
+      const fields=['submissionCode','submissionNumber','presetName','result.studentAnswer','result.comment','snapshot.legacyTaskId','snapshot.paperId','snapshot.pageContext.examId','snapshot.networkTopic.scanRecordId','snapshot.networkTopic.student.userCode','snapshot.networkTopic.student.userId','snapshot.networkTopic.student.name'];
+      clauses.push(`lower(${fields.map(field=>`coalesce(json_extract(data,'$.${field}'),'')`).join(" || ' ' || ")}) LIKE ? ESCAPE '\\'`); params.push(`%${escaped}%`);
     }
     if (arbitrated) clauses.push("(json_extract(data,'$.result.dualEval.result') = 'arbitration' OR json_extract(data,'$.result.recognitionArbitration') IS NOT NULL OR json_extract(data,'$.originalResult.dualEval.result') = 'arbitration' OR json_extract(data,'$.originalResult.recognitionArbitration') IS NOT NULL)");
     const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';

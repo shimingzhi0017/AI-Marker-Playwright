@@ -31,7 +31,7 @@ export function createHistoryUI({$, api, states, getPage, setPage, setSelectedRe
 
   function renderRow(record) {
     const row = document.createElement('tr');
-    for (const value of [new Date(record.time).toLocaleString(), record.presetName, states[record.state] || record.state, record.result?.score ?? '—']) {
+    for (const value of [new Date(record.time).toLocaleString(), record.presetName, states[record.state] || record.state, record.result?.score ?? '—', record.submissionCode || '—']) {
       const cell = document.createElement('td');
       cell.textContent = value;
       row.append(cell);
@@ -60,6 +60,7 @@ export function createHistoryUI({$, api, states, getPage, setPage, setSelectedRe
     renderResultDetails($('historyReadable'), record, true);
     for (const id of ['resolveYes', 'resolveNo']) $(id).hidden = !['uncertain', 'submitting'].includes(record.state);
     $('historyDialogTitle').textContent = wasArbitrated(record) ? '评阅详情 · 已仲裁' : '评阅详情';
+    if(record.submissionCode) $('historyDialogTitle').textContent += ` · ${record.submissionCode}`;
     if (!$('historyDialog').open) $('historyDialog').showModal();
     $('historyDialog').scrollTop = 0;
   }

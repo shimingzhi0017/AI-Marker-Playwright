@@ -11,7 +11,8 @@
     "check:browser": "node check-browser.mjs",
     "tool": "node src/cli.mjs",
     "ui": "node src/server.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "test:ui": "node --test test/ui/*.test.mjs"
   },
   "dependencies": {
     "playwright": "1.64.0",

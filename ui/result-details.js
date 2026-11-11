@@ -23,12 +23,27 @@ function reviewCard(container,title,result,arbitration=false) {
 }
 function historyOverview(container,record) {
   const result=record.result,grid=node('div');grid.className='review-overview';
+  const student=record.student || record.snapshot?.networkTopic?.student;
   for(const [label,text,large] of [
+    ['答卷编号',record.submissionCode || '尚未分配（成功提交后生成）'],
+    ['学生姓名 / 编号',`${student?.name || '未保存姓名'} / ${student?.userCode || student?.userId || '未保存编号'}`],
+    ['平台答卷 ID',record.snapshot?.networkTopic?.scanRecordId || record.snapshot?.paperId || '未保存'],
+    ['题号 / 考试 ID',`${record.snapshot?.legacyTaskId || record.taskId || '未保存题号'} / ${record.snapshot?.pageContext?.examId || '未保存考试 ID'}`],
     ['时间',record.time?new Date(record.time).toLocaleString('zh-CN'):'未记录'],
     ['方案 / 模式',`${record.presetName || '未记录'} · ${{trial:'人工确认',normal:'5秒倒计时提交',unattended:'无人值守'}[record.mode] || '旧记录未保存模式'}`],
     ['AI评分',result.rawScore ?? record.originalResult?.score ?? result.score,true],['最终分数',result.score,true]
   ]) {const item=node('div');item.append(node('span',label));const display=node('div',text);display.className=large?'review-score':'review-meta';item.append(display);grid.append(item);}
   container.append(grid);
+  const locate=node('p','可按答卷编号在本机历史中查找；查看或修改网站分数时，请在平台已阅/复核入口按学生编号、题号定位，并核对答卷原图。');container.append(locate);
+  const copy=node('button','复制定位信息');copy.type='button';
+  copy.onclick=async()=>{try{await navigator.clipboard.writeText([
+    `答卷编号：${record.submissionCode || '未分配'}`,`方案：${record.presetName || ''}`,
+    `学生姓名：${student?.name || ''}`,`学生编号：${student?.userCode || student?.userId || ''}`,
+    `平台答卷 ID：${record.snapshot?.networkTopic?.scanRecordId || record.snapshot?.paperId || ''}`,
+    `题号：${record.snapshot?.legacyTaskId || record.taskId || ''}`,`考试 ID：${record.snapshot?.pageContext?.examId || ''}`,
+    `最终分数：${result.score}`,`时间：${record.time || ''}`
+  ].join('\n'));copy.textContent='已复制定位信息';}catch{copy.textContent='复制失败，请选中上方信息复制';}};
+  container.append(copy);
   const dual=result.dualEval;
   if(dual) {
     const section=node('section');section.className='review-section';section.append(node('h3','双评结果'));
@@ -72,10 +87,7 @@ export function renderResultDetails(container, record, history = false) {
   if(record.modelRequestFailure) paragraph(container,'模型请求失败',`${record.modelRequestFailure.provider || '供应商未记录'} · ${record.modelRequestFailure.model || '模型未记录'} · ${record.modelRequestFailure.type || '请求失败'}${record.modelRequestFailure.attempts ? ` · 请求${record.modelRequestFailure.attempts}次` : ''}`);
   if(!result) { paragraph(container,'异常说明',record.error); return; }
   if(history) { historyOverview(container,record); return; }
-  if(history) {
-    paragraph(container,'方案 / 运行模式',`${record.presetName || '未记录'} / ${{trial:'人工确认',normal:'5秒倒计时提交',unattended:'无人值守'}[record.mode] || '旧记录未保存模式'}`);
-    paragraph(container,'评分时间',record.time ? new Date(record.time).toLocaleString('zh-CN') : undefined);
-  }
+  if(record.submissionCode) paragraph(container,'答卷编号',record.submissionCode);
   paragraph(container,'模型总分 → 最终分数',`${value(result.rawScore ?? record.originalResult?.score ?? result.score)} → ${value(result.score)}`);
   paragraph(container,'评分格式核对',result.formatNote);
   readingDetails(container, result);
@@ -124,7 +136,6 @@ export function renderResultDetails(container, record, history = false) {
     for(const item of items(r)) paragraph(detail,`${item.label} · ${value(item.score)}`,item.reason || item.comment);
     paragraph(detail,'评分依据',r?.comment || '未提供');container.append(detail);
   }
-  if(history) { paragraph(container,'识别内容',result.studentAnswer); paragraph(container,'最终评分依据',result.comment); }
   paragraph(container,'人工改分原因',record.correctionReason);
   if(record.originalResult) paragraph(container,'人工调整前得分',value(record.originalResult.score));
   paragraph(container,'提交状态',record.receipt?.confirmed ? `服务器已确认保存：${(record.receipt.scores || [result.score]).map(value).join('、')}` : record.state === 'filled' ? '已填分，尚无服务器确认回执' : record.state === 'submitted' ? '已提交；此旧记录未保存核验回执' : '尚未确认提交');

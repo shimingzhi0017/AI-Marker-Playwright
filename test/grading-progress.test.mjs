@@ -26,7 +26,7 @@ test('双阅单路失败立即结束并取消另一请求；整份超时有明�
 });
 
 test('单评总分冲突调用仲裁模型并采用仲裁模型的有效独立评分', async t => {
-  const details = [{ label: '第（1）问第1点', score: 2, maxScore: 2 }, { label: '第（1）问第2点', score: 3, maxScore: 3 }, { label: '第（1）问第3点', score: 2, maxScore: 2 }, { label: '第（1）问第4点', score: 1, maxScore: 1 }, { label: '第（2）问第1点', score: 1, maxScore: 3 }, { label: '第（2）问第2点', score: 0, maxScore: 3 }, { label: '第（2）问第3点', score: 0, maxScore: 3 }];
+  const details = [{id:'scoring-item-question-1',label:'第（1）问',score:8,maxScore:8},{id:'scoring-item-question-2',label:'第（2）问',score:1,maxScore:9}];
   const replies = {
     primary: { score: 12, studentAnswer: 'fixture', comment: '主评', subScores: [], scoringDetails: details, recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } },
     arbitration: { score: 9, studentAnswer: 'fixture', comment: '仲裁', subScores: [], scoringDetails: details, recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } }
@@ -101,13 +101,13 @@ test('单次请求超时可在整份评分期限内重试；鉴权失败不重�
 });
 
 test('双评分项一致时交叉验证；发现模型总分异常则交仲裁独立评分', async t => {
-  const scores = [2, 3, 2, 1, 1, 0, 0];
-  const maximums = [2, 3, 2, 1, 3, 3, 3];
+  const scores = [8, 1];
+  const maximums = [8, 9];
   const rubric = '第（1）问：甲队报价：满分8分\n1. 正确列式，得2分。2. 正确求最小值，得3分。3. 得到等号条件，得2分。4. 写出结论，得1分。\n\n第（2）问：乙队参数：满分9分\n1. 建立不等式，得3分。2. 证明下界，得3分。3. 得出范围，得3分。';
   const replies = {
-    primary: { score: 9, studentAnswer: 'fixture', comment: 'fixture', subScores: [], scoringDetails: scores.map((score, i) => ({ label: `第${i < 4 ? '（1）' : '（2）'}问第${i < 4 ? i + 1 : i - 3}点`, score, maxScore: maximums[i] })), recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } },
-    secondary: { score: 12, studentAnswer: 'fixture', comment: 'fixture', subScores: [], scoringDetails: scores.map((score, i) => ({ label: `第${i < 4 ? '（1）' : '（2）'}问第${i < 4 ? i + 1 : i - 3}点`, score, maxScore: maximums[i] })), recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } },
-    arbitration: { score: 9, studentAnswer: 'fixture', comment: 'arbitrated', subScores: [], scoringDetails: scores.map((score, i) => ({ label: `第${i < 4 ? '（1）' : '（2）'}问第${i < 4 ? i + 1 : i - 3}点`, score, maxScore: maximums[i] })), recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } }
+    primary: { score: 9, studentAnswer: 'fixture', comment: 'fixture', subScores: [], scoringDetails: scores.map((score, i) => ({ id: `scoring-item-question-${i+1}`, label: `第（${i+1}）问`, score, maxScore: maximums[i] })), recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } },
+    secondary: { score: 12, studentAnswer: 'fixture', comment: 'fixture', subScores: [], scoringDetails: scores.map((score, i) => ({ id: `scoring-item-question-${i+1}`, label: `第（${i+1}）问`, score, maxScore: maximums[i] })), recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } },
+    arbitration: { score: 9, studentAnswer: 'fixture', comment: 'arbitrated', subScores: [], scoringDetails: scores.map((score, i) => ({ id: `scoring-item-question-${i+1}`, label: `第（${i+1}）问`, score, maxScore: maximums[i] })), recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] } }
   };
   const server = http.createServer(async (req, res) => {
     let body = ''; for await (const chunk of req) body += chunk;
@@ -128,7 +128,7 @@ test('双评分项一致时交叉验证；发现模型总分异常则交仲裁�
   assert.equal(graded.formatWarning, undefined);
   assert.match(graded.formatNote, /仲裁模型独立重新评分/);
 
-  replies.secondary = { ...replies.secondary, scoringDetails: replies.secondary.scoringDetails.map((item, i) => i === 0 ? { ...item, score: 0 } : i === 4 ? { ...item, score: 3 } : item) };
+  replies.secondary = { ...replies.secondary, scoringDetails: replies.secondary.scoringDetails.map((item, i) => i === 0 ? { ...item, score: 6 } : { ...item, score: 3 }) };
   const inconsistent = await grade(config, settings, []);
   assert.equal(inconsistent.dualEval.result, 'arbitration');
   assert.equal(inconsistent.formatWarning, undefined);

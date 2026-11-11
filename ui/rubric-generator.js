@@ -60,7 +60,7 @@ export function setupRubricGenerator({getConfig, getImages, action, api, markDir
     const settings=policySettings(),method=rubricScoringMethods[settings.scoringMethod];
     $('rubricMethodHint').textContent=method.summary;
     const subject=rubricSubjects[settings.subject]?.label||'通用';
-    const levels={strict:'准确核对关键条件与必要表达',normal:'按常规要求认可等价表述',lenient:'充分认可合理简写与非关键表达差异'};
+    const levels={strict:'答案正确、过程完备，并检查单位和基本方程等细节',normal:'答案正确，缺少必要过程仍扣分',lenient:'答案正确且有适当有效过程即可满分'};
     $('rubricPolicySummary').textContent=`${subject} · ${settings.useCustomPrompt?'自定义要求':levels[settings.strictness]} · ${method.label}。${settings.notes.trim()?'已加入本题补充要求。':''}`;
     const examples={physics:'例如：单位缺失只扣一次；错算后的正确方法仍给分；有效数字按题目要求。',mathematics:'例如：认可其他正确解法；写明错算后续方法分；证明必须说明关键依据。',english:'例如：本题必须使用过去式；开放表达允许同义替换；说明字数要求。',chinese:'例如：阅读每个有效要点独立给分；同义概括认可；默写错字不给本空分。',chemistry:'例如：说明配平、反应条件与单位要求；实验现象和解释分别给分。'};
     $('rubricTeacherNotes').placeholder=examples[settings.subject]||'例如：同义要点不重复计分；列出必需关键词；说明一次错误如何扣分。';
