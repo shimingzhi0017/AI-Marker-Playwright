@@ -1,5 +1,6 @@
 import {renderFeedback, renderInlineFeedback} from './feedback.js';
 import { alignScoringItems } from './scoring-labels.js';
+import { rubricPrompts } from './rubric-prompts.js';
 const items = result => result?.scoringDetails?.length ? result.scoringDetails : result?.subScores || [];
 const value = score => Number.isFinite(score) ? `${score} 分` : '未提供';
 function node(tag, text) { const el = document.createElement(tag); if(text !== undefined) el.textContent = text; return el; }
@@ -15,9 +16,10 @@ function historySection(container, title, text) {
 function reviewCard(container,title,result,arbitration=false) {
   const card=node('div');card.className='review-score-card'+(arbitration?' review-arbitration':'');
   card.append(node('h4',title));
-  const row=node('div');row.className='review-score-row';row.append(node('span',arbitration?'仲裁得分':'得分'),node('strong',value(result?.score)));card.append(row);
+  const row=node('div');row.className='review-score-row';row.append(node('span',arbitration?'仲裁得分':'得分'),node('strong',result?.outputFailure?'未通过校验':value(result?.score)));card.append(row);
   if(result?.model) {const model=node('p',result.model);model.className='review-model';card.append(model);}
   const evidence=node('details');evidence.append(node('summary','查看识别与评分依据'));
+  paragraph(evidence,'输出结构异常',result?.outputFailure?.message);
   paragraph(evidence,'识别答案',result?.studentAnswer || '未提供');paragraph(evidence,'评分依据',result?.comment || '未提供');
   card.append(evidence);container.append(card);
 }
@@ -77,6 +79,10 @@ function historyOverview(container,record) {
   const body=node('div');renderResultDetails(body,record,false);audit.append(body);container.append(audit);
 }
 function readingDetails(container, result) {
+  paragraph(container,'本次评分口径',rubricPrompts[result?.expectedGradingMode]?.label);
+  if(result?.outputFailure){paragraph(container,'输出结构异常',`${result.outputFailure.message}；此输出未作为有效分数使用，原始输出已存档。`);return;}
+  paragraph(container,'待人工核对',result?.formatWarning);
+  paragraph(container,'评分格式核对',result?.formatNote);
   paragraph(container, '书写识别检查', result?.recognitionWarning || ((result?.recognition?.status === 'clear' || result?.recognitionWarning === '') && result.recognition?.coverageChecked ? '模型报告已检查完整答题区域，未报告影响评分的识别疑点。' : '此结果未记录完整的书写识别检查。'));
   paragraph(container, '学生实际作答', result?.studentAnswer);
   for (const note of Array.isArray(result?.recognition?.notes) ? result.recognition.notes : []) if (typeof note === 'string') paragraph(container, '涂改及位置说明', note);

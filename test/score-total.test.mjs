@@ -261,7 +261,89 @@ test('a repaired arbitration total is retained for human confirmation',async t=>
     providers:{test:{endpoint:'https://model.invalid/v1',apiKey:'test'}},
     workflows:{test:{model:entry('primary'),dualEval:{enabled:true,questionType:'objective',secondary:entry('secondary'),arbitration:entry('arbiter')}}}
   },[]);
-  assert.deepEqual(calls,['primary','secondary','arbiter']);
+  assert.deepEqual(calls,['primary','secondary','arbiter','arbiter']);
   assert.equal(result.score,6);
   assert.match(result.formatWarning,/人工确认/);
+});
+
+function totalCheckSettings(dual=false, requestBudget=6) {
+  const entry=model=>({provider:'test',model});
+  return {requestBudget,providers:{test:{endpoint:'https://model.invalid/v1',apiKey:'test'}},
+    workflows:{test:{model:entry('primary'),dualEval:dual ? {enabled:true,questionType:'objective',secondary:entry('secondary'),arbitration:entry('arbiter')} : {enabled:false}}}};
+}
+
+function historyConflict(scores=[1,1,0], reported=3) {
+  return {score:reported,subScores:[],comment:'第二问得2分；合计3分。',
+    recognition:{status:'clear',coverageChecked:true,notes:[],issues:[]},
+    scoringDetails:scores.map((score,i)=>({label:`第${i+1}问`,score,maxScore:[3,3,4][i],reason:`本问得${i===1?2:score}分。`}))};
+}
+
+test('history regression: final arbitrator rechecks contradictory prose and awards once',async t=>{
+  const requests=[];
+  t.mock.method(globalThis,'fetch',async(_url,init)=>{
+    const body=JSON.parse(init.body);requests.push(body);
+    const value=body.model==='primary' ? historyConflict([2,2,1],5)
+      : body.model==='secondary' ? historyConflict([1,1,0],2)
+      : requests.filter(r=>r.model==='arbiter').length===1 ? historyConflict() : historyConflict([1,2,0],3);
+    return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(value)}}]}));
+  });
+  const events=[];
+  const result=await grade(config,totalCheckSettings(true),[],undefined,e=>events.push(e));
+  assert.deepEqual(requests.map(r=>r.model),['primary','secondary','arbiter','arbiter']);
+  assert.equal(result.score,3);
+  assert.deepEqual(result.scoringDetails.map(d=>d.score),[1,2,0]);
+  assert.equal(result.formatWarning,undefined);
+  assert.equal(result.totalVerification.status,'verified');
+  assert.equal(result.totalVerification.previous.reportedScore,3);
+  assert.equal(result.totalVerification.previous.score,2);
+  assert.match(requests.at(-1).messages[0].content[0].text,/comment、每项reason/);
+  assert.match(requests.at(-1).messages[0].content[0].text,/"computedDetailSum":2/);
+  assert.ok(events.some(e=>e.status==='retrying'&&e.role==='仲裁'));
+});
+
+test('single model can confirm an arithmetic-only correction without an arbitrator',async t=>{
+  let calls=0;
+  t.mock.method(globalThis,'fetch',async()=>{
+    const value=historyConflict([1,1,0],++calls===1?3:2);
+    value.comment='每问分别1、1、0分，合计2分。';value.scoringDetails[1].reason='本问得1分。';
+    return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(value)}}]}));
+  });
+  const result=await grade(config,totalCheckSettings(),[]);
+  assert.equal(calls,2);assert.equal(result.score,2);assert.equal(result.formatWarning,undefined);
+  assert.equal(result.totalVerification.status,'verified');
+});
+
+for(const failure of ['invalid','http','repeated']) {
+  test(`failed total verification retains review and original response: ${failure}`,async t=>{
+    let calls=0;
+    t.mock.method(globalThis,'fetch',async()=>{
+      calls++;
+      if(calls===2&&failure==='http')return new Response('',{status:401});
+      const content=calls===2&&failure==='invalid' ? 'not JSON' : JSON.stringify(historyConflict());
+      return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content}}]}));
+    });
+    const result=await grade(config,totalCheckSettings(),[]);
+    assert.equal(calls,2);assert.equal(result.score,2);assert.match(result.formatWarning,/人工确认/);
+    assert.equal(result.totalVerification.status,'unresolved');
+    assert.ok(result.rawResponse.includes('第二问得2分'));
+  });
+}
+
+test('exhausted budget keeps the warning without another request',async t=>{
+  let calls=0;
+  t.mock.method(globalThis,'fetch',async()=>{
+    calls++;return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(historyConflict())}}]}));
+  });
+  const result=await grade(config,totalCheckSettings(false,1),[]);
+  assert.equal(calls,1);assert.match(result.formatWarning,/人工确认/);
+});
+
+test('cancellation during total verification stops grading',async t=>{
+  let calls=0;const controller=new AbortController();
+  t.mock.method(globalThis,'fetch',async()=>{
+    if(++calls===2)controller.abort(Error('停止核验'));
+    return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(historyConflict())}}]}));
+  });
+  await assert.rejects(grade(config,totalCheckSettings(),[],controller.signal),/停止核验/);
+  assert.equal(calls,2);
 });

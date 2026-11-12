@@ -98,7 +98,7 @@ function buildStructuredPrompt(config) {
     var rubricText = extractFieldText(config.rubric);
     var imgAnnotation = buildImageAnnotation(config);
 
-    let prompt = `你是一位严格的阅卷老师。请查看图片中的学生答案并评分。
+    let prompt = `你是阅卷老师，请按本次明确指定的评分口径评价学生实际作答。
 
 ===== 输入信息 =====`;
     if (questionText) prompt += `\n【题目】${imgAnnotation}\n${questionText}`;
@@ -138,7 +138,7 @@ function buildPrompt(config) {
     var _q = extractFieldText(config.question);
     var _a = extractFieldText(config.answer);
     var _r = extractFieldText(config.rubric);
-    let prompt = `你是一位严格的阅卷老师，请根据以下信息对学生答案进行评分：\n\n`;
+    let prompt = `你是阅卷老师，请按本次明确指定的评分口径评价学生实际作答：\n\n`;
     if (_q) prompt += `**题目内容：**\n${_q}\n\n`;
     if (_a) prompt += `**标准答案：**\n${_a}\n\n`;
     if (_r) prompt += `**评分标准：**\n${_r}\n\n`;
@@ -386,7 +386,7 @@ function buildSubQuestionPrompt(config) {
     var rubricText = extractFieldText(config.rubric);
     var imgAnnotation = buildImageAnnotation(config);
 
-    let prompt = `你是一位严格的阅卷老师。请查看图片中的学生答案并评分。
+    let prompt = `你是阅卷老师，请按本次明确指定的评分口径评价学生实际作答。
 
 ===== 输入信息 =====`;
     if (questionText) prompt += `\n【题目】${imgAnnotation}\n${questionText}`;

@@ -26,10 +26,10 @@ for (const subject of ['physics','mathematics']) {
         assert.match(prompt,/以已保存的各小问具体条款为准/);
         assert.match(prompt,/具体扣几分/);
         if (strictness==='lenient') {
-          assert.match(prompt,/即使过程不完整也应给该小问满分/);
-          assert.match(prompt,/每个适用小问必须明确写出此满分条件/);
-          assert.match(prompt,/不再按参考答案逐点追扣/);
-          assert.match(prompt,/没有任何有效过程时，仅给标准允许的答案分/);
+          assert.match(prompt,/只要最终答案正确，且学生实际写出任何与本题相关、经核验有效的公式、列式、运算或简要推理，就必须给分/);
+          assert.match(prompt,/过程过于简略或未达到参考步骤数量而判零/);
+          assert.match(prompt,/若这段有效过程足以支持结论，应给该小问满分/);
+          assert.match(prompt,/完全没有写过程、只写最终答案的过程题，不给过程分/);
           assert.match(prompt,/不得在识别文本中补写/);
           assert.doesNotMatch(prompt,/关键推理实际缺失仍按标准处理|常规运算仅限于/);
         } else if (strictness==='normal') {
@@ -107,6 +107,26 @@ test('old rubrics with a lenient marker receive the lenient guidance',()=>{
   assert.match(promptFor({...config,rubric:config.rubric+'\n评分口径：宽松；给分方式为按要点／步骤给分。'}),/宽松模式下的解答题/);
 });
 
+test('lenient process answers receive credit even when incomplete, while answer-only work earns no process credit',()=>{
+  const policy=solutionGradingPolicy({subject:'mathematics',strictness:'lenient'});
+  assert.match(policy,/任何与本题相关、经核验有效的公式、列式、运算或简要推理，就必须给分/);
+  assert.match(policy,/过程过于简略或未达到参考步骤数量而判零/);
+  assert.match(policy,/不得把“未得满分”处理成“不得分”/);
+  assert.match(policy,/完全没有写过程、只写最终答案的过程题，不给过程分/);
+});
+
+test('all natural-science lenient templates award partial credit for valid but incomplete work',()=>{
+  for(const subject of ['mathematics','physics','chemistry','biology']){
+    const requirements=rubricRequirements(subject,'lenient');
+    assert.match(requirements,/任何相关、有效的/ ,subject);
+    assert.match(requirements,/按.*有效内容给部分分|按有效内容给部分分/,subject);
+    assert.match(requirements,/不得因过程不完整判零/,subject);
+    const grading=promptFor({...config,rubricGeneration:{subject,strictness:'lenient'}});
+    assert.match(grading,/过程过于简略或未达到参考步骤数量而判零/,subject);
+    assert.match(grading,/不得把“未得满分”处理成“不得分”/,subject);
+  }
+});
+
 test('custom grading retains teacher boundaries and detailed feedback',()=>{
   const prompt=promptFor({...config,rubricGeneration:{strictness:'lenient',useCustomPrompt:true}});
   assert.match(prompt,/遵守教师自定义要求/);
@@ -150,6 +170,35 @@ test('generated solution rules preserve two question scores through generation a
     assert.match(text,/最终结果预留1—2分/);
     assert.match(text,/不能把整个正确方程点判零/);
   }
+});
+
+test('physics vector conventions persist through generation, saving and grading in every mode',async()=>{
+  for(const strictness of ['lenient','normal','strict']){
+    let requested='';
+    const generated=await generateRubric({providers:{test:{}}},{version:2,provider:'test',model:'test',subject:'physics',strictness,scoringMethod:'points',question:'汽车初速度20m/s，以4m/s²的加速度大小刹车，求3秒末速度。',answer:'8m/s',maxScore:4,roundStep:1},async(_provider,_model,prompt)=>{
+      requested=prompt;
+      return JSON.stringify({items:[{label:'第（1）问',maxScore:4,criteria:'正确列式与计算共4分。'}],warnings:[]});
+    });
+    for(const prompt of [requested,generated.rubric,promptFor({...config,rubric:generated.rubric})]){
+      assert.match(prompt,/物理矢量与正负号判定规则/);
+      assert.match(prompt,/v=20\+\(-4\)\*3=8/);
+      assert.match(prompt,/两种自洽写法同等认可/);
+      assert.match(prompt,/实际代入20-4\*3/);
+      assert.match(prompt,/不得反推学生使用了负加速度/);
+      assert.match(prompt,/不能因终值碰巧正确而认可错误推导/);
+      assert.match(prompt,/核对停止时间/);
+      assert.match(prompt,/物理含义与等价表达核验/);
+      assert.match(prompt,/负电流可表示实际方向相反/);
+      assert.match(prompt,/外界对系统做功与系统对外做功/);
+      assert.match(prompt,/表压与绝对压强须按定义转换/);
+      assert.match(prompt,/不能自行设置固定容差/);
+      assert.match(prompt,/不把所有物理专题例子机械加入每道题/);
+    }
+    assert.match(requested,/参考答案核验与规则编写分开/);
+    assert.match(requested,/不静默改写answer/);
+    assert.match(requested,/rubric留空且items为空/);
+  }
+  assert.doesNotMatch(solutionGradingPolicy({subject:'mathematics'}),/物理矢量与正负号判定规则/);
 });
 
 test('physics equation policy follows explicit subject markers over saved generator settings',()=>{

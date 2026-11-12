@@ -1,7 +1,9 @@
+import { realWorldReviewPolicy, subjectReviewPolicy } from './subject-review-rules.js';
+
 export const rubricPrompts = {
   strict: { label:'严格', text:'解答题要求答案正确、必要过程完备，并核对本题适用的单位、原始方程或等价基本关系、符号及条件说明等细节。生成标准时逐项明确必写内容、遗漏的确定扣分及上限；正确结果不能抵消过程或细节失分。认可有效替代解法，不要求照抄参考答案；不对本题不适用的单位或形式要求扣分。' },
   normal: { label:'正常', text:'解答题要求答案正确且必要过程充分。关键方程、必要计算、推理依据或论证环节实际缺失时，即使最终答案正确也按本题明确条款扣分；认可有效合并步骤，不把常规简写、重复说明或不影响含义的格式差异当成必要过程缺失。' },
-  lenient: { label:'宽松', text:'解答题以答案正确并有适当有效过程为满分条件。最终答案正确，且学生写出了与本题有关、方向正确并能支持结论的关键公式、列式或简要推理时，即使中间过程不完整，也应按标准得该小问满分；不要求复现全部参考步骤。只有答案而无有效过程、写出实质错误过程或答案不正确时，不适用此满分条件；不能把任意无关算式视为有效过程。客观题仍按答案项判定，证明、实验、论证及写作按其实际任务要求评价。' },
+  lenient: { label:'宽松', text:'需要过程的解答题，只要答案正确且学生实际写出任何与本题相关、有效的过程，就必须给分；不要求过程完整。过程足以支持结论时给该小问满分，否则按已体现的有效内容给部分分，不得判零。完全只写答案、没有过程的过程题，不给过程分，仅按标准明确规定给答案分。客观题仍按答案项判定，证明、实验、论证及写作按其实际任务要求评价。' },
   custom: { label:'自定义', text:'' }
 };
 
@@ -18,7 +20,7 @@ export const rubricSubjects = {
     focus:'区分计算求解、证明论证、应用建模等任务，评价关键推理、必要运算及结论，注明定义域、适用条件、检验及作图要求是否为本题必需。按关键数学环节赋分，不按书写行数或每个细碎算式机械给分；认可有效的不同解法。',
     strict:'明确每个必要推理环节、适用条件、解的检验和证明依据。关键论证缺失时不给对应步骤分；结论正确不能替代本题要求的证明过程，符号和范围错误按影响扣分。',
     normal:'依据本题考查目标为关键列式、必要变形、有效推理与结论分配分值，运算正确性本身是考查目标时必须评价，不能只看最初方程。局部计算错误保留已经成立的部分，后续分值按错误对条件、难度和推理有效性的实际影响处理。',
-    lenient:'计算求解题答案正确且已有适当有效列式或简要推理时，允许省略中间变形、求解计算和非必要说明，并按宽松满分条件评价；不因过程未逐项展开扣分。必须核验实际已写过程，错误定义域、漏解、增根、无效推理不能放宽。证明题仍需有效的关键论证，不能只写待证结论；题目明确要求展示的分类讨论、检验或指定步骤仍须满足。'
+    lenient:'计算求解题答案正确且实际写有任何相关、有效的列式、运算或简要推理时必须给分；过程足以支持结论可给满分，否则按有效内容给部分分，不得因过程不完整判零。完全只写答案时不给过程分。允许省略中间变形、求解计算、常规代入运算和重复说明，不因过程未逐项展开扣分。错误定义域、漏解、增根、无效推理不能放宽。证明题仍需有效的关键论证，按实际写出的有效论证给分，不能只写待证结论；题目明确要求展示的分类讨论、检验或指定步骤仍须满足。'
   },
   english: {
     label:'英语',
@@ -32,21 +34,21 @@ export const rubricSubjects = {
     focus:'区分物理概念、模型、规律选择、列式、计算及实验分析；仅要求本题必要的方向、单位、有效数字与适用条件。认可等价公式和合理解法，公式中的符号含义必须一致。',
     strict:'明确物理模型、规律适用条件、原始方程或等价基本关系及必要方向约定。只有数值代入式或最终结果而缺少标准要求的基本关系时，扣对应过程分；最终有量纲结果缺单位、明确写错单位或缺少必需说明，按生成标准确定条款扣分。有效数字仅在题目或教师明确要求时计分；不同有效解法按其自身基本关系评价。',
     normal:'计算类解答题过程分主要看关键方程和物理关系是否正确，最终结果通常占该小问1—2分，具体遵守教师分配及得分步长；不把每次代入或中间运算单独设分。认可等价公式及不同合理解法。方程正确而局部计算错误时保留方程分，单位问题按明确规则处理，避免同一错误重复扣分。',
-    lenient:'数值结果正确且已有适当有效物理关系、列式或简要推导时，即使省略原始方程的单列、中间代入或计算，也应得该小问满分。不影响含义的单位省略和符号简写不扣分；不放宽错误物理规律、关键方向、明确的量纲矛盾或题目明确考查的单位。'
+    lenient:'物理计算解答题答案正确且实际写有任何相关、有效的物理关系、公式、列式、运算或简要推导时必须给分；过程足以支持结论给满分，否则按已体现的有效内容给部分分，不得因过程不完整判零。完全只写答案时不给过程分。允许省略原始方程的单列、中间代入、常规运算和重复说明。不影响含义的单位省略和符号简写不扣分；不放宽错误物理规律、关键方向、明确的量纲矛盾或题目明确考查的单位。'
   },
   chemistry: {
     label:'化学',
     focus:'区分概念、物质与离子判断、化学用语、方程式、实验和计算。依据本题明确化学式、电荷、配平、反应条件、现象与结论的必要要求。',
     strict:'化学式、电荷、方程式配平及必要反应条件逐项准确核对；实验明确操作目的、现象和推理关系。关键粒子、条件或守恒关系错误不给对应分，不能以意思相近掩盖化学用语错误。',
     normal:'文字解释认可化学含义相同的表述，计算按列式与过程给分，实验按有效操作和证据给分。化学用语的实质错误与一般文字措辞区别处理。',
-    lenient:'开放解释与实验分析充分认可合理同义表述、可行替代操作及有效计算方法。轻微非关键措辞不扣分；化学式、电荷、守恒关系和关键反应条件仍须正确，不能猜补缺失内容。'
+    lenient:'化学计算、实验分析及需要说明过程的解答题，答案正确且实际写有任何相关、有效的化学关系、方程式、计算、操作依据或简要推理时必须给分；过程足以支持结论给满分，否则按已体现的有效内容给部分分，不得因过程不完整判零。完全只写答案时不给过程分。认可合理同义表述、可行替代操作及有效计算方法；化学式、电荷、守恒关系和关键反应条件错误时按实际有效内容评分，不能猜补缺失内容。'
   },
   biology: {
     label:'生物',
     focus:'区分概念术语、结构功能、机制过程、实验设计与数据解释。依据题目明确对象、条件、变量和因果关系，不能凭常见结论代替本题材料证据。',
     strict:'核心术语、作用对象、机制环节和因果方向准确核对；实验明确必要对照、自变量与因变量。关键机制或实验控制缺失不给对应分，概念混淆不能按表述接近认可。',
     normal:'认可生物学含义相同的表达，机制解释按有效环节给分，实验和数据分析按证据与逻辑分别给分。非关键措辞差异不扣分。',
-    lenient:'认可核心含义准确的通俗解释、合理概括和可行实验方案，已明确表达的机制与证据给对应分。关键术语指代、因果方向和必要实验控制不能放宽。'
+    lenient:'生物机制、实验分析及需要说明过程的解答题，答案正确且实际写有任何相关、有效的机制环节、证据、实验依据或简要推理时必须给分；过程足以支持结论给满分，否则按已体现的有效内容给部分分，不得因过程不完整判零。完全只写答案时不给过程分。认可含义准确的通俗解释、合理概括和可行实验方案；关键术语指代、因果方向和必要实验控制错误时按实际有效内容评分。'
   },
   politics: {
     label:'政治',
@@ -100,7 +102,7 @@ const errorCarryPolicy = '解答题错算与错误延续规则：题目或教师
 
 const solutionFeedbackPolicy = '解答题反馈要求：依据实际作答区分“解题方法已掌握，但存在细节问题”和“核心方法或推理错误”，不能仅因细节扣分就笼统评价为不会解题。凡有扣分，comment和对应scoringDetails.reason必须逐项写清：学生实际写了什么或遗漏了什么、对应哪条评分标准、为什么影响该得分点、具体扣几分及该小问最后得分；不得只写“不规范”“不完整”或“酌情扣分”。细节问题没有影响思路时应明确肯定正确方法，并给出改正建议；被宽松规则接受的细节可作为建议说明，明确“不扣分”，不得暗扣。若无法确认学生实际书写，报告识别疑点，不得猜测。';
 
-const lenientSolutionPolicy = '宽松模式下的解答题：优先看学生是否掌握解题方法。对计算求解类小问，最终答案正确，且已写出与题意相符、经核验有效、能体现核心解题方向的公式、列式或简要推理时，即使过程不完整也应给该小问满分；不再按参考答案逐点追扣未展开的中间步骤。生成标准时，每个适用小问必须明确写出此满分条件，并说明本题怎样的简要过程足够，不能仅在末尾标注宽松。中间量、常规代入运算及重复说明可以省略；不影响含义的符号简写、格式差异、可从上下文唯一确定的单位省略、未单列原始方程或其已由有效合并式体现时均不扣分。此满分条件是对过程充分性的整体认定，不得在识别文本中补写学生没有写出的步骤。只有正确终值、没有任何有效过程时，仅给标准允许的答案分；无关或套用错误的公式、已写出错误模型或无效推理，均不能凭正确终值判满分。题目明确考查的单位、精度、证明环节或指定方法仍按要求评分；证明题至少有有效的关键论证，不能只抄待证结论。答案不正确或已写过程有实质错误时，按本题部分分与学科错误延续条款给分。';
+const lenientSolutionPolicy = '宽松模式下的解答题：优先看学生是否掌握解题方法。对需要过程的计算求解类小问，只要最终答案正确，且学生实际写出任何与本题相关、经核验有效的公式、列式、运算或简要推理，就必须给分；不要求过程完整，不得因省略中间步骤、过程过于简略或未达到参考步骤数量而判零。若这段有效过程足以支持结论，应给该小问满分；否则依据实际体现的有效内容给相应部分分，不得把“未得满分”处理成“不得分”。完全没有写过程、只写最终答案的过程题，不给过程分，仅可给评分标准明确列出的答案分；不得补写学生没有写出的步骤，也不得在识别文本中补写。常规代入运算及重复说明可以省略；不影响含义的单位省略和符号简写不扣分；题目明确考查的单位仍须按标准评分。';
 
 const normalSolutionPolicy = '正常模式下的解答题：答案正确且必要过程充分才能得满分。生成标准时，各小问须明确不可省略的关键方程、必要计算、推理依据或论证环节，并为实际缺失写出对应扣分及上限；最终答案正确也不能免除此类扣分。不要求逐行复现参考解法；有效合并公式、简洁推导已体现必要依据时应计分，不能把“未单列”和“确实缺失”混同。常规代入、重复说明、非关键格式和上下文含义明确的单位省略通常不扣分；题目或教师明确要求的单位、原始方程、证明形式等仍须满足。学生方法正确但因过程缺失失分时，反馈必须明确说明“方法正确”，指出具体缺失与分值，不笼统认定不会解题。';
 
@@ -112,10 +114,24 @@ const solutionStrictnessPolicies = new Map([
   ['strict',strictSolutionPolicy]
 ]);
 
+const physicsVectorPolicy = '物理矢量与正负号判定规则：结合学生实际写出的公式、代入、运算、图示及上下文，区分有符号的方向分量与非负的大小，核对同一方向约定下是否自洽；不得只对照参考答案中的加减号、矢量箭头或符号形式判错。匀变速直线运动可写v=v0+at，其中a为有符号分量；以初速度方向为正时，刹车加速度可取负值，例如v0=20、a=-4、t=3时，v=20+(-4)*3=8。也可令b=4表示减速度大小，写v=v0-bt；两种自洽写法同等认可，不得把“+at”直接判成加速运动或符号错误。学生未单列a=-4或正方向文字，但实际代入20-4*3、图示或其他已写内容已清楚体现负加速度时，应认可，不能仅因未重复声明而扣方程分。宽松和正常模式不因上下文已明确的方向约定未单独写出而扣分；严格模式只有已保存标准明确要求单列方向说明时才按对应细节条款处理，不得据此否定正确的物理关系。若a已明确为正的大小，却实际写v=v0+at并代入正值，或同一符号的方向含义前后矛盾，应指出实际矛盾，按受影响评分点处理，不能因终值碰巧正确而认可错误推导。仅有终值且看不到代入或其他方向依据时，不得反推学生使用了负加速度。普通刹车停止后保持静止的题目还须核对停止时间，不能把恒定制动公式延伸到停车以后并解释成倒车；题设另有运动条件时按题设。生成标准与反馈都应说明认可的方向约定和实际代入依据，不以参考答案的表面符号作为唯一标准。';
+
+const physicsEquivalencePolicy = [
+  '物理含义与等价表达核验：先识别题目所求物理量、对象和过程区间，再核对学生采用的定义、正方向、参考系、参考零点及适用条件，最后检查公式、实际代入和结论。图示、文字、公式和计算共同构成依据；只采用实际写出且含义明确的内容，不要求重复声明已明确的约定，不以参考答案的表面符号作为唯一标准。',
+  '方向与大小：速度、位移、力等有符号分量，可以用负值或正的大小加明确方向表达；速率、路程等标量大小不能与有符号分量混同。电流假设方向与实际相反时，负电流可表示实际方向相反；回路遍历方向改变或方程整体变号，物理关系等价且前后一致时认可。题目要求说明实际方向时仍须给出可辨认的方向信息。',
+  '定义与参考量：区分某力做功与克服该力做功、末态减初态的变化量与正的减少量；区分外界对系统做功与系统对外做功，按各自定义核验热力学关系。势能或电势零点不同可能改变单点数值，应核对差值及题目指定零点。参考系不同须正确转换到题目要求的参考系；表压与绝对压强须按定义转换，不能把不同物理量直接判为等价。光学距离和焦距按整套自洽符号约定及成像结论核验，不能只看单个正负号。',
+  '等价边界：平均速度与平均速率、位移与路程、分量与大小不是无条件等价；仅当本题条件使它们相等时才可接受相应替换。单位不同须核验换算与量纲，不能只比较裸数值。近似、有效数字和数值容差按题目或教师明确规则执行，不能自行设置固定容差；不成立的近似或错误适用区间不能用正确终值抵消。',
+  '生成物理标准时，仅将本题涉及的上述问题写入对应items.criteria：说明标准答案采用的量定义和必要约定，列出本题适用的等价表达及判错边界，并与所选宽严口径、分值和得分步长一致。不把所有物理专题例子机械加入每道题，不增加题外条件。反馈指出实际采用的约定、可见依据及等价或不等价的原因；确有错误时定位首次错误及受影响分值，不能只写“符号不规范”。'
+].join('\n');
+
 const subjectSolutionPolicies = new Map([
-  ['physics', {grading:physicsSolutionPolicy, carry:errorCarryPolicy}],
+  ['physics', {grading:[physicsSolutionPolicy,physicsVectorPolicy,physicsEquivalencePolicy].join('\n'), carry:errorCarryPolicy}],
   ['mathematics', {grading:mathematicsSolutionPolicy, carry:''}]
 ]);
+
+const sufficientEvidencePolicy='宽松和正常口径的满分判断先于逐点扣分：先核对结论，再核对可见过程是否已体现本题必要关系。答案正确、过程有效且足以支持结论时，直接按该小问满分处理，不能再因未重复写出文字说明、未逐式展开或未采用参考答案叙述顺序扣分。公式、代入数值、已求中间量、图示及相邻小问中归属明确的结果可以共同体现依据；读取这些已写信息的直接关系不属于猜补过程。正常口径核验关键关系是否已由这些证据体现，不要求每个关系另起一行；宽松进一步接受常规中间计算和非必要表达的省略。两档均不能仅凭“学生应该会”补写实际缺失的关键依据。只有缺少不可由已写内容确认的必要依据、存在实质错误，或明确违背题目／教师特别指定的要求时，才按对应条款处理。扣分前必须指出具体缺失的学科关系，而非笼统写“说明不够清楚”“按严格核对扣分”；纯表达完善建议注明不扣分。';
+
+const executableRubricPolicy='评分标准执行顺序：先识别本小问的评价目标与接受答案，再将实际证据对应到得分条件；先判适用的整体满分条件，再对其余情况按独立得分点计分。每个得分点须写清可观察证据、分值和必要前提，区分“同时满足”与“任一满足”；不同有效解法是替代路径，不叠加路径分值。各路径应覆盖本小问满分，设问要求任选若干要点时写明计数与上限。同一证据可体现不同能力，但不能把同一要点改名重复给分。最后检查遗漏、重复、依赖错误和合计，不从预估总分倒推。等级题写清档间边界及档内升降依据，不强行拆成计算步骤。扣分必须能指向当前口径下适用的具体条款；标准无法确定时报告疑点，不临时编造罚分。';
 
 export function solutionGradingPolicy({subject='',strictness='normal',useCustomPrompt=false}={}) {
   const policy = subjectSolutionPolicies.get(subject);
@@ -124,10 +140,14 @@ export function solutionGradingPolicy({subject='',strictness='normal',useCustomP
     : solutionStrictnessPolicies.get(strictness) || normalSolutionPolicy;
   // Mathematics uses dependency-based limits instead of the generic carry rule.
   return [
+    realWorldReviewPolicy,
     solutionMethodsPolicy,
     policy?.carry ?? errorCarryPolicy,
     strictnessPolicy,
+    !useCustomPrompt && ['lenient','normal'].includes(strictness) ? sufficientEvidencePolicy : '',
     policy?.grading,
+    useCustomPrompt ? '' : subjectReviewPolicy(subject),
+    executableRubricPolicy,
     solutionFeedbackPolicy
   ].filter(Boolean).join('\n');
 }
@@ -151,4 +171,48 @@ export function rubricGenerationSettings(saved={}) {
   const previousTemplate=previousText[strictness]?template.replace(rubricPrompts[strictness].text,previousText[strictness]):template;
   const legacyCustom=saved.version!==2 && typeof saved.requirements==='string' && (saved.strictness==='custom'||saved.requirements!==template&&saved.requirements!==previousTemplate);
   return {version:2,subject,strictness,scoringMethod:Object.hasOwn(rubricScoringMethods,saved.scoringMethod)?saved.scoringMethod:'auto',notes:saved.notes||'',useCustomPrompt:saved.version===2?!!saved.useCustomPrompt:legacyCustom,customRequirements:saved.customRequirements??(legacyCustom?saved.requirements:''),scoreAllocation:saved.scoreAllocation||''};
+}
+
+// The saved rubric is the marking contract. Use this resolver both when the
+// editor reopens it and when the server builds the actual grading request.
+export function rubricGradingSettings(rubric, saved={}, strictnessOverride='') {
+  const settings=rubricGenerationSettings(saved);
+  // Some imported presets have the explicit switch without a version tag.
+  if(typeof saved.useCustomPrompt==='boolean')settings.useCustomPrompt=saved.useCustomPrompt;
+  const text=typeof rubric==='string'?rubric:rubric?.text || '';
+  const mode=text.match(/(?:评分口径|答案要求)[：:]\s*(宽松|正常|严格|自定义)/u)?.[1];
+  const subject=text.match(/^[\t ]*学科[：:][\t ]*([^。；;\r\n]+)/mu)?.[1]?.trim();
+  const method=text.match(/(?:给分方式为|给分方式[：:])[\t ]*([^。；;\r\n]+)/u)?.[1]?.trim();
+  if(subject)settings.subject=Object.entries(rubricSubjects).find(([,entry])=>entry.label===subject)?.[0] || '';
+  if(mode){
+    settings.useCustomPrompt=mode==='自定义';
+    if(!settings.useCustomPrompt)settings.strictness=({宽松:'lenient',正常:'normal',严格:'strict'})[mode];
+  }
+  if(method)settings.scoringMethod=Object.entries(rubricScoringMethods).find(([,entry])=>entry.label===method)?.[0] || settings.scoringMethod;
+  if(['lenient','normal','strict'].includes(strictnessOverride)){
+    settings.strictness=strictnessOverride;
+    settings.useCustomPrompt=false;
+  }
+  return settings;
+}
+
+export function gradingPolicyForRubric(rubric, saved={}, strictnessOverride='') {
+  const settings=rubricGradingSettings(rubric,saved,strictnessOverride);
+  const text=typeof rubric==='string'?rubric:rubric?.text || '';
+  const policy=solutionGradingPolicy(settings);
+  const method=rubricScoringMethods[settings.scoringMethod];
+  const boundary=settings.scoringMethod==='answers'
+    ? '按答案逐项给分不设过程分，不套用其他模板的过程分或错算延续部分分。'
+    : '只在已保存标准适用的任务和评分点内采用过程、要点或等级评价，不重新分配分值。';
+  return [text.includes(policy)?'':policy,`本次给分方式：${method.label}。${boundary}已保存标准的明确条款优先，规则冲突按gradingIssues报告。`].filter(Boolean).join('\n');
+}
+
+export function activeGradingMode(config) {
+  const settings=rubricGradingSettings(config.rubric,config.rubricGeneration,config.scoring?.strictness);
+  return settings.useCustomPrompt?'custom':settings.strictness;
+}
+
+export function gradingModeInstruction(config) {
+  const mode=activeGradingMode(config);
+  return `本次实际阅卷口径：${rubricPrompts[mode].label}（${mode}）。整个评分、复评和仲裁均执行此口径，不能自行切换宽严。${config.scoring?.strictness?'教师已明确选择实际阅卷口径，优先于旧标准中的模式标记和仅适用于其他模式的模板条款；按本次口径解释常规过程与细节要求。题目或教师特别指定的必写内容、方法限制和分值仍保留，无法兼容时报告gradingIssues，不静默改用其他模式。':''}输出gradingMode字段填写实际执行的口径；扣分前核对该扣分是否被本次口径允许。`;
 }

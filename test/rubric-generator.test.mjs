@@ -197,6 +197,12 @@ test('图片经已有接口生成草稿，预览回填后保存并保留原始�
   assert.equal(await page.locator('#rubricPromptDetails').getAttribute('open'),null);
   assert.equal(await page.locator('#rubricRequirements').evaluate(el=>el.readOnly),true);
   assert.equal(await page.locator('#rubricSubject option').count(),10);
+  for(const [subject,entry] of Object.entries(rubricSubjects)){
+    await page.locator('#rubricSubject').selectOption(subject);
+    assert.match(await page.locator('#rubricPolicySummary').innerText(),new RegExp(entry.label));
+    assert.ok((await page.locator('#rubricSubjectReviewSummary').innerText()).length>10);
+    assert.ok((await page.locator('#rubricRequirements').inputValue()).includes(`学科：${entry.label}`));
+  }
   await page.locator('#rubricSubject').selectOption('physics');
   assert.match(await page.locator('#rubricRequirements').inputValue(),/学科：物理/);
   await page.locator('#rubricMaxScore').fill('4');
@@ -264,7 +270,42 @@ test('图片经已有接口生成草稿，预览回填后保存并保留原始�
   assert.equal(await page.locator('#rubricTeacherNotes').inputValue(),'单位缺失只扣一次');
   assert.equal(await page.locator('#rubricScoringMethod').inputValue(),'answers');
   assert.equal(await page.locator('#rubricUseCustomPrompt').isChecked(),true);
+  assert.match(await page.locator('#rubricSubjectReviewSummary').innerText(),/以教师自定义提示词为准/);
+  await page.locator('#closeRubricGenerator').click();
+  await page.locator('#rubric').fill('第一问：满分4分\n已编辑的标准。\n学科：化学。\n评分口径：宽松；给分方式为按要点／步骤给分。');
+  await page.locator('#openRubricGenerator').click();
+  assert.equal(await page.locator('#rubricSubject').inputValue(),'chemistry');
+  assert.equal(await page.locator('#rubricStrictness').inputValue(),'lenient');
+  assert.equal(await page.locator('#rubricScoringMethod').inputValue(),'points');
+  assert.equal(await page.locator('#rubricUseCustomPrompt').isChecked(),false);
+  assert.match(await page.locator('#rubricSubjectReviewSummary').innerText(),/守恒与反应条件/);
+  await page.locator('#closeRubricGenerator').click();
+  await page.locator('#rubric').fill('第一问：满分4分\n已保存的旧严格模板。\n学科：物理。\n评分口径：严格；给分方式为按要点／步骤给分。');
+  await page.locator('#gradingStrictness').selectOption('lenient');
+  await page.locator('#savePreset').click();await page.waitForFunction(()=>document.querySelector('#dirtyBadge').hidden);
+  await page.reload();await page.locator('[data-tab=presets]').click();
+  assert.equal(await page.locator('#gradingStrictness').inputValue(),'lenient');
+  const actual=JSON.parse(fs.readFileSync(path.join(root,'config.json'),'utf8')).presets[cfg.active];
+  assert.equal(actual.scoring.strictness,'lenient');assert.match(promptFor(actual),/本次实际阅卷口径[：:]宽松/);
+  await page.locator('#openRubricGenerator').click();assert.equal(await page.locator('#rubricStrictness').inputValue(),'lenient');
   assert.deepEqual(errors,[]);
+});
+
+test('critical generation conflicts cannot become executable rules; ordinary suggestions remain usable',async()=>{
+  const settings={providers:{demo:{}}},input={provider:'demo',model:'vision',question:'题目',answer:'答案',maxScore:4};
+  const base={question:'题目',answer:'答案',items:[{label:'第一问',maxScore:4,criteria:'正确得4分。'}],warnings:['分值分配建议']};
+  const blocked=await generateRubric(settings,input,async()=>JSON.stringify({...base,blockingIssues:[{location:'第一问',reason:'两条教师要求互相冲突，无法确定给分'}]}));
+  assert.equal(blocked.rubric,'');assert.match(blocked.warnings.join('\n'),/无法确定评分标准/);
+  const valid=await generateRubric(settings,input,async()=>JSON.stringify({...base,blockingIssues:[]}));assert.match(valid.rubric,/满分4分/);
+  for(const blockingIssues of [null,{},[{}],[{location:'第一问',reason:''}]])await assert.rejects(generateRubric(settings,input,async()=>JSON.stringify({...base,blockingIssues})),/阻断问题格式/);
+});
+
+test('generation rejects repeated scoring items and distinguishes minutes from fractional points',async()=>{
+  const settings={providers:{demo:{}}},input={provider:'demo',model:'vision',question:'题目',answer:'答案',maxScore:4,roundStep:1};
+  const make=items=>JSON.stringify({question:'题目',answer:'答案',items,warnings:[]});
+  await assert.rejects(generateRubric(settings,input,async()=>make([{label:'第一问',maxScore:2,criteria:'正确2分。'},{label:'第一问',maxScore:2,criteria:'正确2分。'}])),/重复/);
+  const result=await generateRubric(settings,input,async()=>make([{label:'第一问',maxScore:4,criteria:'0.5分钟内完成0.5分米位移；正确得4分。'}]));assert.match(result.rubric,/0\.5分钟/);
+  await assert.rejects(generateRubric(settings,input,async()=>make([{label:'第一问',maxScore:4,criteria:'部分正确0.5分。'}])),/步长/);
 });
 
 

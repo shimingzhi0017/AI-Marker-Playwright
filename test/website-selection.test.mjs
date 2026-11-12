@@ -52,6 +52,8 @@ test('网站选择保存网址、切换已打开浏览器、保留草稿并在�
   assert.equal(await page.locator('#mode').inputValue(),'normal');
   assert.equal(await page.locator('#question').inputValue(),'未保存的题目草稿');
   await page.locator('#open').click();await page.waitForFunction(()=>!document.querySelector('#diagnose').disabled);
+  // browserOpen is visible before goto completes; wait for navigation itself.
+  await gradingPage.waitForURL('https://www.zhixue.com/');
   assert.equal(gradingPage.url(),'https://www.zhixue.com/');
   app.state.snapshot={images:[{}],units:[{}],strongIdentity:true};app.state.diagnosisError='旧错误';
   await page.locator('#adaptWebsite').selectOption('group:second');
@@ -74,6 +76,6 @@ test('网站选择保存网址、切换已打开浏览器、保留草稿并在�
   page.once('dialog',dialog=>dialog.accept());await page.reload();await page.locator('[data-tab=grading]').click();
   assert.equal(await page.locator('#adaptWebsite').inputValue(),'group:second');assert.equal(await page.locator('#websiteAddress').innerText(),'https://fixture.test/second');
   await context.close();await page.waitForFunction(()=>document.querySelector('#diagnose').disabled);
-  await page.locator('#open').click();await page.waitForFunction(()=>!document.querySelector('#diagnose').disabled);assert.equal(gradingPage.url(),'https://fixture.test/second');
+  await page.locator('#open').click();await page.waitForFunction(()=>!document.querySelector('#diagnose').disabled);await gradingPage.waitForURL('https://fixture.test/second');assert.equal(gradingPage.url(),'https://fixture.test/second');
   assert.deepEqual(errors,[]);
 });

@@ -388,7 +388,7 @@ export function createEnhancements({getConfig,save,action,markDirty,renderPreset
     });
   }
   function preset() {const p=getConfig().presets[$('presetSelect').value];for(const field of ['question','answer','rubric']){images[field]=structuredClone(p[field]?.images||[]);media(field);}const d=p.scoring?.diligence||{};$('diligenceEnabled').checked=!!d.enabled;$('diligenceBonus').value=d.maxBonus??3;$('diligenceDecay').value=d.decayPower??2;$('diligenceCriteria').value=d.criteria||'';$('blankEnabled').checked=!!p.blankDetection?.enabled;$('blankThreshold').value=p.blankDetection?.threshold??0.01;const blankStatus=$('blankStatus'),blankHint=$('blankStatusHint');if(p.blankDetection?.reference?.length){blankStatus.textContent=`已保存 ${p.blankDetection.reference.length} 个范本特征`;blankStatus.classList.add('has-reference');blankHint.textContent='范本已就绪，可随时启用或清除。';}else{blankStatus.textContent='尚未设置空白范本';blankStatus.classList.remove('has-reference');blankHint.textContent='启用后将交给模型评分，并要求人工确认。';}syncSettingPanels();}
-  function applyPreset(p) {for(const field of ['question','answer','rubric']){if(images[field]?.length || typeof p[field]==='object')p[field]={...(typeof p[field]==='object'?p[field]:{text:p[field]}),images:structuredClone(images[field]||[])};}p.scoring.diligence={...p.scoring.diligence,enabled:$('diligenceEnabled').checked,maxBonus:Number($('diligenceBonus').value),decayPower:Number($('diligenceDecay').value),criteria:$('diligenceCriteria').value};p.blankDetection={...p.blankDetection,enabled:$('blankEnabled').checked,threshold:Number($('blankThreshold').value)};}
+  function applyPreset(p) {for(const field of ['question','answer','rubric']){if(images[field]?.length || typeof p[field]==='object')p[field]={...(typeof p[field]==='object'?p[field]:{text:p[field]}),images:structuredClone(images[field]||[])};}p.scoring.strictness=$('gradingStrictness').value;p.scoring.diligence={...p.scoring.diligence,enabled:$('diligenceEnabled').checked,maxBonus:Number($('diligenceBonus').value),decayPower:Number($('diligenceDecay').value),criteria:$('diligenceCriteria').value};p.blankDetection={...p.blankDetection,enabled:$('blankEnabled').checked,threshold:Number($('blankThreshold').value)};}
   function provider() {const p=getConfig().providers[$('providerSelect').value] || {};const summary=$('providerSummary');summary.replaceChildren();const empty=!Object.keys(getConfig().providers).length;for(const id of ['editProvider','viewProviderModels','deleteProvider'])$(id).disabled=empty;if(empty){summary.textContent='尚未添加模型供应商，点击新建开始配置。';$('manualModelList').replaceChildren();return;}for(const [label,value] of [['接口状态',p.endpoint&&(p.apiKey||p.apiKeyEnv)?'已配置':'待配置'],['协议',{chat:'Chat Completions',responses:'Responses',gemini:'Gemini 原生'}[p.protocol||'chat']],['模型目录',`${(p.models||[]).length} 个模型`]]){const item=document.createElement('div'),title=document.createElement('span'),text=document.createElement('strong');title.textContent=label;text.textContent=value;item.append(title,text);summary.append(item);}$('manualModelList').replaceChildren(...(p.models||[]).map(id=>{const row=document.createElement('div'),name=document.createElement('span'),button=document.createElement('button');name.textContent=id;button.textContent='移除';button.onclick=()=>action(async()=>{p.models=p.models.filter(m=>m!==id);await save('模型目录已保存','models');provider();});row.append(name,button);return row;}));}
   function workflow() {const w=getConfig().workflows[$('workflowSelect').value];for(const [prefix,entry]of[['primary',w.model],['secondary',w.dualEval?.secondary],['arbitration',w.dualEval?.arbitration]])$(prefix+'Effort').value=entry?.reasoningEffort||'';$('outputLimit').checked=w.outputLimitEnabled!==false && !!w.maxOutputTokens;$('outputTokens').value=w.maxOutputTokens||4096;$('requestBudget').value=getConfig().requestBudget||6;$('gradingTimeoutSeconds').value=Math.round((getConfig().gradingTimeoutMs||600000)/1000);$('recognitionPolicy').value=w.recognitionPolicy||'manual';dual();updateWorkflowStatus();}
   function updateWorkflowStatus(){
@@ -466,10 +466,11 @@ export function createEnhancements({getConfig,save,action,markDirty,renderPreset
   function updateActionLabels(){
     const start=$('start'),pause=$('pause'),phase=$('phase')?.textContent||'';
     if(!start||!pause)return;
-    if($('phase'))$('phase').dataset.tone=/已暂停|等待|待核对/.test(phase)?'warning':/阅卷|正在|提交中/.test(phase)?'active':/完成|已提交|通过/.test(phase)?'success':/失败|异常|断开/.test(phase)?'danger':'pending';
+    if($('phase'))$('phase').dataset.tone=/已暂停|等待|待核对|请确认评分/.test(phase)?'warning':/阅卷|正在|提交中/.test(phase)?'active':/完成|已提交|通过/.test(phase)?'success':/失败|异常|断开/.test(phase)?'danger':'pending';
     const running=!pause.disabled;
     pause.textContent='暂停阅卷';
-    if(running)start.textContent='阅卷中';
+    if(running&&/请确认评分/.test(phase))start.textContent=$('countdown')?.hidden?'等待确认':'等待提交';
+    else if(running)start.textContent='阅卷中';
     else if(/已暂停/.test(phase))start.textContent='继续阅卷';
     else if(start.disabled)start.textContent='检查配置';
     else start.textContent='开始阅卷';
@@ -500,7 +501,8 @@ export function createEnhancements({getConfig,save,action,markDirty,renderPreset
     const steps=[...document.querySelectorAll('#readiness .ready-step')];
     const missing=steps.filter(step=>!step.classList.contains('complete')).map(step=>step.querySelector('span:nth-child(2)')?.textContent || step.textContent.trim());
     let next;
-    if(/阅卷中|正在阅卷/.test(phase))next='可暂停阅卷，或在结果区确认提交';
+    if(/请确认评分/.test(phase))next='在下方结果区核对评分，或暂停后重新评分';
+    else if(/阅卷中|正在阅卷/.test(phase))next='可暂停阅卷，或在结果区确认提交';
     else if(/已暂停/.test(phase))next='可继续阅卷，或停止并保存';
     else if(/阅卷完成/.test(phase))next='切换题目后重新检查页面';
     else if(missing.length)next=`先完成${missing.join('、')}`;
@@ -508,7 +510,7 @@ export function createEnhancements({getConfig,save,action,markDirty,renderPreset
     else if($('checkTitle') && !/页面已识别|阅卷已结束/.test($('checkTitle').textContent))next='检查阅卷页面';
     else next='准备就绪，可以开始阅卷';
     if($('summaryTaskName'))$('summaryTaskName').textContent=taskName;
-    if($('summaryTaskState')){$('summaryTaskState').textContent=phase;$('summaryTaskState').dataset.tone=/已暂停|等待|待核对/.test(phase)?'warning':/阅卷|正在|提交中/.test(phase)?'active':/完成|已提交|通过/.test(phase)?'success':/失败|异常|断开/.test(phase)?'danger':'pending';}
+    if($('summaryTaskState')){$('summaryTaskState').textContent=phase;$('summaryTaskState').dataset.tone=/已暂停|等待|待核对|请确认评分/.test(phase)?'warning':/阅卷|正在|提交中/.test(phase)?'active':/完成|已提交|通过/.test(phase)?'success':/失败|异常|断开/.test(phase)?'danger':'pending';}
     if($('summaryTaskPreset'))$('summaryTaskPreset').textContent=cfg.active || '未选择方案';
     if($('summaryTaskCount'))$('summaryTaskCount').textContent=`${count} 份`;
     if($('summaryTaskNext'))$('summaryTaskNext').textContent=next;

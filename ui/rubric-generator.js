@@ -1,7 +1,8 @@
-import {rubricSubjects,rubricRequirements,rubricScoringMethods,rubricPolicy,rubricGenerationSettings} from './rubric-prompts.js';
+import {rubricSubjects,rubricRequirements,rubricScoringMethods,rubricPolicy,rubricGradingSettings} from './rubric-prompts.js';
+import {subjectReviewSummaries} from './subject-review-rules.js';
 export function setupRubricGenerator({getConfig, getImages, action, api, markDirty}) {
   const $ = id => document.getElementById(id);
-  $('rubric').closest('label').insertAdjacentHTML('beforebegin', '<div class="wide"><button id="openRubricGenerator">AI生成评分标准</button><p class="hint">使用上方题目和参考答案的文字、图片生成草稿。填写分值、选择评分口径，生成后检查并保存方案。</p></div>');
+  $('rubric').closest('label').insertAdjacentHTML('beforebegin', '<div class="wide"><button id="openRubricGenerator">AI生成评分标准</button><p class="hint">使用上方题目和参考答案的文字、图片生成草稿。填写分值、选择评分口径，生成后检查并保存方案。</p><label>实际阅卷口径<select id="gradingStrictness"><option value="">遵循已保存评分标准</option><option value="lenient">宽松</option><option value="normal">正常</option><option value="strict">严格</option></select><span class="hint">保存方案后用于实际评分。显式选择优先于旧模板的宽严标记；本题特别指定的要求仍须满足。</span></label></div>');
   document.body.insertAdjacentHTML('beforeend', `<dialog id="rubricGeneratorDialog" aria-labelledby="rubricGeneratorTitle"><div class="image-dialog-heading"><h2 id="rubricGeneratorTitle">AI生成评分标准</h2><button id="closeRubricGenerator">关闭</button></div><div class="form-grid"><label>AI接口<select id="rubricProvider"></select></label><label>模型<input id="rubricModel" list="rubricModels" placeholder="选择或输入支持图片的模型"></label><datalist id="rubricModels"></datalist><label>题目总分<input id="rubricMaxScore" type="number" min="0.5" step="0.5" placeholder="例如：10"></label><label>答案要求<select id="rubricStrictness"><option value="strict">严格</option><option value="normal" selected>正常</option><option value="lenient">宽松</option><option value="custom">自定义</option></select></label><label class="wide">分值设置（文字输入）<textarea id="rubricScoreAllocation" rows="3" maxlength="6000" placeholder="例如：第（1）问4分，第（2）问6分，第（3）问6分；或第一问列式2分、计算2分"></textarea><span class="hint">以这里的分配和总分为准，忽略图片中的原分值。留空时由AI建议分配。</span></label><label class="wide">答案要求提示词（可编辑）<textarea id="rubricRequirements" rows="4" maxlength="6000"></textarea></label></div><p class="hint">复用已保存的接口密钥；本次选择只用于生成标准。上传图片时请选择支持视觉的模型。</p><button id="generateRubric" class="primary">生成草稿</button><p id="rubricGenerationStatus" role="status"></p><div id="rubricDraft" hidden><h3>需要确认</h3><ul id="rubricWarnings"></ul><label>识别的题目<textarea id="generatedQuestion" rows="3" readonly></textarea></label><label>识别的参考答案<textarea id="generatedAnswer" rows="3" readonly></textarea></label><label>评分标准草稿（可编辑）<textarea id="generatedRubric" rows="12"></textarea></label><label class="check"><input id="fillRecognizedText" type="checkbox" checked>将识别文字补入空白的题目说明、参考答案</label><div class="footer-actions"><button id="applyGeneratedRubric" class="primary">使用此草稿</button></div><p class="hint">使用后仍需点击“保存方案”。已有文字和图片会保留；原评分标准文字将由草稿替换。</p></div></dialog>`);
   const form = $('rubricMaxScore').closest('.form-grid');
   $('rubricMaxScore').closest('label').insertAdjacentHTML('afterend','<label>得分步长<input id="rubricRoundStep" type="number" min="0.01" step="0.1" value="1"><span class="hint">1：只给整分；0.5：允许半分。生成标准和实际评分共用。</span></label>');
@@ -22,7 +23,7 @@ export function setupRubricGenerator({getConfig, getImages, action, api, markDir
   answerColumn.append(subjectLevel);
   answerColumn.insertAdjacentHTML('beforeend',`<label>给分方式<select id="rubricScoringMethod"></select><span id="rubricMethodHint" class="hint"></span></label>
     <label>本题补充要求 <span class="rubric-optional">选填</span><textarea id="rubricTeacherNotes" rows="3" maxlength="2000"></textarea><span class="hint">写本题的特殊约定即可，切换学科或宽严程度会保留。</span></label>
-    <div class="rubric-policy-summary"><strong>当前评分口径</strong><p id="rubricPolicySummary"></p><span>遵守分值与步长 · 认可等价答案 · 不猜补学生作答</span></div>`);
+    <div class="rubric-policy-summary"><strong>当前评分口径</strong><p id="rubricPolicySummary"></p><p id="rubricSubjectReviewSummary"></p><span>遵守分值与步长 · 认可等价答案 · 不猜补学生作答</span></div>`);
   $('rubricScoringMethod').append(...Object.entries(rubricScoringMethods).map(([value,method])=>Object.assign(document.createElement('option'),{value,textContent:method.label})));
   const promptDetails=document.createElement('details');promptDetails.id='rubricPromptDetails';promptDetails.className='rubric-prompt-details';
   promptDetails.innerHTML='<summary>查看／自定义提示词 <span id="rubricPromptMode">使用模板</span></summary><div class="rubric-prompt-body"><label class="check"><input id="rubricUseCustomPrompt" type="checkbox">使用自定义提示词</label></div>';
@@ -60,8 +61,9 @@ export function setupRubricGenerator({getConfig, getImages, action, api, markDir
     const settings=policySettings(),method=rubricScoringMethods[settings.scoringMethod];
     $('rubricMethodHint').textContent=method.summary;
     const subject=rubricSubjects[settings.subject]?.label||'通用';
-    const levels={strict:'答案正确、过程完备，并检查单位和基本方程等细节',normal:'答案正确，缺少必要过程仍扣分',lenient:'答案正确且有适当有效过程即可满分'};
+    const levels={strict:'按题型检查必要内容、过程和明确要求的细节',normal:'认可等价表达，缺少必要内容按标准扣分',lenient:'过程题答案正确且有相关有效过程即给分；足以支持结论可满分'};
     $('rubricPolicySummary').textContent=`${subject} · ${settings.useCustomPrompt?'自定义要求':levels[settings.strictness]} · ${method.label}。${settings.notes.trim()?'已加入本题补充要求。':''}`;
+    $('rubricSubjectReviewSummary').textContent=settings.useCustomPrompt?'学科要求以教师自定义提示词为准。':subjectReviewSummaries[settings.subject]||'选择学科后显示本学科的核验重点。';
     const examples={physics:'例如：单位缺失只扣一次；错算后的正确方法仍给分；有效数字按题目要求。',mathematics:'例如：认可其他正确解法；写明错算后续方法分；证明必须说明关键依据。',english:'例如：本题必须使用过去式；开放表达允许同义替换；说明字数要求。',chinese:'例如：阅读每个有效要点独立给分；同义概括认可；默写错字不给本空分。',chemistry:'例如：说明配平、反应条件与单位要求；实验现象和解释分别给分。'};
     $('rubricTeacherNotes').placeholder=examples[settings.subject]||'例如：同义要点不重复计分；列出必需关键词；说明一次错误如何扣分。';
     $('rubricRequirements').readOnly=!settings.useCustomPrompt;
@@ -92,7 +94,8 @@ export function setupRubricGenerator({getConfig, getImages, action, api, markDir
     const config = getConfig(), workflow = config.workflows[$('presetWorkflow').value];
     $('rubricProvider').replaceChildren(...Object.keys(config.providers).map(name => Object.assign(document.createElement('option'), {value:name,textContent:name})));
     if (config.providers[workflow?.model?.provider]) $('rubricProvider').value = workflow.model.provider;
-    const saved = rubricGenerationSettings(config.presets[$('presetSelect').value]?.rubricGeneration);
+    const preset=config.presets[$('presetSelect').value];
+    const saved = rubricGradingSettings($('rubric').value,preset?.rubricGeneration,$('gradingStrictness').value);
     $('rubricScoreAllocation').value = saved.scoreAllocation || '';
     $('rubricMaxScore').value = Number($('maxScore').value) > 0 ? $('maxScore').value : '';
     $('rubricRoundStep').value = $('roundStep').value || '1';
@@ -127,6 +130,7 @@ export function setupRubricGenerator({getConfig, getImages, action, api, markDir
     $('rubric').value = $('generatedRubric').value;
     $('maxScore').value = draftSettings.maxScore;
     $('roundStep').value = draftSettings.roundStep;
+    $('gradingStrictness').value = draftSettings.useCustomPrompt?'':draftSettings.strictness;
     const {maxScore,roundStep,...generationSettings}=draftSettings;
     getConfig().presets[$('presetSelect').value].rubricGeneration = generationSettings;
     if ($('fillRecognizedText').checked) for (const field of ['question','answer']) if (!$(field).value.trim()) $(field).value = $(field === 'question' ? 'generatedQuestion' : 'generatedAnswer').value;
