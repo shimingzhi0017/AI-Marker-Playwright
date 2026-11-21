@@ -1,4 +1,4 @@
-﻿param([ValidateSet('ui','run','diagnose','install','check')][string]$Action = 'ui')
+param([ValidateSet('ui','run','diagnose','install','check')][string]$Action = 'ui')
 $ErrorActionPreference = 'Stop'
 try {
     Set-Location -LiteralPath $PSScriptRoot
@@ -24,7 +24,7 @@ try {
     if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch '^v(\d+)\.') { throw '无法读取 Node.js 版本，请重新安装官方 Node.js LTS。' }
     if ([int]$Matches[1] -lt 24) { throw "当前 Node.js 为 $nodeVersion，本项目需要 24 或更新版本。请从 https://nodejs.org/ 安装符合要求的 LTS 版本，再重新运行。" }
     Write-Host "Node.js $nodeVersion；正在检查运行环境……"
-    & node.exe --input-type=module -e "import 'playwright'; import 'sharp';"
+    & node.exe --input-type=module -e "try{await import('playwright');await import('sharp');}catch{process.exit(1);}" 2>$null
     $dependenciesReady = $LASTEXITCODE -eq 0
     if ($Action -eq 'install' -or !$dependenciesReady) {
         Write-Host '正在安装项目依赖。首次运行需要联网，请等待完成……'
