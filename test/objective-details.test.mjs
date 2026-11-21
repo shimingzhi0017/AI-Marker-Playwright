@@ -7,13 +7,14 @@ test('单总分框客观双阅逐项比较，任意分歧或缺失必须仲裁',
   const config = { answer: 'fixture', rubric: 'part-1: 5; part-2: 5', workflowId: 'w', scoring: { units: [{ label: '12', maxScore: 10 }] } };
   const response = scores => ({ score: scores.reduce((a, b) => a + b, 0), studentAnswer: 'fixture', comment: 'fixture', recognition:{status:'clear',coverageChecked:true,notes:[],issues:[]}, subScores: [{ label: '12', score: scores.reduce((a, b) => a + b, 0) }], scoringDetails: scores.map((score, i) => ({ label: `part-${i + 1}`, score })) });
   const labeled = (labels, scores) => ({...response(scores), scoringDetails: labels.map((label,i)=>({label,score:scores[i]}))});
+  const promptText = req => req.messages.flatMap(m => Array.isArray(m.content) ? m.content.filter(p => p.type === 'text').map(p => p.text) : [m.content]).join('\n');
   let replies, calls;
   const server = http.createServer(async (req, res) => {
     let body = ''; for await (const chunk of req) body += chunk;
     const request = JSON.parse(body); calls.push(request.model);
-    assert.match(request.messages[0].content[0].text, /scoringDetails|书写识别要求/);
+    const prompt = promptText(request);
+    assert.match(prompt, /scoringDetails|书写识别要求/);
     if(request.model==='C'){
-      const prompt=request.messages[0].content[0].text;
       assert.match(prompt,/仅依据原始答卷图片/);
       assert.doesNotMatch(prompt,/第一评：|第二评：|首次结果：|PRIVATE_PRIOR/);
     }

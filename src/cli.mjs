@@ -11,6 +11,7 @@ import { Runner } from './runner.mjs';
 import { exportHistory } from './export.mjs';
 import { validateResult } from './domain.mjs';
 import { blackRatio } from './blank.mjs';
+import { listModels } from './models.mjs';
 
 const [command = 'help', ...args] = process.argv.slice(2);
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -31,22 +32,22 @@ async function main() {
   if (command === 'models') {
     const settings = loadSettings(configFile), provider = settings.providers[args[1]];
     if (!provider) throw Error('供应商不存在');
-    const key = provider.apiKey || process.env[provider.apiKeyEnv || '']; if (!key) throw Error('供应商密钥未配置');
-    const base = provider.endpoint.replace(/\/(chat\/completions|responses)\/?$/, '').replace(/\/$/, '');
-    const url = provider.protocol === 'gemini' ? `${base}/models` : `${base}${base.endsWith('/v1') ? '' : '/v1'}/models`;
-    const response = await fetch(url, { headers: provider.protocol === 'gemini' ? { 'x-goog-api-key': key } : { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(30000) });
-    if (!response.ok()) throw Error(`模型目录HTTP ${response.status}`);
-    const json = await response.json();
-    provider.models = provider.protocol === 'gemini' ? (json.models || []).map(m => m.name.replace(/^models\//, '')) : (json.data || []).map(m => m.id);
-    fs.writeFileSync(configFile, JSON.stringify(settings, null, 2)); console.log(`保存${provider.models.length}个模型ID，视觉能力需另行验证。`); return;
+    provider.models = await listModels(provider);
+    const tmpFile = `${configFile}.tmp`;
+    fs.writeFileSync(tmpFile, JSON.stringify(settings, null, 2));
+    fs.renameSync(tmpFile, configFile);
+    console.log(`保存${provider.models.length}个模型ID，视觉能力需另行验证。`); return;
   }
   if (command === 'blank') {
     const settings = loadSettings(configFile), store = new Store(dataDir);
     try {
-      const record = store.records().find(r => r.id === args[1]); if (!record?.imageFiles?.length) throw Error('记录不存在或未保存图片');
+      const record = store.getById(args[1]); if (!record?.imageFiles?.length) throw Error('记录不存在或未保存图片');
       const preset = settings.presets[record.presetName]; if (!preset) throw Error('方案不存在');
       preset.blankDetection = { enabled: true, threshold: 0.01, reference: await Promise.all(record.imageFiles.map(file => blackRatio(fs.readFileSync(file)))) };
-      fs.writeFileSync(configFile, JSON.stringify(settings, null, 2)); console.log('空白范本已保存。请确认所选记录确实为空白答卷。');
+      const tmpFile = `${configFile}.tmp`;
+      fs.writeFileSync(tmpFile, JSON.stringify(settings, null, 2));
+      fs.renameSync(tmpFile, configFile);
+      console.log('空白范本已保存。请确认所选记录确实为空白答卷。');
     } finally { store.close(); } return;
   }
   if (command === 'import') { if (!args[0] || !args[1]) throw Error('需要输入和输出文件'); fs.writeFileSync(args[1], JSON.stringify(importSettings(JSON.parse(fs.readFileSync(args[0], 'utf8'))), null, 2)); console.log('配置已导入，密钥包含在私人配置文件中；请检查工作流和页面配置。'); return; }
@@ -55,7 +56,7 @@ async function main() {
     try {
       if (command === 'export') { exportHistory(store.records(), args[0] || 'history.json'); console.log('历史已导出'); }
       else {
-        const record = store.records().find(r => r.id === args[0]);
+        const record = store.getById(args[0]);
         if (!record || !['uncertain', 'submitting'].includes(record.state) || !['submitted', 'not-submitted'].includes(args[1])) throw Error('请提供状态不明记录ID和核对结果');
         record.state = args[1] === 'submitted' ? 'submitted' : 'resolved-not-submitted'; record.manuallyResolved = true; store.save(record); console.log('人工核对结果已保存');
       }

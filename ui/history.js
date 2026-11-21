@@ -18,11 +18,32 @@ export function createHistoryUI({$, api, states, getPage, setPage, setSelectedRe
     if (search) params.set('search', search);
     if (arbitrated) params.set('arbitrated', '1');
 
-    const result = await api('/api/history?' + params);
+    const [result, metrics] = await Promise.all([
+      api('/api/history?' + params),
+      api('/api/metrics').catch(() => null)
+    ]);
     setPage(Math.min(result.page, result.totalPages));
     $('historyEmpty').hidden = !!result.total;
     $('historyEmpty').textContent = result.total ? '当前筛选没有匹配记录' : '还没有阅卷记录';
     $('historyCount').textContent = `共 ${result.total} 条`;
+    const metricsEl = $('historyMetrics');
+    if (metricsEl) {
+      if (metrics && metrics.total > 0) {
+        const parts = [`均分：${metrics.averageScore ?? '—'}`];
+        if (metrics.submittedCount) parts.push(`已提交 ${metrics.submittedCount}/${metrics.total}`);
+        if (metrics.dualEval?.total) parts.push(`仲裁 ${metrics.dualEval.arbitrated}/${metrics.dualEval.total}`);
+        if (metrics.correctionCount) parts.push(`改分 ${metrics.correctionCount} 次`);
+        if (metrics.usage?.totalTokens) parts.push(`Token ${metrics.usage.totalTokens}（缓存 ${(metrics.usage.cacheHitRate * 100).toFixed(0)}%）`);
+        if (metrics.verification?.policyIssueCount || metrics.verification?.consistencyIssueCount) {
+          parts.push(`核验告警 ${metrics.verification.policyIssueCount + metrics.verification.consistencyIssueCount}`);
+        }
+        metricsEl.textContent = parts.join(' · ');
+        metricsEl.hidden = false;
+      } else {
+        metricsEl.textContent = '';
+        metricsEl.hidden = true;
+      }
+    }
     $('historyPage').textContent = `第 ${result.page} / ${result.totalPages} 页`;
     $('historyPrev').disabled = result.page <= 1;
     $('historyNext').disabled = result.page >= result.totalPages;

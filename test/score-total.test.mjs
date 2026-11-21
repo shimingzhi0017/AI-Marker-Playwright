@@ -168,7 +168,7 @@ test('multiple webpage fields cannot override contradictory detailed awards',()=
 test('a retry includes actual previous structured awards and their computed sum',async t=>{
   const prompts=[];
   t.mock.method(globalThis,'fetch',async(_url,init)=>{
-    const body=JSON.parse(init.body);prompts.push(body.messages[0].content[0].text);
+    const body=JSON.parse(init.body);prompts.push(body.messages.flatMap(m=>Array.isArray(m.content)?m.content.filter(p=>p.type==='text').map(p=>p.text):[m.content]).join('\n'));
     const value=response();
     // Neither a schema nor complete item maxima: require a model correction.
     delete value.scoringDetails[0].maxScore;
@@ -278,12 +278,19 @@ function historyConflict(scores=[1,1,0], reported=3) {
     scoringDetails:scores.map((score,i)=>({label:`第${i+1}问`,score,maxScore:[3,3,4][i],reason:`本问得${i===1?2:score}分。`}))};
 }
 
+function consistentReply(scores) {
+  const total=scores.reduce((sum,score)=>sum+score,0);
+  return {score:total,subScores:[],comment:`总分${total}分。`,
+    recognition:{status:'clear',coverageChecked:true,notes:[],issues:[]},
+    scoringDetails:scores.map((score,i)=>({label:`第${i+1}问`,score,maxScore:[3,3,4][i],reason:`本问得${score}分。`}))};
+}
+
 test('history regression: final arbitrator rechecks contradictory prose and awards once',async t=>{
   const requests=[];
   t.mock.method(globalThis,'fetch',async(_url,init)=>{
     const body=JSON.parse(init.body);requests.push(body);
-    const value=body.model==='primary' ? historyConflict([2,2,1],5)
-      : body.model==='secondary' ? historyConflict([1,1,0],2)
+    const value=body.model==='primary' ? consistentReply([2,2,1])
+      : body.model==='secondary' ? consistentReply([1,1,0])
       : requests.filter(r=>r.model==='arbiter').length===1 ? historyConflict() : historyConflict([1,2,0],3);
     return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(value)}}]}));
   });
@@ -296,8 +303,9 @@ test('history regression: final arbitrator rechecks contradictory prose and awar
   assert.equal(result.totalVerification.status,'verified');
   assert.equal(result.totalVerification.previous.reportedScore,3);
   assert.equal(result.totalVerification.previous.score,2);
-  assert.match(requests.at(-1).messages[0].content[0].text,/comment、每项reason/);
-  assert.match(requests.at(-1).messages[0].content[0].text,/"computedDetailSum":2/);
+  const lastPrompt=requests.at(-1).messages.flatMap(m=>Array.isArray(m.content)?m.content.filter(p=>p.type==='text').map(p=>p.text):[m.content]).join('\n');
+  assert.match(lastPrompt,/comment、每项reason/);
+  assert.match(lastPrompt,/"computedDetailSum":2/);
   assert.ok(events.some(e=>e.status==='retrying'&&e.role==='仲裁'));
 });
 

@@ -47,7 +47,7 @@ with zipfile.ZipFile(zip_path,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as archi
 payload_hash=hashlib.sha256(zip_path.read_bytes()).hexdigest()
 with zipfile.ZipFile(zip_path) as archive:
     names=set(archive.namelist())
-    required={'src/server.mjs','src/grading-issues.mjs','src/grading-policy-audit.mjs','ui/rubric-prompts.js',
+    required={'src/server.mjs','src/grading-issues.mjs','src/grading-policy-audit.mjs','src/model-json.mjs','src/model-client.mjs','src/correction-feedback.mjs','src/image-optimize.mjs','src/task-metrics.mjs','ui/rubric-prompts.js',
               'ui/subject-review-rules.js','packaging/verify.mjs','runtime/node.exe'}
     missing=required-names
     if missing:raise RuntimeError('Release payload is missing required files: '+', '.join(sorted(missing)))

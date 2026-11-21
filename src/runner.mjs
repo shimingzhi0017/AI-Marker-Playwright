@@ -12,7 +12,7 @@ export class Runner {
     const signal = this.controller.signal;
     let previous, record, release;
     try {
-      if (this.store.records().some(r => r.state === 'submitting' || r.state === 'uncertain')) throw Error('存在提交状态不明的历史记录；先人工核对，不自动重交');
+      if (this.store.hasStates ? this.store.hasStates(['submitting', 'uncertain']) : this.store.records().some(r => r.state === 'submitting' || r.state === 'uncertain')) throw Error('存在提交状态不明的历史记录；先人工核对，不自动重交');
       while (!signal.aborted) {
         const snapshot = await this.platform.ready(previous, signal, this.settings.mode !== 'trial', true);
         if (!snapshot) { this.store.log('completed'); return { count: this.count, completed:true, reason: '本题阅卷完成，请在网站选择留在当前题或切换下一题；切题后核对评分方案再开始。' }; }
@@ -22,7 +22,7 @@ export class Runner {
         if (!config) throw Error('当前任务没有适用方案');
         validateConfig(config);
         if (config.scoring?.units?.length && config.scoring.units.length !== snapshot.units.length) throw Error('方案评分单元与页面不一致');
-        if (this.store.records().some(r => r.identity === snapshot.identity && r.state === 'submitted')) throw Error('当前答卷已提交过，禁止重复处理');
+        if (this.store.hasIdentityInStates ? this.store.hasIdentityInStates(snapshot.identity, ['submitted']) : this.store.records().some(r => r.identity === snapshot.identity && r.state === 'submitted')) throw Error('当前答卷已提交过，禁止重复处理');
         release?.(); release = this.coordinator?.acquire(snapshot.identity, this.store);
         record = { id: crypto.randomUUID(), identity: snapshot.identity, taskId: snapshot.taskId, presetName, configHash: crypto.createHash('sha256').update(JSON.stringify(config)).digest('hex'), snapshot, mode: this.settings.mode || 'trial', state: 'loading', time: new Date().toISOString() };
         this.store.save(record); this.store.log('loading', { id: record.id });

@@ -96,4 +96,8 @@ test('详情显示同总分不同分项、仲裁依据、旧记录缺失和文�
   await page.evaluate(()=>window.renderResultDetails(document.querySelector('#details'),{result:{score:2,studentAnswer:'a=[无法辨认]',recognitionWarning:'书写识别存疑，请人工确认',recognition:{status:'uncertain',coverageChecked:true,notes:['旧答案划掉，替换内容位于横线上方'],issues:[{location:'图1第（1）问右侧',observed:'a=[无法辨认]',reason:'字迹与涂抹重叠'}]}}}));
   const reading=await page.locator('#details').innerText();
   assert.match(reading,/横线上方/);assert.match(reading,/图1第（1）问右侧/);assert.match(reading,/字迹与涂抹重叠/);assert.match(reading,/人工确认/);
+  await page.evaluate(()=>window.renderResultDetails(document.querySelector('#details'),{result:{score:10,subScores:[],policyVerification:{status:'verified',previous:{score:9}},recognition:{status:'clear',coverageChecked:true,notes:[],issues:[]}}}));
+  const verifiedText=await page.locator('#details').innerText();
+  assert.match(verifiedText,/口径与自洽核验/);
+  assert.match(verifiedText,/9 分 → 当前 10 分/);
 });

@@ -2,7 +2,7 @@ import { verifyManualResponse } from './adaptation.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import sharp from 'sharp';
+import { optimizeAnswerImage } from './image-optimize.mjs';
 import { resolveZhixueOptions, isZhixuePage } from './zhixue-builtin.mjs';
 import { matchesTopic, verifyCommit, zhixueCommitUrl, matchesZhixueCommitUrl } from './zhixue-receipt.mjs';
 
@@ -41,7 +41,7 @@ export function pageContext(value, depth = 0) {
   } catch { return { examId: '', markingPaperId: '' }; }
 }
 export class ZhixuePlatform {
-  constructor(page, settings, diagnosticsDir) { this.scope = settings.adaptationScope;this.page = page; this.options = resolveZhixueOptions(settings.platform || {},page.url?.()); this.dir = diagnosticsDir; }
+  constructor(page, settings, diagnosticsDir) { this.scope = settings.adaptationScope;this.page = page; this.options = resolveZhixueOptions(settings.platform || {},page.url?.()); this.imageOptions = settings.imageOptions || {}; this.dir = diagnosticsDir; }
   async frame() {
     const matches = [];
     for (const frame of this.page.frames()) {
@@ -151,10 +151,8 @@ export class ZhixuePlatform {
         }
         if (!buffer) throw error;
       }
-      const meta = await sharp(buffer).metadata();
-      if (!meta.width || !meta.height || meta.width * meta.height < 1000) throw Error('图片无法解码或尺寸过小');
-      const png = await sharp(buffer).png().toBuffer();
-      images.push({ buffer: png, hash: hash(png), data: `data:image/png;base64,${png.toString('base64')}` });
+      const optimized = await optimizeAnswerImage(buffer, this.imageOptions);
+      images.push({ buffer: optimized.buffer, hash: hash(optimized.buffer), mime: optimized.mime, data: `data:${optimized.mime};base64,${optimized.buffer.toString('base64')}` });
     }
     await this.assertCurrent(snapshot); return images;
   }

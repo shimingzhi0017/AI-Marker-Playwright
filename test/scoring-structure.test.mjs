@@ -86,7 +86,7 @@ test('real duplicate output completes dual review without a retry or arbitration
 test('a true missing item gets the actual prior items and exact schema in its retry',async t=>{
   const prompts=[];
   t.mock.method(globalThis,'fetch',async(_url,init)=>{
-    const body=JSON.parse(init.body);prompts.push(body.messages[0].content[0].text);
+    const body=JSON.parse(init.body);prompts.push(body.messages.flatMap(m=>Array.isArray(m.content)?m.content.filter(p=>p.type==='text').map(p=>p.text):[m.content]).join('\n'));
     const value=complete();if(prompts.length===1)value.scoringDetails.pop();return reply(value);
   });
   const result=await grade(fixture.config,settings(false),[]);
@@ -101,7 +101,7 @@ test('persistent invalid review output falls back to an independent arbiter, nev
   t.mock.method(globalThis,'fetch',async(_url,init)=>{
     const body=JSON.parse(init.body);calls.push(body.model);const value=complete();
     if(body.model==='secondary')value.scoringDetails.pop();
-    if(body.model==='arbiter'){value.scoringDetails[1].score=2;value.score=9;}
+    if(body.model==='arbiter'){value.scoringDetails[1].score=2;value.scoringDetails[1].reason='局部计算偏差扣1分，得2分。';value.score=9;value.comment='第（2）问得2分，总分：9分。';}
     return reply(value);
   });
   const result=await grade(fixture.config,settings(),[]);

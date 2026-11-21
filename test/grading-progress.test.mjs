@@ -79,7 +79,7 @@ test('单次请求超时可在整份评分期限内重试；鉴权失败不重�
     calls++;
     let body = ''; for await (const chunk of req) body += chunk;
     if (mode === 'timeout' && calls === 1) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 250));
       if (!res.destroyed && !res.writableEnded) res.end('{}');
       return;
     }
@@ -90,7 +90,7 @@ test('单次请求超时可在整份评分期限内重试；鉴权失败不重�
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const config = { answer: 'fixture', rubric: '评分点：2分', workflowId: 'w', scoring: { maxScore: 2 } };
-  const settings = { gradingTimeoutMs: 1000, requestBudget: 3, providers: { p: { endpoint: `http://127.0.0.1:${server.address().port}`, apiKey: 'fixture', timeoutMs: 30 } }, workflows: { w: { model: { provider: 'p', model: 'primary' }, dualEval: { enabled: false } } } };
+  const settings = { gradingTimeoutMs: 1000, requestBudget: 3, providers: { p: { endpoint: `http://127.0.0.1:${server.address().port}`, apiKey: 'fixture', timeoutMs: 80 } }, workflows: { w: { model: { provider: 'p', model: 'primary' }, dualEval: { enabled: false } } } };
   const graded = await grade(config, settings, []);
   assert.equal(graded.score, 2);
   assert.equal(calls, 2);

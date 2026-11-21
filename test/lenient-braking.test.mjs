@@ -37,12 +37,14 @@ test('explicit lenient choice overrides old strict rubric for total and separate
   assert.equal(15-6*2,3);assert.equal(15/6,2.5);assert.equal(3**2/(2*6),0.75);
 });
 
+const promptText = req => req.messages.flatMap(m => Array.isArray(m.content) ? m.content.filter(p => p.type === 'text').map(p => p.text) : [m.content]).join('\n');
+
 test('braking 9/10 caused by explicit strict deduction gets one original-answer re-evaluation to 10/10',async t=>{
   const {result,requests}=await mockGrade(t,[response(),response(4,'刹停时间和2秒末速度已体现区间，有效简要过程及结果正确，得4分。')]);
   assert.equal(requests.length,2);assert.equal(result.score,10);
   assert.equal(result.policyVerification.status,'verified');assert.equal(result.policyVerification.previous.score,9);
   assert.equal(result.formatWarning,undefined);
-  assert.match(requests[1].messages[0].content[0].text,/不能直接机械加分/);
+  assert.match(promptText(requests[1]),/不能直接机械加分/);
 });
 
 test('unresolved strict deduction stops unattended filling instead of silently accepting 9/10',async t=>{
@@ -71,7 +73,7 @@ test('lenient grading keeps genuine errors and accepts compatible old responses'
 });
 
 test('reported wrong mode is reviewed even with full marks; secondary warnings survive agreement',()=>{
-  assert.equal(gradingPolicyIssues(config,{...response(4),gradingMode:'strict'}).length,1);
+  assert.equal(gradingPolicyIssues(config,{...response(4,'有效简要过程及结果正确，得4分。'),gradingMode:'strict'}).length,1);
   const warning='评分口径冲突：复评按严格标准扣分，请人工核对。';
   const result=withGradingIssueWarnings({score:9,dualEval:{b:{score:9,policyWarning:warning}}});
   assert.equal(result.score,9);assert.match(result.formatWarning,/复评按严格/);
@@ -81,7 +83,7 @@ test('normal mode also re-evaluates the braking strict deduction using existing 
   const initial={...response(),gradingMode:'normal'},corrected={...response(4,'已有刹停时间和剩余制动距离，必要关系充分，正常口径得满分。'),gradingMode:'normal'};
   const {result,requests}=await mockGrade(t,[initial,corrected],{strictness:'normal'});
   assert.equal(requests.length,2);assert.equal(result.score,10);assert.equal(result.expectedGradingMode,'normal');
-  assert.match(requests[0].messages[0].content[0].text,/宽松和正常口径的满分判断先于逐点扣分/);
+  assert.match(promptText(requests[0]),/宽松和正常口径的满分判断先于逐点扣分/);
   assert.equal(result.policyVerification.status,'verified');
 });
 

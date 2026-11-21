@@ -10,11 +10,14 @@ import { Store, importSettings, loadSettings } from './store.mjs';
 import { Runner } from './runner.mjs';
 import { SuitePlatform as ZhixuePlatform } from './suite-platform.mjs';
 import { installSuiteAdapters } from './suite-adapters.mjs';
-import { validateConfig, validateResult } from './domain.mjs';
+import { fieldText, validateConfig, validateResult } from './domain.mjs';
 import { exportHistory, enrichStudents } from './export.mjs';
 import { chooseExportDirectory } from './export-folder.mjs';
 import { listModels } from './models.mjs';
 import { generateRubric } from './rubric-generator.mjs';
+import { summarizeCorrections, appendCalibrationRule, isMeaningfulCorrectionReason, MAX_CALIBRATION_NOTES_LENGTH } from './correction-feedback.mjs';
+import { detectImageMime } from './image-optimize.mjs';
+import { summarizeTaskMetrics } from './task-metrics.mjs';
 import {adaptationTemplates,createTemplateGroup} from './adaptation-templates.mjs';
 import { blackRatio } from './blank.mjs';
 import { observeSubmissions } from './submission-observer.mjs';
@@ -23,6 +26,11 @@ import { installImageProvenance } from './image-provenance.mjs';
 
 const defaultRoot = fileURLToPath(new URL('..', import.meta.url));
 const text = (res, status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
+function writeJsonAtomic(targetPath, value) {
+  const tmpPath = `${targetPath}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(value, null, 2));
+  fs.renameSync(tmpPath, targetPath);
+}
 function sanitizeSettings(settings) {
   if (settings.version !== 1 || !settings.presets || !settings.providers || !settings.workflows) throw Error('配置格式无效');
   for (const group of ['presets', 'providers', 'workflows']) {
@@ -41,7 +49,7 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
     const locks = new Map(), stores = new Set();
     coordinator = { stores, acquire(identity, ownStore) {
       if (locks.has(identity)) throw Error('另一并发任务正在处理同一答卷，已暂停');
-      for (const other of stores) if (other !== ownStore && other.records().some(r => r.identity === identity && ['submitted','filled','uncertain','submitting'].includes(r.state))) throw Error('另一任务已填分、提交或有待核对记录，请先核对同一答卷');
+      for (const other of stores) if (other !== ownStore && (other.hasIdentityInStates ? other.hasIdentityInStates(identity, ['submitted','filled','uncertain','submitting']) : other.records().some(r => r.identity === identity && ['submitted','filled','uncertain','submitting'].includes(r.state)))) throw Error('另一任务已填分、提交或有待核对记录，请先核对同一答卷');
       const owner = Symbol(); locks.set(identity, owner);
       return () => { if (locks.get(identity) === owner) locks.delete(identity); };
     } };
@@ -98,9 +106,22 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
     const previous=settings();value.providers=previous.providers;
     if(value.adaptationGroups)for(const group of value.adaptationGroups){const old=previous.adaptationGroups.find(g=>g.id===group.id);group.platform.verified=!!old?.platform?.verified&&old.url===group.url&&fingerprint(old.platform)===fingerprint(group.platform);}
     adaptationDebug.reset();
-    fs.writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2)); fs.renameSync(`${file}.tmp`, file);
+    writeJsonAtomic(file, value);
     if (page) { platform = new ZhixuePlatform(page, applyGroup(value,page.url()), path.join(data, 'diagnostics')); platform.topicTracker = topicTracker; }
     note('设置已保存');
+  }
+  function persistPresetCalibrationNotes(presetName, nextNotes) {
+    const local = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!local.presets || !Object.hasOwn(local.presets, presetName)) throw Error('方案不存在');
+    const trimmed = typeof nextNotes === 'string' ? nextNotes.trim() : '';
+    if (trimmed) local.presets[presetName].calibrationNotes = trimmed;
+    else delete local.presets[presetName].calibrationNotes;
+    writeJsonAtomic(file, local);
+    if (runner?.settings?.presets?.[presetName]) {
+      if (trimmed) runner.settings.presets[presetName].calibrationNotes = trimmed;
+      else delete runner.settings.presets[presetName].calibrationNotes;
+    }
+    return trimmed;
   }
   async function createTask(taskName) {
           const id = crypto.randomUUID(), directory = path.join(root,'sessions',id);
@@ -238,6 +259,21 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
       if (req.method === 'GET') {
         if (url.pathname === '/api/state') { const { liveRecord, ...publicState } = state; text(res, 200, { ...publicState, adaptationDebug:adaptationDebug.status, events }); return; }
         if (url.pathname === '/api/settings') { text(res, 200, settings()); return; }
+        if (url.pathname === '/api/corrections') {
+          const cfg = settings();
+          const presetName = url.searchParams.get('preset') ?? cfg.active ?? '';
+          const targetPreset = presetName ? cfg.presets?.[presetName] : null;
+          const existingText = targetPreset ? [fieldText(targetPreset.rubric), targetPreset.calibrationNotes || ''].join('\n') : '';
+          text(res, 200, summarizeCorrections(store.records(), presetName, { existingText }));
+          return;
+        }
+        if (url.pathname === '/api/metrics') {
+          const preset = url.searchParams.get('preset');
+          const records = store.records();
+          const filtered = preset ? records.filter(r => r.presetName === preset) : records;
+          text(res, 200, summarizeTaskMetrics(filtered));
+          return;
+        }
         if (url.pathname === '/api/history') {
           const hasPaging = ['page', 'pageSize', 'state', 'search', 'arbitrated'].some(key => url.searchParams.has(key));
           if (!hasPaging) { text(res, 200, store.records()); return; }
@@ -248,10 +284,12 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
           })); return;
         }
         if (url.pathname === '/api/image') {
-          const record = store.records().find(r => r.id === url.searchParams.get('id'));
+          const id = url.searchParams.get('id');
+          const record = store.getById ? store.getById(id) : store.records().find(r => r.id === id);
           const image = record?.imageFiles?.[Number(url.searchParams.get('index') || 0)];
           if (!image || !fs.existsSync(image)) { text(res, 404, { error: '图片不存在' }); return; }
-          res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' }); res.end(fs.readFileSync(image)); return;
+          const buffer = fs.readFileSync(image);
+          res.writeHead(200, { 'Content-Type': detectImageMime(buffer), 'Cache-Control': 'no-store' }); res.end(buffer); return;
         }
         if (url.pathname === '/api/export') {
           const format = url.searchParams.get('format'); if (!['json', 'csv', 'html'].includes(format)) throw Error('导出格式无效');
@@ -313,8 +351,15 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
           note('全任务共享模型接口已保存；正在运行的轮次继续使用启动时配置');break;
         }
         case '/api/settings': writeSettings(input); break;
-        case '/api/workspace-name': { const cfg=settings();cfg.workspaceName=String(input.name||'').trim().slice(0,80);if(!cfg.workspaceName)throw Error('任务名称不能为空');fs.writeFileSync(file,JSON.stringify(cfg,null,2));break; }
-        case '/api/import': {const imported=importSettings(input);sanitizeSettings(imported);fs.writeFileSync(sharedProvidersFile,JSON.stringify(imported.providers,null,2));writeSettings(imported);break;}
+        case '/api/workspace-name': {
+          const name = String(input.name || '').trim().slice(0, 80);
+          if (!name) throw Error('任务名称不能为空');
+          const local = JSON.parse(fs.readFileSync(file, 'utf8'));
+          local.workspaceName = name;
+          writeJsonAtomic(file, local);
+          break;
+        }
+        case '/api/import': {const imported=importSettings(input);sanitizeSettings(imported);writeJsonAtomic(sharedProvidersFile,imported.providers);writeSettings(imported);break;}
         case '/api/open': await openBrowser(); break;
         case '/api/adaptation': {
           if(state.running||state.starting)throw Error('请先暂停阅卷再调试');
@@ -367,7 +412,7 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
           if(input.action==='fill'){text(res,200,await adaptationDebug.fill(input.scores));return;}
           if(input.action==='record'){text(res,200,await adaptationDebug.record());return;}
           if(input.action==='status'){text(res,200,adaptationDebug.status);return;}
-          if(input.action==='verify'){const result=await adaptationDebug.verify(input.index);group.platform.submitResponseUrlPattern=result.endpoint;group.platform.verified=true;group.platform.acceptance={time:new Date().toISOString(),receipt:result.receipt};cfg.platform=group.platform;platform.options=group.platform;fs.writeFileSync(file,JSON.stringify(cfg,null,2));text(res,200,{message:'分组已通过实测核验',group});return;}
+          if(input.action==='verify'){const result=await adaptationDebug.verify(input.index);group.platform.submitResponseUrlPattern=result.endpoint;group.platform.verified=true;group.platform.acceptance={time:new Date().toISOString(),receipt:result.receipt};cfg.platform=group.platform;platform.options=group.platform;const local=JSON.parse(fs.readFileSync(file,'utf8'));local.adaptationGroups=cfg.adaptationGroups;local.platform=group.platform;writeJsonAtomic(file,local);text(res,200,{message:'分组已通过实测核验',group});return;}
           throw Error('调试操作无效');
         }
         case '/api/diagnose': {
@@ -421,6 +466,7 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
           if (!['fill', 'submit', 'stop'].includes(input.decision)) throw Error('操作无效');
           if (input.decision === 'submit' && ((!platform.options?.verified && !(platform.options?.manualSubmissionTest && runner.settings.mode === 'trial' && Number.isInteger(runner.settings.batchLimit) && runner.settings.batchLimit >= 0 && state.liveRecord.snapshot.networkTopic)) || !state.liveRecord.snapshot.strongIdentity || !platform.options?.submitResponseUrlPattern)) throw Error('自动提交尚未验收，请点击“只填分”，再在网站手动提交。');
           const record = state.liveRecord;
+          let modified = false, savedCalibrationNotes;
           if(input.comment!==undefined&&(typeof input.comment!=='string'||input.comment.length>100000))throw Error('评分依据格式无效');
           if (input.scores) {
             if (!Array.isArray(input.scores) || input.scores.some(s => typeof s !== 'number' || !Number.isFinite(s))) throw Error('分数无效');
@@ -428,20 +474,51 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
             if (input.scores.length !== (units.length || 1)) throw Error('分数数量不一致');
             const edited = { ...record.result, score: input.scores.reduce((s, n) => s + n, 0), subScores: units.map((u, i) => ({ label: u.label, score: input.scores[i] })) };
             validateResult(edited, cfg);
-            if (JSON.stringify(edited.subScores) !== JSON.stringify(record.result.subScores) || edited.score !== record.result.score) { record.originalResult ||= structuredClone(record.result); record.correctionReason = input.reason || '教师在界面修改'; }
+            if (JSON.stringify(edited.subScores) !== JSON.stringify(record.result.subScores) || edited.score !== record.result.score) { record.originalResult ||= structuredClone(record.result); record.correctionReason = input.reason || '教师在界面修改'; modified = true; }
             record.result = edited; store.save(record);
           }
-          if(input.comment!==undefined&&input.comment!==record.result.comment){record.originalResult ||= structuredClone(record.result);record.result.comment=input.comment;record.correctionReason=input.reason||'教师修改评分依据';store.save(record);}
-          finishReview(input.decision); break;
+          if(input.comment!==undefined&&input.comment!==record.result.comment){record.originalResult ||= structuredClone(record.result);record.result.comment=input.comment;record.correctionReason=input.reason||'教师修改评分依据';modified=true;store.save(record);}
+          if (modified && input.saveAsCalibrationRule === true && isMeaningfulCorrectionReason(input.reason)) {
+            const cfg = settings();
+            const currentNotes = runner?.settings?.presets?.[record.presetName]?.calibrationNotes ?? cfg.presets?.[record.presetName]?.calibrationNotes ?? '';
+            const nextNotes = appendCalibrationRule(currentNotes, input.reason);
+            savedCalibrationNotes = persistPresetCalibrationNotes(record.presetName, nextNotes);
+            record.savedAsCalibrationRule = true;
+            store.save(record);
+            note('已将本条改分原因沉淀为本题校标补充，下一份答卷立即生效');
+          }
+          finishReview(input.decision);
+          text(res, 200, { ok: true, ...(savedCalibrationNotes !== undefined ? { calibrationNotes: savedCalibrationNotes } : {}) });
+          return;
+        }
+        case '/api/calibration-note': {
+          if (state.running || state.starting) throw Error('请先暂停阅卷，再修改配置');
+          const cfg = settings();
+          const target = typeof input.presetName === 'string' && input.presetName ? input.presetName : cfg.active;
+          if (!target || !Object.hasOwn(cfg.presets, target)) throw Error('方案不存在');
+          if (typeof input.note !== 'string') throw Error('校标补充格式无效');
+          const mode = input.mode || 'append';
+          let nextNotes;
+          if (mode === 'replace') {
+            if (input.note.length > MAX_CALIBRATION_NOTES_LENGTH) throw Error('教师校标补充最多2000字，请精简后再添加');
+            nextNotes = input.note.trim();
+          } else {
+            nextNotes = appendCalibrationRule(cfg.presets[target].calibrationNotes || '', input.note);
+          }
+          if (nextNotes) cfg.presets[target].calibrationNotes = nextNotes;
+          else delete cfg.presets[target].calibrationNotes;
+          writeSettings(cfg);
+          text(res, 200, { ok: true, presetName: target, calibrationNotes: cfg.presets[target].calibrationNotes || '' });
+          return;
         }
         case '/api/resolve': {
           if (state.running) throw Error('请先暂停');
-          const record = store.records().find(r => r.id === input.id);
+          const record = store.getById(input.id);
           if (!record || !['uncertain', 'submitting'].includes(record.state) || !['submitted', 'not-submitted'].includes(input.outcome)) throw Error('核对记录无效');
           record.state = input.outcome === 'submitted' ? 'submitted' : 'resolved-not-submitted'; record.manuallyResolved = true; originalSave(record); note('提交状态已人工核对'); break;
         }
         case '/api/blank': {
-          if (state.running) throw Error('请先暂停'); const record = store.records().find(r => r.id === input.id);
+          if (state.running) throw Error('请先暂停'); const record = store.getById(input.id);
           if (!record?.imageFiles?.length) throw Error('没有可用图片'); const cfg = settings();
           cfg.presets[record.presetName].blankDetection = { enabled: true, threshold: 0.01, reference: await Promise.all(record.imageFiles.map(f => blackRatio(fs.readFileSync(f)))) };
           writeSettings(cfg); note('空白范本已保存'); break;
@@ -457,7 +534,7 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
           const current=JSON.parse(fs.readFileSync(sharedProvidersFile,'utf8'));
           if(!current[input.name]||current[input.name].endpoint!==provider.endpoint||current[input.name].apiKey!==provider.apiKey)throw Error('接口已变化，请重新获取目录');
           current[input.name].models=models;
-          fs.writeFileSync(sharedProvidersFile,JSON.stringify(current,null,2)); break;
+          writeJsonAtomic(sharedProvidersFile,current); break;
         }
         default: text(res, 404, { error: '接口不存在' }); return;
       }

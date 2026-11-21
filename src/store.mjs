@@ -8,9 +8,11 @@ export class Store {
     this.dir = path.resolve(dir); fs.mkdirSync(this.dir, { recursive: true });
     this.db = new DatabaseSync(path.join(this.dir, 'history.sqlite'));
     this.db.exec('CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, state TEXT NOT NULL, data TEXT NOT NULL, updated TEXT NOT NULL)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_records_updated ON records(updated DESC); CREATE INDEX IF NOT EXISTS idx_records_state_updated ON records(state, updated DESC)');
     this.db.exec('CREATE TABLE IF NOT EXISTS store_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS submission_numbers (sequence INTEGER PRIMARY KEY AUTOINCREMENT, record_id TEXT NOT NULL UNIQUE)');
     this.db.prepare('INSERT OR IGNORE INTO store_metadata(key,value) VALUES(?,?)').run('submissionPrefix',crypto.randomBytes(4).toString('hex').toUpperCase());
     this.submissionPrefix=this.db.prepare('SELECT value FROM store_metadata WHERE key=?').get('submissionPrefix').value;
+    this.selectById = this.db.prepare('SELECT data FROM records WHERE id = ?');
     this.findSubmissionNumber = this.db.prepare('SELECT sequence FROM submission_numbers WHERE record_id=?');
     this.insertSubmissionNumber = this.db.prepare('INSERT INTO submission_numbers(record_id) VALUES(?)');
     this.upsertRecord = this.db.prepare('INSERT INTO records VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,data=excluded.data,updated=excluded.updated');
@@ -66,6 +68,21 @@ export class Store {
     }
   }
   records() { return this.db.prepare('SELECT data FROM records ORDER BY updated DESC').all().map(r => JSON.parse(r.data)); }
+  getById(id) {
+    if (typeof id !== 'string' || !id) return null;
+    const row = this.selectById.get(id);
+    return row ? JSON.parse(row.data) : null;
+  }
+  hasStates(states) {
+    if (!Array.isArray(states) || !states.length) return false;
+    const placeholders = states.map(() => '?').join(',');
+    return !!this.db.prepare(`SELECT 1 FROM records WHERE state IN (${placeholders}) LIMIT 1`).get(...states);
+  }
+  hasIdentityInStates(identity, states) {
+    if (typeof identity !== 'string' || !identity || !Array.isArray(states) || !states.length) return false;
+    const placeholders = states.map(() => '?').join(',');
+    return !!this.db.prepare(`SELECT 1 FROM records WHERE state IN (${placeholders}) AND json_extract(data,'$.identity') = ? LIMIT 1`).get(...states, identity);
+  }
   historyPage({ page = 1, pageSize = 50, state = '', search = '', arbitrated = false } = {}) {
     page = Math.max(1, Math.floor(Number(page) || 1));
     pageSize = Math.min(200, Math.max(1, Math.floor(Number(pageSize) || 50)));
@@ -73,7 +90,7 @@ export class Store {
     if (state) { clauses.push('state = ?'); params.push(state); }
     if (search) {
       const escaped = String(search).replace(/[\\%_]/g, '\\$&').toLowerCase();
-      const fields=['submissionCode','submissionNumber','presetName','result.studentAnswer','result.comment','snapshot.legacyTaskId','snapshot.paperId','snapshot.pageContext.examId','snapshot.networkTopic.scanRecordId','snapshot.networkTopic.student.userCode','snapshot.networkTopic.student.userId','snapshot.networkTopic.student.name'];
+      const fields=['submissionCode','submissionNumber','presetName','result.studentAnswer','result.comment','correctionReason','snapshot.legacyTaskId','snapshot.paperId','snapshot.pageContext.examId','snapshot.networkTopic.scanRecordId','snapshot.networkTopic.student.userCode','snapshot.networkTopic.student.userId','snapshot.networkTopic.student.name'];
       clauses.push(`lower(${fields.map(field=>`coalesce(json_extract(data,'$.${field}'),'')`).join(" || ' ' || ")}) LIKE ? ESCAPE '\\'`); params.push(`%${escaped}%`);
     }
     if (arbitrated) clauses.push("(json_extract(data,'$.result.dualEval.result') = 'arbitration' OR json_extract(data,'$.result.recognitionArbitration') IS NOT NULL OR json_extract(data,'$.originalResult.dualEval.result') = 'arbitration' OR json_extract(data,'$.originalResult.recognitionArbitration') IS NOT NULL)");

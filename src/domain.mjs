@@ -2,13 +2,85 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { isDeepStrictEqual } from 'node:util';
 import { scoringLabelKey, matchScoringItem } from '../ui/scoring-labels.js';
-import { gradingPolicyForRubric, gradingModeInstruction, activeGradingMode } from '../ui/rubric-prompts.js';
+import { gradingPolicyForRubric, gradingModeInstruction, activeGradingMode, stripEmbeddedPolicyTemplates } from '../ui/rubric-prompts.js';
+import { parseModelJson } from './model-json.mjs';
+import { formatCalibrationNotesBlock, MAX_CALIBRATION_NOTES_LENGTH } from './correction-feedback.mjs';
 
 const context = vm.createContext({ console });
-vm.runInContext(fs.readFileSync(new URL('../vendor/prompt.js', import.meta.url), 'utf8'), context);
 vm.runInContext(fs.readFileSync(new URL('../vendor/score.js', import.meta.url), 'utf8') + '\nglobalThis.calculator=ScoreCalculator;', context);
-export const fieldText = context.extractFieldText;
-export const fieldImages = context.collectFieldImages;
+
+function fieldImageList(field) {
+  return field && typeof field === 'object' && Array.isArray(field.images) ? field.images : [];
+}
+
+export function fieldText(field) {
+  if (typeof field === 'string') return field;
+  if (field && typeof field === 'object') {
+    const t = field.text;
+    if (typeof t === 'string') return t;
+    if (t && typeof t === 'object' && typeof t.text === 'string') return t.text;
+  }
+  return '';
+}
+
+export function fieldImages(config) {
+  return [...fieldImageList(config.question), ...fieldImageList(config.answer), ...fieldImageList(config.rubric)];
+}
+
+function buildImageAnnotation(config) {
+  const qLen = fieldImageList(config.question).length;
+  const aLen = fieldImageList(config.answer).length;
+  const rLen = fieldImageList(config.rubric).length;
+  if (qLen + aLen + rLen === 0) return '';
+
+  const parts = [];
+  let idx = 1;
+  if (qLen > 0) {
+    parts.push(`第${idx}-${idx + qLen - 1}张为题目配图`);
+    idx += qLen;
+  }
+  if (aLen > 0) {
+    parts.push(`第${idx}-${idx + aLen - 1}张为参考答案配图`);
+    idx += aLen;
+  }
+  if (rLen > 0) {
+    parts.push(`第${idx}-${idx + rLen - 1}张为评分标准配图`);
+  }
+  return `\n（图片说明：${parts.join('，')}）`;
+}
+
+function buildInputSection(config, units) {
+  const questionText = fieldText(config.question);
+  const answerText = fieldText(config.answer);
+  const rubricText = stripEmbeddedPolicyTemplates(config.rubric, { strictness: config.scoring?.strictness });
+  const imgAnnotation = buildImageAnnotation(config);
+
+  let prompt = '你是阅卷老师，请按本次明确指定的评分口径评价学生实际作答。\n\n===== 输入信息 =====';
+  if (units.length > 1) {
+    if (questionText) prompt += `\n【题目】${imgAnnotation}\n${questionText}`;
+    if (answerText) prompt += `\n【参考答案】\n${answerText}`;
+    if (rubricText) prompt += `\n【评分标准】\n${rubricText}`;
+    prompt += '\n【各小题评分要求】\n';
+    for (const sq of units) {
+      const maxScoreText = sq.maxScore > 0 ? `满分${sq.maxScore}分` : '满分未指定，请根据常规满分评判';
+      prompt += `\n### ${sq.label}（${maxScoreText}）`;
+      if (sq.answer) prompt += `\n参考答案：${sq.answer}`;
+      if (sq.rubric) prompt += `\n评分标准：${sq.rubric}`;
+      prompt += '\n';
+    }
+  } else {
+    const maximum = maxScore(config);
+    const maxScoreText = maximum > 0 ? `满分${maximum}分` : '满分未指定，请根据常规满分评判';
+    if (questionText) prompt += `\n【题目】${imgAnnotation}\n${questionText}`;
+    if (answerText) prompt += `\n【标准答案】\n${answerText}`;
+    if (rubricText) prompt += `\n【评分标准】\n${rubricText}`;
+    prompt += `\n【满分】\n${maxScoreText}`;
+  }
+
+  const calibrationBlock = formatCalibrationNotesBlock(config.calibrationNotes);
+  if (calibrationBlock) prompt += `\n${calibrationBlock}`;
+  return prompt;
+}
 function rubricScoringItems(config) {
   // Read only explicit item maxima; never infer points from deductions or examples.
   const number = '(?:[①-⑳]|\\d+[.、．]|[（(]\\d+[）)]|[一二三四五六七八九十]+、)';
@@ -155,26 +227,39 @@ export function validateConfig(config) {
   if(config.scoring?.roundStep!==undefined&&(!Number.isFinite(config.scoring.roundStep)||config.scoring.roundStep<=0))throw Error('取整步长无效');
   if(config.scoring?.roundMethod&&!['round','floor','ceil'].includes(config.scoring.roundMethod))throw Error('取整方式无效');
   if(config.scoring?.strictness && !['lenient','normal','strict'].includes(config.scoring.strictness))throw Error('实际阅卷口径无效');
+  if(config.calibrationNotes !== undefined && (typeof config.calibrationNotes !== 'string' || config.calibrationNotes.length > MAX_CALIBRATION_NOTES_LENGTH))throw Error('教师校标补充最多2000字');
   for(const u of units)if(u.roundStep!==undefined&&(!Number.isFinite(u.roundStep)||u.roundStep<=0))throw Error('分项步长无效');
 }
 export function promptFor(config) {
   const units = config.scoring?.units || [];
-  const cfg = { ...config, maxScore: maxScore(config), subQuestions: units.map((u, i) => ({ ...u, id: String(i) })) };
-  const original = units.length > 1 ? context.buildSubQuestionPrompt(cfg) : context.buildStructuredPrompt(cfg);
-  const input = gradingModeInstruction(config)+'\n'+original.split('===== 输出要求 =====')[0];
+  const input = `${gradingModeInstruction(config)}\n${buildInputSection(config, units)}\n\n`;
   const diligence = config.scoring?.diligence;
   const solutionPolicy=gradingPolicyForRubric(config.rubric,config.rubricGeneration,config.scoring?.strictness);
-  const gradingIssuePrompt='\n必须返回gradingIssues数组；无评分规则疑点时为空数组。仅当已保存标准缺少会改变得分的条款、条款互相冲突、依赖资料缺失或参考答案存在无法核验的实质疑点时，逐项返回{location:"受影响小问或评分点",reason:"具体缺失或冲突及怎样影响给分"}；在comment同步说明当前评分依据，不自行发明扣分、封顶或追加分。正常的答错、明确违反标准、有效替代解法、可接受简写或普通字迹差异不属于评分规则疑点。字迹、归属等识别疑点仍写recognition，不能混入gradingIssues；程序将评分规则疑点转人工确认，不由模型自行放行。';
+  const gradingIssuePrompt='\n必须返回gradingIssues（无疑点返回[]）：仅当已保存标准缺失决定性条款、条款冲突、资料缺失或标答有无法核验疑点时，逐项列{location,reason}并在comment说明依据（不自创扣分/封顶）；普通答错、有效简写/等价解法不属此类，识别疑点写recognition，规则疑点由程序转人工。';
   const step=config.scoring?.roundStep || 1;
-  const stepPrompt=`\n${solutionPolicy}\n得分步长：${step}分。步骤给分、扣分、scoringDetails逐项得分和总分必须为${step}分的非负整数倍；步长1只允许整分，不得自行给0.5分。若旧标准分值与步长冲突，按当前步长及${config.scoring?.roundMethod || 'round'}取整方式处理并在理由说明。网页评分框分别遵守：${JSON.stringify(units.map(u=>({label:u.label,roundStep:u.roundStep||step})))}。`;
+  const stepPrompt=`\n${solutionPolicy}\n得分步长：${step}分。步骤分、扣分、scoringDetails得分及总分须为${step}分非负整数倍${step===1?'（禁0.5分）':''}；冲突按${config.scoring?.roundMethod || 'round'}取整并说明。各评分框步长：${JSON.stringify(units.map(u=>({label:u.label,roundStep:u.roundStep||step})))}。`;
 
-  const diligencePrompt = diligence?.enabled ? `\ndiligenceLevel为1到5的整数，参考标准：${diligence.criteria || '字数较多且书写较为工整'}；学生答案不超过15字或未作答时为1。` : '\ndiligenceLevel固定为0。';
-  const unitPrompt = `\n网页评分框共${units.length}个，标签、满分和顺序为：${JSON.stringify(units.map(u => ({ label: u.label, maxScore: u.maxScore })))}。subScores对应网页评分框，不对应评分标准中的小问或评分点。${units.length === 1 ? `只有一个总分框时，subScores必须仅有一项，label固定为${JSON.stringify(units[0].label)}，score等于总分；小问明细写在scoringDetails里，comment只补充说明。` : ''}`;
-  const readingPrompt = `\n书写识别要求：仅检查提供的学生答题图片范围，逐张扫描整个区域，包括横线上方、右侧、边缘、涂抹旁和箭头指向的位置，不得只读取预设填空位置；不扩大答题范围。先忠实转录学生实际保留的书写，再对照参考答案评分。明确删除的旧内容不得计入；归属明确的替代内容必须保留。不得根据参考答案、常见公式或语义补齐、纠正、改写学生的字词、数字、符号或缺失步骤。无法辨认处写[无法辨认]，不得当成空白或自行猜测；无法确定答案归属、是否删除或替换且可能影响得分时必须报告疑点。判定采用适度宽松标准：可辨认的潦草字、位置偏移、横线上方或右侧作答、明确划掉的旧答案、清楚的箭头或替换关系，只写入notes，不属于评分疑点。明确写错、漏步骤或未作答，按标准给分或扣分，不因答案不正确而报告识别疑点。局部看不清但不参与计分、且不影响任何评分点结论时只记录说明；只有无法确认的有效答案、关键数字或符号可能改变得分时才报告评分疑点，不要求每个笔画都完美清晰。解答题应按评分标准评价推理和得分步骤；学生采用与参考答案不同的方法时，先独立核验该方法是否符合题设、数学或学科规律及结论，不得仅因方法与参考答案不同而扣分。对正确、完整且适用于本题的等价解法，按同一评分要点给分；若题目明确要求特定方法、过程或证明形式，则遵守该要求。禁止利用参考答案猜测学生未写内容仍然适用。\n必须返回recognition对象：{status:"clear"或"uncertain",coverageChecked:true或false,notes:[实际观察到的涂改或位置说明],issues:[{location:图片序号及区域或小问位置,observed:实际可见内容,reason:无法确认的原因,affectsScore:true或false,impactReason:对具体评分点的影响说明}]}。仅在完整检查了所有题图区域且没有影响评分的识别疑点时status为clear、coverageChecked为true；有影响评分的疑点时status为uncertain，issues逐项列出；affectsScore为false必须具体说明为什么不影响任何评分点，不得把关键答案看不清标为无影响。studentAnswer仅记录可见的有效作答及无法辨认标记；只负责报告识别情况，不自行决定复评、仲裁或提交；程序按当前单双评设置处理：单评不调用复评和仲裁，影响评分的识别疑点转人工确认；双评结合三评一致性及人工/仲裁设置处理。不得为普通书写差异机械报告uncertain。`;
+  const diligencePrompt = diligence?.enabled ? `\ndiligenceLevel为1-5整数（参考：${diligence.criteria || '字数较多且书写工整'}；≤15字或未作答为1）。` : '\ndiligenceLevel固定为0。';
+  const unitPrompt = `\n网页评分框共${units.length}个：${JSON.stringify(units.map(u => ({ label: u.label, maxScore: u.maxScore })))}。subScores对应网页评分框而非标准内小问。${units.length === 1 ? `只有一个总分框时，subScores仅一项且label固定为${JSON.stringify(units[0].label)}、score等于总分，小问明细写scoringDetails。` : ''}`;
+  const readingPrompt = `\n书写识别要求：仅扫描学生答题区全图（含横线上方、右侧、边缘、涂抹旁和箭头指向处），不扩大答题范围。先忠实转录最终保留作答（明确删去排除，归属清晰移位计入），不得根据参考答案猜补、改写文字、数字、符号或缺失步骤；看不清写[无法辨认]。判定适度宽松，不要求每个笔画都完美清晰：可辨认潦草、位置偏移与清晰涂改只记入notes；明确写错、漏步骤或未作答按标准扣分，不报识别疑点；仅当无法确认有效内容且可能改分时才标uncertain。解答题遇不同方法时，先独立核验该方法是否符合题设、学科规律与结论，等价有效解法同等给分；题目明确要求特定方法、过程或证明形式时须遵守。\n必须返回recognition:{status:"clear"|"uncertain",coverageChecked:true|false,notes:[],issues:[{location,observed,reason,affectsScore,impactReason}]}：完整检图且无改分疑点才填clear与true；affectsScore为false须说明为何不影响任何评分点；仅报告识别情况，由程序结合单双评/仲裁决定流程。`;
   const schema = scoringItemSchema(config);
-  const schemaPrompt = (schema.length ? `\n当前任务评分标准确定的评分项共${schema.length}项：${JSON.stringify(schema)}。scoringDetails必须逐项返回{id,label,score,maxScore,studentAnswer,reason}，id严格复制清单固定编号，一项一次不得遗漏，不得自创新编号；label只用于展示，禁止改名。主评、复评、仲裁共用同一清单，按清单顺序返回。` : '\nscoringDetails必须根据当前评分标准的独立计分项逐项返回{label,score,maxScore,studentAnswer,reason}。数量由当前评分标准决定，没有固定数量；不得沿用其他题目的分项，不得擅自合并或拆分评分点。每项满分依照标准，总分为各项得分之和。网页评分框数量不决定评分明细数量。') + '\n先完成scoringDetails逐项判断并输出，再将这些score相加，最后输出总分score和网页评分框subScores。输出前逐项核对reason和comment中写明的本项得分与对应score一致，再核对各项之和、总分与网页评分框合计一致；不得把不同方案或草稿分数混入最终结果。不得先估计总分再倒推明细；识别存疑也必须给出单一的当前评分，可能增加的分数仅在识别疑点中说明，不计入当前合计。';
-  return input + stepPrompt + diligencePrompt + unitPrompt + readingPrompt + gradingIssuePrompt + schemaPrompt + `\n读取完整答题区，忽略明确划掉的旧内容，识别归属明确的替代内容；模糊内容不得猜测。严格按照评分标准评分。comment每个评分项独占一段，使用换行分点论述，末尾总分另起一段。涉及公式必须使用LaTeX数学标记（行内用$...$，分式用\\frac{分子}{分母}，上下标用_{...}和^{...}）；JSON中的反斜杠必须正确转义。不得输出代码块。comment按评分标准逐项写明满分、学生答案、给分或扣分依据和该项得分，最后列出总分计算；不得只给总分或笼统评价。\n唯一输出格式为JSON对象，不要返回Markdown或【得分】等段落。score必须是JSON数字，不能是字符串、空值或“数值总分”等占位文字，范围为0到${maxScore(config)}。subScores按下列标签和顺序返回，分数之和必须等于score；无评分单元时返回空数组。示例中的0仅说明数字类型，不代表本份应得0分。\n` +
+  const schemaPrompt = (schema.length ? `\n评分标准固定清单共${schema.length}项：${JSON.stringify(schema)}。scoringDetails须逐项按序返回{id,label,score,maxScore,studentAnswer,reason}，严格复制id且禁止改名、漏项或自创。` : '\nscoringDetails按当前标准独立计分项逐项返回{label,score,maxScore,studentAnswer,reason}，数量由当前评分标准决定，勿沿用他题或擅自拆并，总分为各项之和。') + '\n必须先完成scoringDetails逐项评定，再求和得到score与subScores，严禁先估总分再倒推；输出前核对reason、comment、scoringDetails之和、score及subScores完全一致，存疑时亦仅给出单一当前得分。';
+  return input +
+    '\n===== 评分策略与步长 =====' + stepPrompt +
+    '\n===== 网页评分框与勤勉度 =====' + unitPrompt + diligencePrompt +
+    '\n===== 书写识别要求 =====' + readingPrompt +
+    '\n===== 规则疑点要求 =====' + gradingIssuePrompt +
+    '\n===== 评分项清单与输出要求 =====' + schemaPrompt +
+    `\n按本次指定口径与已保存评分标准客观评分。comment按评分项换行分段写明满分、学生作答、给扣分依据和得分，末尾列总分计算；公式用LaTeX（$...$、\\frac{分子}{分母}、_{...}、^{...}）并正确转义JSON反斜杠。\n仅输出合法JSON对象（无代码块或【得分】），score为0到${maxScore(config)}的数字（示例0仅表类型），subScores按上述标签顺序返回且合计等于score（无单元返回[]）：\n` +
     JSON.stringify({ studentAnswer: '实际识别内容', gradingMode:activeGradingMode(config), recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] }, gradingIssues:[], ...(schema.length ? {scoringDetails:schema.map(item=>({...item,score:0,studentAnswer:'实际识别内容',reason:'依据当前标准'}))} : {}), score: 0, comment: '逐项评分依据和分数计算', diligenceLevel: 0, subScores: units.map(u => ({ label: u.label, score: 0 })) });
+}
+export function promptPartsFor(config) {
+  const system = promptFor(config);
+  const referenceImages = fieldImages(config).length;
+  const user = referenceImages > 0
+    ? `请按系统指令与评分标准审阅附图并仅输出合法 JSON 评分结果：前 ${referenceImages} 张为题目/参考答案/评分标准配图，其余为学生实际作答图片。`
+    : '请按系统指令与评分标准审阅学生实际作答图片，并仅输出合法 JSON 评分结果。';
+  return { system, user };
 }
 export function validateResult(result, config) {
   if (!result || !Number.isFinite(result.score)) throw Error(`模型总分无效：score必须是数字，收到${result?.score === undefined ? '缺失字段' : JSON.stringify(result.score)}；本题满分${maxScore(config)}。`);
@@ -204,9 +289,9 @@ export function recognitionWarning(result) {
   return '';
 }
 export function parseResult(text, config) {
-  const clean = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   let result;
-  try { result = JSON.parse(clean); } catch { throw Error('模型没有返回完整JSON评分结果'); }
+  try { result = parseModelJson(text, { requiredKeys: ['score'] }); }
+  catch { throw Error('模型没有返回完整JSON评分结果'); }
   // Some compatible endpoints return numbers as strings. Accept only an entire numeric literal.
   const numeric = value => typeof value === 'string' && /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? Number(value.trim()) : value;
   if (result && typeof result === 'object') {

@@ -16,7 +16,9 @@ export async function blackRatio(buffer, fixedThreshold) {
   }
   threshold = fixedThreshold ?? threshold;
   if (!Number.isFinite(threshold) || threshold < 0 || threshold > 255) throw Error('空白范本阈值无效');
-  return { threshold, ratio: [...data].filter(v => v <= threshold).length / data.length };
+  let dark = 0;
+  for (let i = 0; i < data.length; i++) if (data[i] <= threshold) dark++;
+  return { threshold, ratio: dark / data.length };
 }
 export async function detectBlank(images, reference, difference = 0.01) {
   const warning = blankReferenceWarning(reference, images.length, difference);

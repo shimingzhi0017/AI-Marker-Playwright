@@ -3,6 +3,21 @@ import { alignScoringItems } from './scoring-labels.js';
 import { rubricPrompts } from './rubric-prompts.js';
 const items = result => result?.scoringDetails?.length ? result.scoringDetails : result?.subScores || [];
 const value = score => Number.isFinite(score) ? `${score} 分` : '未提供';
+function formatUsage(usage) {
+  if (!usage || typeof usage !== 'object') return '';
+  const hasAny = ['inputTokens', 'outputTokens', 'totalTokens'].some(k => Number.isFinite(usage[k]) && usage[k] > 0);
+  if (!hasAny) return '';
+  const input = Number.isFinite(usage.inputTokens) ? usage.inputTokens : 0;
+  const output = Number.isFinite(usage.outputTokens) ? usage.outputTokens : 0;
+  const total = Number.isFinite(usage.totalTokens) ? usage.totalTokens : input + output;
+  const cached = Number.isFinite(usage.cachedTokens) && usage.cachedTokens > 0 ? usage.cachedTokens : 0;
+  const reasoning = Number.isFinite(usage.reasoningTokens) && usage.reasoningTokens > 0 ? usage.reasoningTokens : 0;
+  const hitRate = cached > 0 && input > 0 ? `，${Math.round((cached / input) * 100)}%` : '';
+  const inputPart = cached > 0 ? `输入 ${input}（缓存命中 ${cached}${hitRate}）` : `输入 ${input}`;
+  const outputPart = reasoning > 0 ? `输出 ${output}（思考 ${reasoning}）` : `输出 ${output}`;
+  const callsPart = Number.isFinite(usage.calls) && usage.calls > 1 ? `（共 ${usage.calls} 次请求）` : '';
+  return `${inputPart} · ${outputPart} · 合计 ${total} tokens${callsPart}`;
+}
 function node(tag, text) { const el = document.createElement(tag); if(text !== undefined) el.textContent = text; return el; }
 function formattedNode(tag, text) { const el = node(tag); renderInlineFeedback(el, text); return el; }
 function paragraph(container, title, text) {
@@ -21,6 +36,7 @@ function reviewCard(container,title,result,arbitration=false) {
   const evidence=node('details');evidence.append(node('summary','查看识别与评分依据'));
   paragraph(evidence,'输出结构异常',result?.outputFailure?.message);
   paragraph(evidence,'识别答案',result?.studentAnswer || '未提供');paragraph(evidence,'评分依据',result?.comment || '未提供');
+  paragraph(evidence,'模型用量',formatUsage(result?.usage));
   card.append(evidence);container.append(card);
 }
 function historyOverview(container,record) {
@@ -74,6 +90,7 @@ function historyOverview(container,record) {
   }
   historySection(container,'识别答案',result.studentAnswer || '未能识别');
   historySection(container,'AI评语',result.comment || '无');
+  historySection(container,'模型用量',formatUsage(result.totalUsage || result.usage));
   if(record.correctionReason)historySection(container,'人工改分原因',record.correctionReason);
   const audit=node('details');audit.className='review-audit';audit.append(node('summary','逐项对照、书写检查与提交状态'));
   const body=node('div');renderResultDetails(body,record,false);audit.append(body);container.append(audit);
@@ -83,6 +100,12 @@ function readingDetails(container, result) {
   if(result?.outputFailure){paragraph(container,'输出结构异常',`${result.outputFailure.message}；此输出未作为有效分数使用，原始输出已存档。`);return;}
   paragraph(container,'待人工核对',result?.formatWarning);
   paragraph(container,'评分格式核对',result?.formatNote);
+  if(result?.policyVerification?.previous){
+    const pv=result.policyVerification;
+    paragraph(container,'口径与自洽核验',pv.status==='verified'
+      ? `已自动重试核验并通过（核验前得分 ${value(pv.previous.score)} → 当前 ${value(result.score)}）`
+      : `自动核验未消除冲突（初评 ${value(pv.previous.score)}；${pv.message || '请人工核对'}）`);
+  }
   paragraph(container, '书写识别检查', result?.recognitionWarning || ((result?.recognition?.status === 'clear' || result?.recognitionWarning === '') && result.recognition?.coverageChecked ? '模型报告已检查完整答题区域，未报告影响评分的识别疑点。' : '此结果未记录完整的书写识别检查。'));
   paragraph(container, '学生实际作答', result?.studentAnswer);
   for (const note of Array.isArray(result?.recognition?.notes) ? result.recognition.notes : []) if (typeof note === 'string') paragraph(container, '涂改及位置说明', note);
@@ -96,12 +119,13 @@ export function renderResultDetails(container, record, history = false) {
   if(record.submissionCode) paragraph(container,'答卷编号',record.submissionCode);
   paragraph(container,'模型总分 → 最终分数',`${value(result.rawScore ?? record.originalResult?.score ?? result.score)} → ${value(result.score)}`);
   paragraph(container,'评分格式核对',result.formatNote);
+  paragraph(container,'模型用量',formatUsage(result.totalUsage || result.usage));
   readingDetails(container, result);
   if (result.recognitionDecision === 'arbitration') paragraph(container, '存疑处理', '按当前任务设置采用仲裁分数；识别疑点仍保留，请结合原图审查。');
   if (result.recognitionDecision === 'three-way-consensus') paragraph(container, '存疑处理', '主评、复评、仲裁的总分及逐项分数均一致，按一致分数继续；识别疑点保留供审查。');
   if (result.recognitionArbitration) {
     for (const [title, r] of [['首次识别', result.recognitionArbitration.primary], ['识别仲裁', result.recognitionArbitration.verdict]]) {
-      const detail=node('details');detail.append(node('summary',`${title} · ${r?.model || '模型名未记录'} · ${value(r?.score)}`));readingDetails(detail,r);paragraph(detail,'评分依据',r?.comment);container.append(detail);
+      const detail=node('details');detail.append(node('summary',`${title} · ${r?.model || '模型名未记录'} · ${value(r?.score)}`));readingDetails(detail,r);paragraph(detail,'评分依据',r?.comment);paragraph(detail,'模型用量',formatUsage(r?.usage));container.append(detail);
     }
   }
   const dual = result.dualEval;
@@ -140,7 +164,7 @@ export function renderResultDetails(container, record, history = false) {
     paragraph(detail,'识别答案',r?.studentAnswer || '未提供');
     readingDetails(detail, r);
     for(const item of items(r)) paragraph(detail,`${item.label} · ${value(item.score)}`,item.reason || item.comment);
-    paragraph(detail,'评分依据',r?.comment || '未提供');container.append(detail);
+    paragraph(detail,'评分依据',r?.comment || '未提供');paragraph(detail,'模型用量',formatUsage(r?.usage));container.append(detail);
   }
   paragraph(container,'人工改分原因',record.correctionReason);
   if(record.originalResult) paragraph(container,'人工调整前得分',value(record.originalResult.score));
