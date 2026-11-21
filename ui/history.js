@@ -29,18 +29,29 @@ export function createHistoryUI({$, api, states, getPage, setPage, setSelectedRe
     const metricsEl = $('historyMetrics');
     if (metricsEl) {
       if (metrics && metrics.total > 0) {
-        const parts = [`均分：${metrics.averageScore ?? '—'}`];
-        if (metrics.submittedCount) parts.push(`已提交 ${metrics.submittedCount}/${metrics.total}`);
-        if (metrics.dualEval?.total) parts.push(`仲裁 ${metrics.dualEval.arbitrated}/${metrics.dualEval.total}`);
-        if (metrics.correctionCount) parts.push(`改分 ${metrics.correctionCount} 次`);
-        if (metrics.usage?.totalTokens) parts.push(`Token ${metrics.usage.totalTokens}（缓存 ${(metrics.usage.cacheHitRate * 100).toFixed(0)}%）`);
-        if (metrics.verification?.policyIssueCount || metrics.verification?.consistencyIssueCount) {
-          parts.push(`核验告警 ${metrics.verification.policyIssueCount + metrics.verification.consistencyIssueCount}`);
-        }
-        metricsEl.textContent = parts.join(' · ');
+        const chips = [
+          { text: `均分：${metrics.averageScore ?? '—'}`, tone: 'brand' },
+          ...(metrics.submittedCount ? [{ text: `已提交 ${metrics.submittedCount}/${metrics.total}`, tone: 'brand' }] : []),
+          ...(metrics.dualEval?.total ? [{ text: `仲裁 ${metrics.dualEval.arbitrated}/${metrics.dualEval.total}`, tone: 'info' }] : []),
+          ...(metrics.correctionCount ? [{ text: `改分 ${metrics.correctionCount} 次`, tone: 'info' }] : []),
+          ...(metrics.usage?.totalTokens ? [{ text: `Token ${metrics.usage.totalTokens}（缓存 ${(metrics.usage.cacheHitRate * 100).toFixed(0)}%）`, tone: 'neutral' }] : []),
+          ...((metrics.verification?.policyIssueCount || metrics.verification?.consistencyIssueCount)
+            ? [{ text: `核验告警 ${metrics.verification.policyIssueCount + metrics.verification.consistencyIssueCount}`, tone: 'warning' }]
+            : []),
+          ...(metrics.verification?.gradingIssueCount
+            ? [{ text: `规则疑点 ${metrics.verification.gradingIssueCount}`, tone: 'warning' }]
+            : [])
+        ];
+        metricsEl.replaceChildren(...chips.map(chip => {
+          const el = document.createElement('span');
+          el.className = 'history-metric-chip';
+          el.dataset.tone = chip.tone;
+          el.textContent = chip.text;
+          return el;
+        }));
         metricsEl.hidden = false;
       } else {
-        metricsEl.textContent = '';
+        metricsEl.replaceChildren();
         metricsEl.hidden = true;
       }
     }
@@ -63,6 +74,18 @@ export function createHistoryUI({$, api, states, getPage, setPage, setSelectedRe
       badge.className = 'arbitration-badge';
       badge.textContent = '已仲裁';
       row.children[2].append(document.createTextNode(' '), badge);
+    }
+    if (record.result?.policyAudit?.issues?.length || record.result?.gradingIssues?.length || record.result?.formatWarning) {
+      const alertBadge = document.createElement('span');
+      alertBadge.className = 'alert-badge';
+      alertBadge.textContent = '核验告警';
+      row.children[2].append(document.createTextNode(' '), alertBadge);
+    }
+    if (record.correctionReason || (record.originalResult && Number.isFinite(record.result?.score) && record.originalResult.score !== record.result.score)) {
+      const correctedBadge = document.createElement('span');
+      correctedBadge.className = 'corrected-badge';
+      correctedBadge.textContent = '已改分';
+      row.children[2].append(document.createTextNode(' '), correctedBadge);
     }
     const cell = document.createElement('td');
     const button = document.createElement('button');

@@ -21,6 +21,7 @@
 - **协议缓存与请求健壮性**：支持 `system` / `user` 提示词拆分以提高 Prefix Caching 命中率；原生 JSON 模式与 HTTP 400/422 兼容降级，HTTP 429 `Retry-After` 退避及堆栈重试上限加固；统一 `totalUsage`（含缓存命中与思考 Token）汇总并在详情与任务统计展示。
 - **LaTeX 容错、口径审计与人工反馈闭环**：新增 `src/model-json.mjs` 修复模型输出未转义或损毁控制字符的 LaTeX/JSON；升级 `src/grading-policy-audit.mjs` 检测非严格口径隐性过严扣分、`answers` 违规过程分、暗扣及文分矛盾；新增 `src/correction-feedback.mjs` 支持将人工改分原因沉淀为下一份答卷即时生效的校标补充。
 - **图像传输优化、任务指标与离线评估**：新增 `src/image-optimize.mjs` 对超大图等比缩放与白底高亮清晰 JPEG 压缩并按魔数透传 MIME；新增 `src/task-metrics.mjs`、`GET /api/metrics`、历史统计栏与 CSV/HTML 导出扩展；新增 `npm run audit:prompts`（108 组提示词体检）与 `npm run eval:benchmark`（历史库离线评估/回放基准）。
+- **前端交互与可读性优化**：修复小屏历史表 6 列布局错位；升级历史指标徽章条与告警/改分状态标记、校标单列排版；结果审核区新增异常置顶横幅、宽屏答卷粘滞与操作栏吸底、图片查看缩放/旋转及快捷键（Ctrl+Enter / Alt+F / Esc）；优化轮询 DOM 稳定更新与 180ms 搜索防抖。
 
 ## 2026-11-12 本地源码调整
 
@@ -68,7 +69,7 @@ Windows 也可以双击 `启动可视化.cmd`。详细步骤见[首次运行说�
 
 ## 测试与验证
 
-2026-11-21 优化后的完整回归 **254 项通过，0 项失败**（含提示词结构、协议与用量统计、口径/文分自洽审计、人工改分闭环、运行时加固、图片优化、任务指标与离线基准回放测试）；九学科 108 组提示词离线体检与浏览器核心自检通过。此前运行与修复过程见[测试报告](测试报告.md)。完整回归建议使用 `node --test --test-concurrency=4 test/*.test.mjs test/ui/*.test.mjs`，以控制同时启动的浏览器数量。常用检查命令：
+2026-11-21 优化后的完整回归 **255 项通过，0 项失败**（含提示词结构、协议与用量统计、口径/文分自洽审计、人工改分闭环、运行时加固、图片优化、任务指标与离线基准回放测试）；九学科 108 组提示词离线体检与浏览器核心自检通过。此前运行与修复过程见[测试报告](测试报告.md)。完整回归建议使用 `node --test --test-concurrency=4 test/*.test.mjs test/ui/*.test.mjs`，以控制同时启动的浏览器数量。常用检查命令：
 
 ```powershell
 npm.cmd test

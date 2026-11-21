@@ -12,6 +12,7 @@ let historyPage = 1;
 let workspace = 'default', workspaces = [], switching = false, pendingWorkspace = null, pendingTab = null;
 let pendingContinuation=null,savingContinuation=null;
 let attentionInitialized = false, seenAttention = new Set(), alertAudio;
+let lastReadinessKey = '', lastEventsKey = '', lastResultAlertKey = '', historySearchTimer = null;
 const dirty=new Set();
 const dirtyRevisions=new Map();
 const saveSections = {
@@ -164,7 +165,11 @@ function renderState() {
   const modelReady=entry=>{const provider=config.providers[entry?.provider];return !!(entry?.model&&provider?.endpoint&&(provider.apiKey||provider.apiKeyEnv));};
   const unattendedReady=$('mode').value!=='unattended' || (w?.dualEval?.enabled && modelReady(w?.dualEval?.secondary) && modelReady(w?.dualEval?.arbitration));
   const ready=[['阅卷方案',!!(textField(p?.answer).trim()&&textField(p?.rubric).trim()&&(p?.scoring?.units?.length?p.scoring.units.every(u=>u.maxScore>0):p?.scoring?.maxScore>0)),'presets'],['评分设置',modelReady(w?.model)&&(!w.dualEval?.enabled || [w.dualEval.secondary,w.dualEval.arbitration].every(modelReady))&&unattendedReady,'workflows']];
-  $('readiness').replaceChildren(...ready.map(([name,ok,tab],index)=>{const b=document.createElement('button');b.className=ok?'ready-step complete':'ready-step';b.setAttribute('aria-label',`${name}${ok?'已就绪':'待设置'}，点击打开${name}`);b.innerHTML=`<span class="ready-step-number">${index+1}</span><span>${name}</span><span class="ready-step-state">${ok?'已就绪':'待设置'}</span>`;b.onclick=()=>document.querySelector(`[data-tab="${tab}"]`).click();return b;}));
+  const readinessKey = ready.map(([name,ok]) => `${name}:${ok ? 1 : 0}`).join('|');
+  if (readinessKey !== lastReadinessKey) {
+    lastReadinessKey = readinessKey;
+    $('readiness').replaceChildren(...ready.map(([name,ok,tab],index)=>{const b=document.createElement('button');b.className=ok?'ready-step complete':'ready-step';b.setAttribute('aria-label',`${name}${ok?'已就绪':'待设置'}，点击打开${name}`);b.innerHTML=`<span class="ready-step-number">${index+1}</span><span>${name}</span><span class="ready-step-state">${ok?'已就绪':'待设置'}</span>`;b.onclick=()=>document.querySelector(`[data-tab="${tab}"]`).click();return b;}));
+  }
   $('runtimeSummary').textContent=`${config.active} · ${rubricPrompts[activeGradingMode(p||{})].label}评分 · ${{trial:'人工确认',normal:'5秒确认',unattended:'无人值守'}[config.mode||'trial']}`;
   const snapshot=state.browserOpen&&!diagnosisError&&!completed?state.snapshot:null;
   $('browserStatus').textContent=state.browserOpen?'浏览器已连接':'未连接';$('browserStatus').classList.toggle('connected',!!state.browserOpen);
@@ -193,6 +198,23 @@ function renderState() {
     displayedRecord=`${r.id}:${!!r.result}:${r.imageFiles?.length}`; renderImages($('answerImages'),r); $('presetLabel').textContent=r.presetName; $('resultEmpty').hidden=!!r.result; $('resultPanel').hidden=!r.result;
     if(r.result) { $('scores').replaceChildren(); const values=r.result.subScores?.length ? r.result.subScores : [{label:'总分',score:r.result.score}]; for(const [i,s] of values.entries()) { const label=document.createElement('label'); label.textContent=s.label; const input=document.createElement('input'); input.type='number'; input.step=p?.scoring?.units?.[i]?.roundStep||p?.scoring?.roundStep||0.5; input.min=0;input.max=p?.scoring?.units?.[i]?.maxScore||p?.scoring?.maxScore||''; input.value=s.score; input.dataset.score='true'; label.append(input); $('scores').append(label); } $('ocr').textContent=r.result.studentAnswer || '无识别文本'; $('comment').value=r.result.comment || '';renderFeedback($('commentPreview'),r.result.comment || '无评语'); $('correction').value=''; if($('saveCorrectionRule'))$('saveCorrectionRule').checked=false; $('rawResult').textContent=JSON.stringify(r.result,null,2);renderResultDetails($('resultDetails'),r);$('dualSummary').hidden=!r.result.dualEval;$('dualSummary').textContent=r.result.dualEval?`双评：${{consensus:'一致',average:'阈值内平均',arbitration:'仲裁'}[r.result.dualEval.result]} · 主评 ${r.result.dualEval.a?.score??'未通过校验'} / 复评 ${r.result.dualEval.b?.outputFailure?'未通过校验':r.result.dualEval.b?.score??'未参与'}`:''; }
   }
+  const alertLines = r?.result ? [r.blankDetection?.warning, r.result.formatWarning, r.result.recognitionWarning].filter(Boolean) : [];
+  const resultAlertKey = `${r?.id || ''}:${alertLines.join('|')}`;
+  const banner = $('resultAlertBanner');
+  if (banner && resultAlertKey !== lastResultAlertKey) {
+    lastResultAlertKey = resultAlertKey;
+    if (alertLines.length) {
+      const title = document.createElement('strong');
+      title.className = 'result-alert-title';
+      title.textContent = '需人工重点核对';
+      const nodes = [title, ...alertLines.map(line => Object.assign(document.createElement('p'), { textContent: line }))];
+      banner.replaceChildren(...nodes);
+      banner.hidden = false;
+    } else {
+      banner.replaceChildren();
+      banner.hidden = true;
+    }
+  }
   const builtinSubmit=r?.snapshot?.builtinAdapter==='zhixue'&&r?.snapshot?.networkTopic?.apiOrigin;
   const canSubmit=!!((builtinSubmit || config?.platform?.verified || (config?.platform?.manualSubmissionTest && config.mode === 'trial' && Number.isInteger(config.batchLimit) && config.batchLimit >= 0 && r?.snapshot?.networkTopic)) && r?.snapshot?.strongIdentity && (builtinSubmit || config?.platform?.submitResponseUrlPattern));
   for(const id of ['fill','stopReview']) $(id).disabled=!state.review;
@@ -202,7 +224,12 @@ function renderState() {
   $('submitHint').textContent=canSubmit ? (config.platform.manualSubmissionTest && !config.platform.verified ? `人工确认提交测试：每份人工确认并核验服务器回执，${config.batchLimit ? `达到本次设定的${config.batchLimit}份后自动停止。` : `本次未设置份数上限，可随时暂停。`}` : '确认提交后会等待平台响应，再处理下一份。') : '提交适配尚未实测：可只填分，再在阅卷网站手动提交。';
   for(const input of document.querySelectorAll('[data-score]')) input.disabled=!state.review;
   $('comment').disabled=!state.review;$('correction').disabled=!state.review;if($('saveCorrectionRule'))$('saveCorrectionRule').disabled=!state.review;updateScoreTotal();
-  $('events').replaceChildren(...state.events.slice(0,20).map(e=>{const li=document.createElement('li'),time=document.createElement('time'),message=document.createElement('span');time.textContent=new Date(e.time).toLocaleTimeString();message.textContent=e.message;li.append(time,message);return li;}));
+  const visibleEvents = state.events.slice(0, 20);
+  const eventsKey = visibleEvents.map(e => `${e.time}:${e.message}`).join('\n');
+  if (eventsKey !== lastEventsKey) {
+    lastEventsKey = eventsKey;
+    $('events').replaceChildren(...visibleEvents.map(e=>{const li=document.createElement('li'),time=document.createElement('time'),message=document.createElement('span');time.textContent=new Date(e.time).toLocaleTimeString();message.textContent=e.message;li.append(time,message);return li;}));
+  }
 }
 function requestWorkspace(id) {
   if(id===workspace && currentTab!=='models'){pendingWorkspace=null;return;}
@@ -238,6 +265,7 @@ async function switchWorkspace(id) {
     providers:structuredClone(config.providers),selected:$('providerSelect').value,
     fields:Object.fromEntries(['protocol','endpoint','apiKey','apiKeyEnv','modelsEndpoint'].map(key=>[key,$(key).value]))
   } : null;
+  clearTimeout(historySearchTimer);
   for(const section of [...dirty])if(section!=='models')dirty.delete(section);
   $('dirtyBadge').hidden=!dirty.size;switching=true;workspace=id;pageCheckError='';showTaskPage();
   displayedRecord=null;selectedRecord=null;$('historyDetail').hidden=true;$('historyDialog').close();
@@ -295,7 +323,7 @@ const handlers={
   fetchModels:async()=>{await handlers.saveProvider();await api('/api/models',{name:$('providerSelect').value});const selected=$('providerSelect').value;config=await api('/api/settings');$('providerSelect').value=selected;renderProvider();for(const p of ['primary','secondary','arbitration'])renderCatalog(p);notice('模型目录已更新',true);},
   savePlatform:async()=>{config.platform ||= {};config.browser ||= {};for(const input of document.querySelectorAll('[data-platform]')){const key=input.dataset.platform;if(key==='browser.url')config.browser.url=input.value;else config.platform[key]=key==='successValue'?JSON.parse(input.value):input.value;}config.platform.verified=$('verified').checked;await save('页面适配已保存','presets');},
   addUnit:()=>{addUnit();markDirty('presets');}, addPreset:()=>newName('新建方案','presets',()=>({question:'',answer:'',rubric:'',workflowId:Object.keys(config.workflows)[0],scoring:{maxScore:0,units:[],roundStep:1,roundMethod:'round'}})),addProvider:()=>newName('新建供应商','providers',()=>({protocol:'chat',endpoint:'',apiKey:'',models:[]})),addWorkflow:()=>newName('新建工作流','workflows',()=>({model:{provider:Object.keys(config.providers)[0],model:''},dualEval:{enabled:false}})),
-  refreshHistory:()=>{historyPage=1;return renderHistory();},
+  refreshHistory:()=>{clearTimeout(historySearchTimer);historyPage=1;return renderHistory();},
   exportConfig:()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(config,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='阅卷配置.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);},
   blank:async()=>{
     if(!selectedRecord || !confirm('请先确认这份答卷确实为空白。将把图片特征作为空白检测范本，检测结果仍须人工确认。'))return;
@@ -335,7 +363,7 @@ $('workspaceSelect').onchange=()=>requestWorkspace($('workspaceSelect').value);
 $('addWorkspace').onclick=()=>action(async()=>{const result=await api('/api/workspaces',{});await refreshWorkspaces();await switchWorkspace(result.id);const name=await workspaceDialog();if(name!==null){if(!name)throw Error('任务名称不能为空');await api('/api/workspace-name',{name});config.workspaceName=name;await refreshWorkspaces();}notice('新任务已创建，已使用默认配置。请在自己的浏览器登录并选择阅卷页面。',true);});
 $('pauseAll').onclick=()=>action(async()=>{await refreshWorkspaces();await Promise.all(workspaces.map(w=>api('/api/pause',{},w.id)));notice('已请求暂停全部任务',true);});
 const enhancements=createEnhancements({getConfig:()=>config,save,action,markDirty,renderPreset,renderUnits,renderProvider,renderWorkflow,getSnapshot:()=>state.snapshot,api,refreshSettings:renderSettings,notice});
-$('historySearch').oninput=()=>action(()=>{historyPage=1;return renderHistory();});$('historyFilter').onchange=()=>action(()=>{historyPage=1;return renderHistory();});$('arbitrationFilter').onchange=()=>action(()=>{historyPage=1;return renderHistory();});$('historyPageSize').onchange=()=>action(()=>{historyPage=1;return renderHistory();});$('historyPrev').onclick=()=>action(()=>{historyPage=Math.max(1,historyPage-1);return renderHistory();});$('historyNext').onclick=()=>action(()=>{historyPage++;return renderHistory();});
+$('historySearch').oninput=()=>{clearTimeout(historySearchTimer);historySearchTimer=setTimeout(()=>action(()=>{historyPage=1;return renderHistory();}),180);};$('historyFilter').onchange=()=>action(()=>{historyPage=1;return renderHistory();});$('arbitrationFilter').onchange=()=>action(()=>{historyPage=1;return renderHistory();});$('historyPageSize').onchange=()=>action(()=>{historyPage=1;return renderHistory();});$('historyPrev').onclick=()=>action(()=>{historyPage=Math.max(1,historyPage-1);return renderHistory();});$('historyNext').onclick=()=>action(()=>{historyPage++;return renderHistory();});
 async function workspaceDialog(deleting=false) {
   const current=workspaces.find(w=>w.id===workspace),dialog=$('workspaceDialog');
   $('workspaceDialogTitle').textContent=deleting?'删除任务':'重命名任务';
@@ -378,3 +406,22 @@ $('mode').addEventListener('input',()=>{updateRuntimeControls();if(state)renderS
 for(const id of ['alertPopup','alertSound','alertVolume'])$(id)?.addEventListener('input',()=>markDirty('grading'));
 
 $('comment').addEventListener('input',()=>renderFeedback($('commentPreview'),$('comment').value));
+
+document.addEventListener('keydown',event=>{
+  if(currentTab!=='grading'||!state?.review||document.querySelector('dialog[open]'))return;
+  if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){
+    event.preventDefault();
+    if(!$('submit').disabled)$('submit').click();
+    else if(!$('fill').disabled)$('fill').click();
+    return;
+  }
+  if(event.altKey&&!event.ctrlKey&&!event.metaKey&&event.key.toLowerCase()==='f'){
+    event.preventDefault();
+    if(!$('fill').disabled)$('fill').click();
+    return;
+  }
+  if(event.key==='Escape'&&state.countdown!==null){
+    event.preventDefault();
+    action(()=>api('/api/hold',{recordId:state.record?.id}));
+  }
+});
