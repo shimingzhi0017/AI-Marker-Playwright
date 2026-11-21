@@ -12,6 +12,7 @@
     "tool": "node src/cli.mjs",
     "ui": "node src/server.mjs",
     "audit:prompts": "node scripts/audit-prompts.mjs",
+    "build:golden": "node scripts/build-golden-set.mjs",
     "eval:benchmark": "node scripts/eval-benchmark.mjs",
     "test": "node --test test/*.test.mjs",
     "test:ui": "node --test test/ui/*.test.mjs"

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { validateConfig, calculate } from './domain.mjs';
 import { grade } from './models.mjs';
 import { detectBlank, blankReferenceWarning } from './blank.mjs';
+import { selectFewShotCorrections } from './correction-feedback.mjs';
 
 export class Runner {
   constructor(platform, store, settings, review, modelGrade = grade, coordinator) {
@@ -25,6 +26,10 @@ export class Runner {
         if (this.store.hasIdentityInStates ? this.store.hasIdentityInStates(snapshot.identity, ['submitted']) : this.store.records().some(r => r.identity === snapshot.identity && r.state === 'submitted')) throw Error('当前答卷已提交过，禁止重复处理');
         release?.(); release = this.coordinator?.acquire(snapshot.identity, this.store);
         record = { id: crypto.randomUUID(), identity: snapshot.identity, taskId: snapshot.taskId, presetName, configHash: crypto.createHash('sha256').update(JSON.stringify(config)).digest('hex'), snapshot, mode: this.settings.mode || 'trial', state: 'loading', time: new Date().toISOString() };
+        if (!config.calibrationExamples && typeof this.store.records === 'function') {
+          const examples = selectFewShotCorrections(this.store.records(), presetName);
+          if (examples.length) config.calibrationExamples = examples;
+        }
         this.store.save(record); this.store.log('loading', { id: record.id });
         const images = await this.platform.images(snapshot, signal);
         record.imageFiles = await this.store.images(record.id, images);

@@ -94,7 +94,7 @@ export function buildLayout() {
   $('historyJson').insertAdjacentHTML('beforebegin','<div id="historyReadable" class="history-readable"></div>');
   const rawDetails=document.createElement('details');rawDetails.innerHTML='<summary>技术记录</summary>';$('historyJson').before(rawDetails);rawDetails.append($('historyJson'));
   const historyDialog=document.createElement('dialog');historyDialog.id='historyDialog';historyDialog.setAttribute('aria-labelledby','historyDialogTitle');
-  historyDialog.innerHTML='<div class="history-dialog-heading"><h2 id="historyDialogTitle">评阅详情</h2><button id="closeHistory" aria-label="关闭评阅详情">×</button></div>';
+  historyDialog.innerHTML='<div class="history-dialog-heading"><h2 id="historyDialogTitle">评阅详情</h2><div class="history-dialog-actions"><button id="historyRecordPrev" type="button" class="small" title="上一份记录 (←)">← 上一份</button><button id="historyRecordNext" type="button" class="small" title="下一份记录 (→)">下一份 →</button><button id="closeHistory" aria-label="关闭评阅详情">×</button></div></div>';
   document.body.append(historyDialog);$('historyDetail').querySelector('h2').remove();historyDialog.append($('historyDetail'));
   $('historyImages').before($('historyReadable'));$('historyImages').before(Object.assign(document.createElement('h3'),{textContent:'题目 / 答卷图片',className:'review-images-title'}));
   $('historyReadable').insertAdjacentHTML('beforebegin','<section id="historySummary" class="history-summary" aria-label="记录摘要"><div><span>任务</span><strong id="historySummaryTask">—</strong></div><div><span>方案</span><strong id="historySummaryPreset">—</strong></div><div><span>最终得分</span><strong id="historySummaryScore" class="history-summary-score">—</strong></div><div><span>提交状态</span><strong id="historySummaryState">—</strong></div><div><span>时间</span><strong id="historySummaryTime">—</strong></div><div><span>模式</span><strong id="historySummaryMode">—</strong></div></section>');
@@ -349,6 +349,7 @@ export function createEnhancements({getConfig,save,action,markDirty,renderPreset
     const saveRuleWrap=document.createElement('label');saveRuleWrap.className='check';saveRuleWrap.innerHTML='<input id="saveCorrectionRule" type="checkbox">将改分原因沉淀为本题校标补充（下份生效）';
     const section=(title,...children)=>{const node=document.createElement('section');node.className='result-section';node.innerHTML=`<h3>${title}</h3>`;node.append(...children);return node;};
     const modelLine=document.createElement('p');modelLine.id='modelStatusText';modelLine.className='result-note';modelLine.textContent='主评模型结果已返回，可查看下方明细。';
+    const roleProgress=document.createElement('div');roleProgress.id='modelRoleProgress';roleProgress.className='model-role-progress';roleProgress.hidden=true;
     total.querySelector('span').textContent='总分';
     actions.replaceChildren($('submit'),$('fill'),$('stopReview'));
     $('fill').classList.remove('primary');$('fill').classList.add('secondary');
@@ -356,7 +357,8 @@ export function createEnhancements({getConfig,save,action,markDirty,renderPreset
     const shortcutHint=document.createElement('p');shortcutHint.className='shortcut-hint';shortcutHint.textContent='快捷键：Ctrl+Enter 确认提交/只填分 · Alt+F 只填分 · Esc 暂停倒计时';
     const submitSection=section('提交操作',correction,saveRuleWrap,submitHint,actions,shortcutHint);submitSection.classList.add('review-submit-section');
     raw.classList.add('result-raw');raw.querySelector('summary').textContent='模型原始结果与计算详情';
-    panel.replaceChildren(banner,total,section('分项得分',scores),section('评分依据',commentPreview,commentEditor),section('识别内容',ocr),section('模型状态',modelLine,dualSummary),section('异常提示与评分明细',details),submitSection,raw);
+    panel.replaceChildren(banner,total,section('分项得分',scores),section('评分依据',commentPreview,commentEditor),section('识别内容',ocr),section('模型状态',modelLine,roleProgress,dualSummary),section('异常提示与评分明细',details),submitSection,raw);
+    $('resultEmpty')?.insertAdjacentHTML('afterend','<div id="gradingLiveProgress" class="model-role-progress" aria-live="polite" hidden></div>');
   }
   layoutResultPanel();
   const deleteDialog=document.createElement('dialog');deleteDialog.id='deleteProviderDialog';deleteDialog.setAttribute('aria-labelledby','deleteProviderTitle');
@@ -564,8 +566,7 @@ export function createEnhancements({getConfig,save,action,markDirty,renderPreset
     }
   };
   refreshShell();
-  setInterval(refreshShell,700);
   const shellObserver=new MutationObserver(refreshShell);
   for(const id of ['phase','title','workspaceCards','workspaceStatus'])if($(id))shellObserver.observe($(id),{childList:true,characterData:true,subtree:true});
-  return {preset,provider,workflow,applyPreset,applyWorkflow};
+  return {preset,provider,workflow,applyPreset,applyWorkflow,refreshShell};
 }

@@ -20,6 +20,33 @@ function formatUsage(usage) {
 }
 function node(tag, text) { const el = document.createElement(tag); if(text !== undefined) el.textContent = text; return el; }
 function formattedNode(tag, text) { const el = node(tag); renderInlineFeedback(el, text); return el; }
+const DEDUCTION_LABELS = {
+  substantive: '实质错误/未答',
+  task_requirement: '违反明确限定',
+  missing_key_step: '缺关键步骤',
+  minor_brevity: '过程简略/跳步',
+  strict_detail: '严格细节缺失',
+  non_reference_method: '非参考解法',
+  non_verbatim_wording: '非参考原词句式'
+};
+const FORBIDDEN_LENIENT = new Set(['strict_detail', 'non_reference_method', 'non_verbatim_wording', 'minor_brevity', 'missing_key_step']);
+const FORBIDDEN_NORMAL = new Set(['strict_detail', 'non_reference_method', 'non_verbatim_wording']);
+function appendDeductionBadges(container, item, expectedMode) {
+  const list = Array.isArray(item?.deductions) ? item.deductions.filter(d => d && Number(d.points) > 0) : [];
+  if (!list.length) return;
+  const wrap = node('div');
+  wrap.className = 'deduction-badges';
+  for (const d of list) {
+    const cat = typeof d.category === 'string' ? d.category.trim() : '';
+    const forbidden = (expectedMode === 'lenient' && FORBIDDEN_LENIENT.has(cat) && !(cat === 'missing_key_step' && item.score === 0)) ||
+      (expectedMode === 'normal' && FORBIDDEN_NORMAL.has(cat));
+    const badge = node('span', `-${d.points}分 · ${DEDUCTION_LABELS[cat] || cat || '扣分'}${d.evidence ? `（${d.evidence}）` : ''}`);
+    badge.className = 'deduction-badge' + (forbidden ? ' deduction-badge-conflict' : '');
+    if (cat) badge.dataset.category = cat;
+    wrap.append(badge);
+  }
+  container.append(wrap);
+}
 function paragraph(container, title, text) {
   if(text === undefined || text === null || text === '') return;
   const content=node('div');renderFeedback(content,text);container.append(node('h3',title),content);
@@ -154,6 +181,8 @@ export function renderResultDetails(container, record, history = false) {
       cells.forEach((t,index)=>{
         const cell=index===0 || (!dual && index===3) ? formattedNode('td',t) : node('td',t);
         if(index===0)cell.className='scoring-label-cell';
+        if(!dual && index===3)appendDeductionBadges(cell,f,result?.expectedGradingMode);
+        if(dual && index===4)appendDeductionBadges(cell,f,result?.expectedGradingMode);
         row.append(cell);
       });tbody.append(row);
     }

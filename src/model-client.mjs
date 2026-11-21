@@ -109,13 +109,14 @@ export function extractResponse(json, protocol) {
   return typeof content === 'string' ? content : Array.isArray(content) ? content.map(c => c.text || '').join('') : '';
 }
 
-function buildRequestBody({ protocol, model, prompt, urls, maxOutputTokens, reasoningEffort, jsonMode, mergeSystemPrompt }) {
+function buildRequestBody({ protocol, model, prompt, urls, maxOutputTokens, reasoningEffort, jsonMode, mergeSystemPrompt, temperature }) {
   const isStructured = Boolean(prompt && typeof prompt === 'object');
   const rawSystem = isStructured ? String(prompt.system || '') : '';
   const rawUser = isStructured ? String(prompt.user || '') : String(prompt ?? '');
   const useMerged = !isStructured || !rawSystem || mergeSystemPrompt;
   const userText = useMerged && rawSystem ? `${rawSystem}\n\n${rawUser}` : rawUser;
   const systemText = useMerged ? '' : rawSystem;
+  const hasTemperature = Number.isFinite(temperature);
 
   if (protocol === 'gemini') {
     const imageParts = urls.map(u => {
@@ -125,7 +126,8 @@ function buildRequestBody({ protocol, model, prompt, urls, maxOutputTokens, reas
     });
     const generationConfig = {
       ...(jsonMode === false ? {} : { responseMimeType: 'application/json' }),
-      ...(maxOutputTokens ? { maxOutputTokens } : {})
+      ...(maxOutputTokens ? { maxOutputTokens } : {}),
+      ...(hasTemperature ? { temperature } : {})
     };
     return {
       ...(systemText ? { systemInstruction: { parts: [{ text: systemText }] } } : {}),
@@ -151,6 +153,7 @@ function buildRequestBody({ protocol, model, prompt, urls, maxOutputTokens, reas
     if (jsonMode === true) body.response_format = { type: 'json_object' };
   }
   if (maxOutputTokens) body[protocol === 'responses' ? 'max_output_tokens' : 'max_tokens'] = maxOutputTokens;
+  if (hasTemperature) body.temperature = temperature;
   if (reasoningEffort) {
     if (protocol === 'responses') body.reasoning = { effort: reasoningEffort };
     else body.reasoning_effort = reasoningEffort;
@@ -234,6 +237,7 @@ export async function requestModel(provider, model, prompt, images, signal, budg
   let upgraded = false;
   let downgradedJson = !!cached?.jsonModeUnsupported;
   let downgradedSystem = !!cached?.systemUnsupported;
+  let useTemperature = Number.isFinite(provider.temperature) && !cached?.temperatureUnsupported;
   let rateLimitRetries = 0;
   let retriedTransient = false;
 
@@ -248,7 +252,8 @@ export async function requestModel(provider, model, prompt, images, signal, budg
       maxOutputTokens: upgraded ? undefined : provider.maxOutputTokens,
       reasoningEffort: provider.reasoningEffort,
       jsonMode: useJsonMode,
-      mergeSystemPrompt: mergeSystem
+      mergeSystemPrompt: mergeSystem,
+      temperature: useTemperature ? provider.temperature : undefined
     });
     let response, text;
     budget.onProgress?.({status:attempt ? 'retrying':'requesting',model,attempt:attempt+1});
@@ -281,6 +286,12 @@ export async function requestModel(provider, model, prompt, images, signal, budg
         continue;
       }
       if ((response.status === 400 || response.status === 422) && budget.remaining > 0) {
+        if (useTemperature && /temperature/iu.test(text)) {
+          useTemperature = false;
+          if (capKey) updateCapabilityCache(capKey, { temperatureUnsupported: true });
+          budget.onProgress?.({ status: 'retrying', model, message: '接口不支持自定义temperature，正在使用接口默认值重试' });
+          continue;
+        }
         const jsonRejected = useJsonMode && !downgradedJson && /response_format|json_object|text\.format|responsemimetype|structured|json mode|unsupported.*format|invalid.*format/iu.test(text);
         const systemRejected = hasStructuredSystem && !mergeSystem && !downgradedSystem && /\bsystem\b|systeminstruction|instructions|role.*not.*support|developer.*role|first message.*user/iu.test(text);
         if (jsonRejected || systemRejected) {

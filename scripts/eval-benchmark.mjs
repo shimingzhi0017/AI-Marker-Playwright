@@ -8,6 +8,7 @@ import { summarizeTaskMetrics } from '../src/task-metrics.mjs';
 import { isMeaningfulCorrectionReason } from '../src/correction-feedback.mjs';
 import { detectImageMime } from '../src/image-optimize.mjs';
 import { grade } from '../src/models.mjs';
+import { rubricGradingSettings, activeGradingMode, rubricSubjects, rubricPrompts } from '../ui/rubric-prompts.js';
 
 function finiteNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
@@ -100,11 +101,42 @@ export function evaluateRecords(records = [], options = {}) {
   let consistencyIssueRecords = 0;
   const auditFindings = [];
 
+  let retriedCount = 0;
+  const byCase = new Map();
+  const groupAcc = new Map();
+
   for (let i = 0; i < filtered.length; i++) {
     const item = filtered[i];
     const normalized = cases[i];
     const targetConfig = normalized.config || options.config || options.configsByPreset?.[normalized.presetName];
     const targetResult = item?.originalResult || item?.result;
+    const retried = Boolean(
+      targetResult?.policyVerification || targetResult?.totalVerification ||
+      (targetResult?.usage?.calls || 0) > 1 ||
+      (targetResult?.dualEval && (targetResult.dualEval.a?.usage?.calls > 1 || targetResult.dualEval.b?.usage?.calls > 1 || targetResult.dualEval.verdict?.usage?.calls > 1))
+    );
+    if (retried) retriedCount++;
+    const caseId = item?.caseId || String(normalized.id).replace(/#\d+$/u, '');
+    if (normalized.modelScore !== undefined) {
+      const list = byCase.get(caseId) || [];
+      list.push(normalized.modelScore);
+      byCase.set(caseId, list);
+    }
+    const settings = targetConfig ? rubricGradingSettings(targetConfig.rubric, targetConfig.rubricGeneration, targetConfig.scoring?.strictness) : {};
+    const subject = item?.subject || settings.subject || '';
+    const mode = item?.gradingMode || (targetConfig ? activeGradingMode(targetConfig) : '');
+    const key = `${subject}\0${mode}`;
+    const g = groupAcc.get(key) || { subject, gradingMode: mode, count: 0, paired: 0, exact: 0, absErr: 0, retried: 0, arbitrated: 0 };
+    g.count++;
+    if (retried) g.retried++;
+    if (targetResult?.dualEval?.result === 'arbitration') g.arbitrated++;
+    if ((!hasExplicitDataset || normalized.hasExplicitExpected) && normalized.modelScore !== undefined && normalized.humanScore !== undefined) {
+      g.paired++;
+      const d = Math.abs(normalized.modelScore - normalized.humanScore);
+      if (d < 1e-8) g.exact++;
+      g.absErr += d;
+    }
+    groupAcc.set(key, g);
     if (!targetConfig || !targetResult) continue;
     checkedCount++;
     const audit = auditGradingResult(targetConfig, targetResult);
@@ -120,11 +152,35 @@ export function evaluateRecords(records = [], options = {}) {
     }
   }
 
+  const repeatedCases = [...byCase.values()].filter(scores => scores.length > 1);
+  const stableCases = repeatedCases.filter(scores => scores.every(s => Math.abs(s - scores[0]) < 1e-8)).length;
+  const groups = [...groupAcc.values()].map(g => ({
+    subject: g.subject,
+    subjectLabel: rubricSubjects[g.subject]?.label || '通用',
+    gradingMode: g.gradingMode,
+    modeLabel: rubricPrompts[g.gradingMode]?.label || g.gradingMode || '未标记',
+    count: g.count,
+    exactMatchRate: g.paired ? Number((g.exact / g.paired).toFixed(4)) : null,
+    mae: g.paired ? Number((g.absErr / g.paired).toFixed(4)) : null,
+    retryRate: g.count ? Number((g.retried / g.count).toFixed(4)) : null,
+    arbitrationRate: g.count ? Number((g.arbitrated / g.count).toFixed(4)) : null
+  }));
+
   return {
     preset: options.preset || null,
     totalRecords: filtered.length,
     comparisonSource: hasExplicitDataset ? 'explicit-expected' : 'reviewed-history',
     metrics,
+    retries: {
+      retriedCount,
+      retryRate: filtered.length ? Number((retriedCount / filtered.length).toFixed(4)) : null
+    },
+    stability: repeatedCases.length ? {
+      cases: repeatedCases.length,
+      stableCases,
+      identicalScoreRate: Number((stableCases / repeatedCases.length).toFixed(4))
+    } : null,
+    groups,
     accuracy: {
       count: paired.length,
       exactMatches,
@@ -145,12 +201,14 @@ export function evaluateRecords(records = [], options = {}) {
   };
 }
 
-function loadImagesForReplay(item) {
+function loadImagesForReplay(item, baseDir = '') {
   if (Array.isArray(item?.images) && item.images.length) return item.images;
   const files = Array.isArray(item?.imageFiles) ? item.imageFiles : [];
   const loaded = [];
-  for (const file of files) {
-    if (!file || !fs.existsSync(file)) continue;
+  for (const entry of files) {
+    if (!entry) continue;
+    const file = baseDir && !path.isAbsolute(entry) ? path.join(baseDir, entry) : entry;
+    if (!fs.existsSync(file)) continue;
     const buffer = fs.readFileSync(file);
     loaded.push(`data:${detectImageMime(buffer)};base64,${buffer.toString('base64')}`);
   }
@@ -159,6 +217,7 @@ function loadImagesForReplay(item) {
 
 /**
  * Re-run model grading offline over stored or fixture cases with a preset or custom config.
+ * With repeat > 1 every case is graded several times to measure score stability.
  */
 export async function replayBenchmark({
   records = [],
@@ -166,13 +225,17 @@ export async function replayBenchmark({
   config = null,
   gradeFn = grade,
   limit = 10,
+  repeat = 1,
   preset = '',
-  signal
+  baseDir = '',
+  signal,
+  onCase
 } = {}) {
   const source = preset
     ? (Array.isArray(records) ? records : []).filter(r => (r?.presetName || r?.preset) === preset)
     : (Array.isArray(records) ? records : []);
   const selected = Number.isFinite(limit) && limit > 0 ? source.slice(0, limit) : source;
+  const runs = Number.isInteger(repeat) && repeat > 0 ? repeat : 1;
   const replayed = [];
 
   for (let i = 0; i < selected.length; i++) {
@@ -182,22 +245,28 @@ export async function replayBenchmark({
     if (!targetConfig) {
       throw Error(`回放用例 ${item?.id || i + 1} 缺少可用评分配置（preset=${presetName}）`);
     }
-    const images = loadImagesForReplay(item);
-    const rawResult = await gradeFn(targetConfig, settings, images, signal);
-    const computed = targetConfig.scoring ? calculate(rawResult, targetConfig) : rawResult;
+    const images = loadImagesForReplay(item, baseDir);
+    if (!images.length) throw Error(`回放用例 ${item?.id || i + 1} 没有可读取的答卷图片`);
     const expectedScore = finiteNumber(item?.expectedScore)
       ?? (Boolean(item?.originalResult || item?.corrected || isMeaningfulCorrectionReason(item?.correctionReason) || item?.state === 'submitted')
         ? finiteNumber(item?.result?.score)
         : undefined);
-    replayed.push({
-      id: item?.id || `replay-${i + 1}`,
-      presetName,
-      state: 'submitted',
-      config: targetConfig,
-      result: computed,
-      expectedScore,
-      correctionReason: item?.correctionReason || ''
-    });
+    const baseId = item?.id || `replay-${i + 1}`;
+    for (let run = 0; run < runs; run++) {
+      const rawResult = await gradeFn(targetConfig, settings, images, signal);
+      const computed = targetConfig.scoring ? calculate(rawResult, targetConfig) : rawResult;
+      replayed.push({
+        id: runs > 1 ? `${baseId}#${run + 1}` : baseId,
+        caseId: baseId,
+        presetName,
+        state: 'submitted',
+        config: targetConfig,
+        result: computed,
+        expectedScore,
+        correctionReason: item?.correctionReason || ''
+      });
+      onCase?.({ index: i, run, id: baseId, score: computed?.score, expectedScore });
+    }
   }
 
   return evaluateRecords(replayed, {
@@ -226,6 +295,11 @@ export function formatBenchmarkReport(report) {
     `- 在线核验统计：规则疑点 ${metrics.verification.gradingIssueCount}，口径冲突 ${metrics.verification.policyIssueCount}，文分一致性 ${metrics.verification.consistencyIssueCount}，警告 ${metrics.verification.formatWarningCount}`
   ];
 
+  if (report.retries) {
+    lines.push(`- 校验重试：${report.retries.retriedCount}/${report.totalRecords}（重试率 ${pct(report.retries.retryRate)}）` +
+      (report.stability ? ` · 多次复评同分率：${pct(report.stability.identicalScoreRate)}（${report.stability.stableCases}/${report.stability.cases}）` : ''));
+  }
+
   if (accuracy.count > 0) {
     lines.push(
       '',
@@ -234,6 +308,21 @@ export function formatBenchmarkReport(report) {
       `- 误差 <= 1 分：${pct(accuracy.withinOneRate)}（${accuracy.withinOneMatches}/${accuracy.count}）`,
       `- MAE：${accuracy.mae} · 偏差 Bias(模型-人工)：${accuracy.bias} · 最大绝对误差：${accuracy.maxAbsError}`
     );
+  }
+
+  if (report.groups?.length > 1) {
+    lines.push('', '## 按学科 × 口径分项', '| 学科 | 口径 | 样本 | 完全一致率 | MAE | 重试率 | 仲裁率 |', '| --- | --- | ---: | ---: | ---: | ---: | ---: |');
+    for (const g of report.groups) {
+      lines.push(`| ${g.subjectLabel} | ${g.modeLabel} | ${g.count} | ${pct(g.exactMatchRate)} | ${g.mae ?? '—'} | ${pct(g.retryRate)} | ${pct(g.arbitrationRate)} |`);
+    }
+  }
+
+  if (report.comparison) {
+    const c = report.comparison;
+    const signed = n => n === null || n === undefined ? '—' : n > 0 ? `+${n}` : `${n}`;
+    lines.push('', '## 与基线对比（当前 − 基线）',
+      `- 完全一致率变化：${signed(c.exactMatchRateDelta)} · MAE 变化：${signed(c.maeDelta)}`,
+      `- 重试率变化：${signed(c.retryRateDelta)} · 仲裁率变化：${signed(c.arbitrationRateDelta)} · 均份 Token 变化：${signed(c.avgTokensDelta)}`);
   }
 
   if (offlineAudit.checkedCount > 0) {
@@ -254,8 +343,19 @@ export function formatBenchmarkReport(report) {
   return lines.join('\n') + '\n';
 }
 
+export function compareBenchmarkReports(baseline, current) {
+  const delta = (a, b) => Number.isFinite(a) && Number.isFinite(b) ? Number((b - a).toFixed(4)) : null;
+  return {
+    exactMatchRateDelta: delta(baseline?.accuracy?.exactMatchRate, current?.accuracy?.exactMatchRate),
+    maeDelta: delta(baseline?.accuracy?.mae, current?.accuracy?.mae),
+    retryRateDelta: delta(baseline?.retries?.retryRate, current?.retries?.retryRate),
+    arbitrationRateDelta: delta(baseline?.metrics?.dualEval?.arbitrationRate, current?.metrics?.dualEval?.arbitrationRate),
+    avgTokensDelta: delta(baseline?.metrics?.usage?.avgTokensPerRecord, current?.metrics?.usage?.avgTokensPerRecord)
+  };
+}
+
 function parseCliArgs(argv) {
-  const args = { json: false, replay: false, limit: 10 };
+  const args = { json: false, replay: false, limit: 10, repeat: 1 };
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
     if (token === '--help' || token === '-h') args.help = true;
@@ -267,6 +367,8 @@ function parseCliArgs(argv) {
     else if (token === '--config') args.config = argv[++i];
     else if (token === '--out') args.out = argv[++i];
     else if (token === '--limit') args.limit = Number(argv[++i]);
+    else if (token === '--repeat') args.repeat = Number(argv[++i]);
+    else if (token === '--compare') args.compare = argv[++i];
     else throw Error(`未知参数: ${token}`);
   }
   return args;
@@ -300,24 +402,31 @@ function loadConfigFile(configPath) {
 export async function main(argv = process.argv.slice(2)) {
   const args = parseCliArgs(argv);
   if (args.help) {
-    console.log('用法: node scripts/eval-benchmark.mjs (--input <file.json> | --db <dir>) [--config <config.json>] [--preset <name>] [--replay] [--limit 10] [--json] [--out <file>]');
+    console.log('用法: node scripts/eval-benchmark.mjs (--input <file.json> | --db <dir>) [--config <config.json>] [--preset <name>] [--replay] [--limit 10] [--repeat 1] [--compare <baseline.json>] [--json] [--out <file>]');
     return 0;
   }
   const records = loadInputRecords(args);
   const loadedCfg = loadConfigFile(args.config);
+  const baseDir = args.input ? path.dirname(path.resolve(args.input)) : '';
   const report = args.replay
     ? await replayBenchmark({
         records,
         settings: loadedCfg.settings,
         config: loadedCfg.config,
         limit: args.limit,
-        preset: args.preset
+        repeat: args.repeat,
+        preset: args.preset,
+        baseDir
       })
     : evaluateRecords(records, {
         preset: args.preset,
         config: loadedCfg.config,
         configsByPreset: loadedCfg.configsByPreset
       });
+  if (args.compare) {
+    const baseline = JSON.parse(fs.readFileSync(path.resolve(args.compare), 'utf8'));
+    report.comparison = compareBenchmarkReports(baseline, report);
+  }
   const output = args.json ? JSON.stringify(report, null, 2) + '\n' : formatBenchmarkReport(report);
   if (args.out) fs.writeFileSync(path.resolve(args.out), output, 'utf8');
   else process.stdout.write(output);

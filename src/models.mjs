@@ -8,6 +8,10 @@ import { requestModel, DEFAULT_REQUEST_TIMEOUT_MS } from './model-client.mjs';
 export { endpoint, modelListEndpoint, listModels, extractResponse, extractUsage, requestModel, resetModelCapabilityCache, parseRetryAfterMs, extractHttpErrorSummary } from './model-client.mjs';
 
 export const DEFAULT_GRADING_TIMEOUT_MS = 600000;
+// Deterministic sampling keeps repeated grading of the same answer stable and
+// reduces needless dual-review disagreements. Endpoints that reject custom
+// temperature (e.g. reasoning models) are downgraded automatically.
+export const DEFAULT_GRADING_TEMPERATURE = 0;
 
 function appendPrompt(prompt, text, target = 'user') {
   if (!text) return prompt;
@@ -104,7 +108,7 @@ async function gradeInternal(config, settings, images, signal, onProgress, contr
     for (let responseAttempt = 0; responseAttempt < 2; responseAttempt++) {
       progress({status:responseAttempt ? 'retrying' : 'requesting', attempt:responseAttempt + 1});
       try {
-        text = await requestModel({ ...provider, jsonMode: provider.jsonMode !== false, timeoutMs: provider.timeoutMs || DEFAULT_REQUEST_TIMEOUT_MS, reasoningEffort: entry.reasoningEffort, maxOutputTokens: workflow.outputLimitEnabled === false ? undefined : workflow.maxOutputTokens || provider.maxOutputTokens }, entry.model, activePrompt, [...fieldImages(config), ...images], signal, {get remaining(){return budget.remaining;},set remaining(value){budget.remaining=value;},onProgress:progress,onUsage:u=>{roleUsages.push(u);allUsages.push(u);}});
+        text = await requestModel({ ...provider, jsonMode: provider.jsonMode !== false, timeoutMs: provider.timeoutMs || DEFAULT_REQUEST_TIMEOUT_MS, reasoningEffort: entry.reasoningEffort, temperature: workflow.temperature === undefined ? DEFAULT_GRADING_TEMPERATURE : workflow.temperature, maxOutputTokens: workflow.outputLimitEnabled === false ? undefined : workflow.maxOutputTokens || provider.maxOutputTokens }, entry.model, activePrompt, [...fieldImages(config), ...images], signal, {get remaining(){return budget.remaining;},set remaining(value){budget.remaining=value;},onProgress:progress,onUsage:u=>{roleUsages.push(u);allUsages.push(u);}});
       } catch (error) {
         if ((totalAnomaly || policyAnomaly) && !signal?.aborted) {
           progress({status:'completed',score:(policyAnomaly||totalAnomaly).score,message:'评分核验未完成，保留异常供人工确认'});
@@ -207,7 +211,7 @@ async function gradeInternal(config, settings, images, signal, onProgress, contr
   const dual = workflow.dualEval;
   const objective = dual.questionType !== 'subjective';
   const needsDetails = objective && (config.scoring?.units?.length || 0) <= 1;
-  const dualPrompt = (config.scoring?.units?.length || 0) <= 1 ? appendPrompt(prompt, '双阅额外要求：必须返回scoringDetails数组，按评分标准中的每个小问或独立评分点逐项列出{label,score,maxScore,studentAnswer,reason}；reason说明对应评分规则、作答是否符合及给分或扣分原因，不得只有“正确/错误”，包括零分项，不得合并为整题总分。若提示包含固定评分项清单，id、label、maxScore及顺序必须严格按该清单返回；否则label使用评分标准原文中的编号和名称，顺序与标准一致。scoringDetails各项之和必须等于score。subScores仍只对应网页总分框。', 'system') : prompt;
+  const dualPrompt = (config.scoring?.units?.length || 0) <= 1 ? appendPrompt(prompt, '双阅额外要求：必须返回scoringDetails数组，按评分标准中的每个小问或独立评分点逐项列出{label,maxScore,studentAnswer,reason,score}（先写依据再给分）；reason说明对应评分规则、作答是否符合及给分或扣分原因，不得只有“正确/错误”，包括零分项，不得合并为整题总分。若提示包含固定评分项清单，id、label、maxScore及顺序必须严格按该清单返回；否则label使用评分标准原文中的编号和名称，顺序与标准一致。scoringDetails各项之和必须等于score。subScores仍只对应网页总分框。', 'system') : prompt;
   let a,b;
   try {[a,b]=await Promise.all([review(workflow.model, dualPrompt,'主评'), review(dual.secondary, dualPrompt,'复评')]);}
   catch(error){controller.abort(error);throw error;}

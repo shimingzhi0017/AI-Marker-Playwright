@@ -182,3 +182,42 @@ export function formatCorrectionsForRubric(corrections) {
   }
   return lines.join('\n');
 }
+
+export function selectFewShotCorrections(records, presetName, { limit = 3 } = {}) {
+  const maxItems = Number.isInteger(limit) && limit > 0 ? limit : 3;
+  const candidates = collectPresetCorrections(records, presetName, { limit: 100 })
+    .filter(item => item.hasCustomReason && item.originalScore !== null && item.finalScore !== null && item.delta !== 0 && item.studentAnswer);
+  if (!candidates.length) return [];
+
+  const freq = new Map();
+  for (const item of candidates) freq.set(item.reason, (freq.get(item.reason) || 0) + 1);
+
+  const byReason = new Map();
+  for (const item of candidates) {
+    if (!byReason.has(item.reason)) byReason.set(item.reason, item);
+  }
+  return [...byReason.values()]
+    .sort((a, b) => (freq.get(b.reason) - freq.get(a.reason)) || ((Date.parse(b.time || '') || 0) - (Date.parse(a.time || '') || 0)))
+    .slice(0, maxItems)
+    .map(item => ({
+      studentAnswer: item.studentAnswer.replace(/\s+/gu, ' ').slice(0, 140),
+      originalScore: item.originalScore,
+      finalScore: item.finalScore,
+      reason: item.reason.slice(0, 160)
+    }));
+}
+
+export function formatCalibrationExamplesBlock(examples) {
+  if (!Array.isArray(examples) || !examples.length) return '';
+  const lines = [];
+  for (const [i, ex] of examples.slice(0, 3).entries()) {
+    if (!ex || typeof ex !== 'object' || !Number.isFinite(ex.originalScore) || !Number.isFinite(ex.finalScore)) continue;
+    const ans = String(ex.studentAnswer || '').replace(/\s+/gu, ' ').trim().slice(0, 140);
+    const reason = String(ex.reason || '').replace(/\s+/gu, ' ').trim().slice(0, 160);
+    if (!ans || !reason) continue;
+    lines.push(`${i + 1}. 作答摘录：「${ans}」｜模型原判${ex.originalScore}分→教师改判${ex.finalScore}分｜教师依据：${reason}`);
+  }
+  if (!lines.length) return '';
+  return `【教师改分校准示例（同类边界按教师改判尺度执行，勿把示例答案套用到其他作答）】\n${lines.join('\n')}`;
+}
+

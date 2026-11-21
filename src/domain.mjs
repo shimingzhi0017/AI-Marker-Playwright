@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { scoringLabelKey, matchScoringItem } from '../ui/scoring-labels.js';
 import { gradingPolicyForRubric, gradingModeInstruction, activeGradingMode, stripEmbeddedPolicyTemplates } from '../ui/rubric-prompts.js';
 import { parseModelJson } from './model-json.mjs';
-import { formatCalibrationNotesBlock, MAX_CALIBRATION_NOTES_LENGTH } from './correction-feedback.mjs';
+import { formatCalibrationNotesBlock, formatCalibrationExamplesBlock, MAX_CALIBRATION_NOTES_LENGTH } from './correction-feedback.mjs';
 
 const context = vm.createContext({ console });
 vm.runInContext(fs.readFileSync(new URL('../vendor/score.js', import.meta.url), 'utf8') + '\nglobalThis.calculator=ScoreCalculator;', context);
@@ -79,6 +79,8 @@ function buildInputSection(config, units) {
 
   const calibrationBlock = formatCalibrationNotesBlock(config.calibrationNotes);
   if (calibrationBlock) prompt += `\n${calibrationBlock}`;
+  const examplesBlock = formatCalibrationExamplesBlock(config.calibrationExamples);
+  if (examplesBlock) prompt += `\n${examplesBlock}`;
   return prompt;
 }
 function rubricScoringItems(config) {
@@ -243,7 +245,7 @@ export function promptFor(config) {
   const unitPrompt = `\n网页评分框共${units.length}个：${JSON.stringify(units.map(u => ({ label: u.label, maxScore: u.maxScore })))}。subScores对应网页评分框而非标准内小问。${units.length === 1 ? `只有一个总分框时，subScores仅一项且label固定为${JSON.stringify(units[0].label)}、score等于总分，小问明细写scoringDetails。` : ''}`;
   const readingPrompt = `\n书写识别要求：仅扫描学生答题区全图（含横线上方、右侧、边缘、涂抹旁和箭头指向处），不扩大答题范围。先忠实转录最终保留作答（明确删去排除，归属清晰移位计入），不得根据参考答案猜补、改写文字、数字、符号或缺失步骤；看不清写[无法辨认]。判定适度宽松，不要求每个笔画都完美清晰：可辨认潦草、位置偏移与清晰涂改只记入notes；明确写错、漏步骤或未作答按标准扣分，不报识别疑点；仅当无法确认有效内容且可能改分时才标uncertain。解答题遇不同方法时，先独立核验该方法是否符合题设、学科规律与结论，等价有效解法同等给分；题目明确要求特定方法、过程或证明形式时须遵守。\n必须返回recognition:{status:"clear"|"uncertain",coverageChecked:true|false,notes:[],issues:[{location,observed,reason,affectsScore,impactReason}]}：完整检图且无改分疑点才填clear与true；affectsScore为false须说明为何不影响任何评分点；仅报告识别情况，由程序结合单双评/仲裁决定流程。`;
   const schema = scoringItemSchema(config);
-  const schemaPrompt = (schema.length ? `\n评分标准固定清单共${schema.length}项：${JSON.stringify(schema)}。scoringDetails须逐项按序返回{id,label,score,maxScore,studentAnswer,reason}，严格复制id且禁止改名、漏项或自创。` : '\nscoringDetails按当前标准独立计分项逐项返回{label,score,maxScore,studentAnswer,reason}，数量由当前评分标准决定，勿沿用他题或擅自拆并，总分为各项之和。') + '\n必须先完成scoringDetails逐项评定，再求和得到score与subScores，严禁先估总分再倒推；输出前核对reason、comment、scoringDetails之和、score及subScores完全一致，存疑时亦仅给出单一当前得分。';
+  const schemaPrompt = (schema.length ? `\n评分标准固定清单共${schema.length}项：${JSON.stringify(schema)}。scoringDetails须逐项按序返回{id,label,maxScore,studentAnswer,reason,deductions,score}，严格复制id且禁止改名、漏项或自创。` : '\nscoringDetails按当前标准独立计分项逐项返回{label,maxScore,studentAnswer,reason,deductions,score}，数量由当前评分标准决定，勿沿用他题或擅自拆并，总分为各项之和。') + '\n每项按字段顺序先写studentAnswer、reason与deductions（满分填[]；有扣分时逐笔列出{points,category,evidence}，category仅取substantive[实质错误/未答]|task_requirement[违反题目或教师明确限定/默写错字]|missing_key_step[缺核心方程或关键推导]|minor_brevity[过程简略/跳步/简写]|strict_detail[未单列中间量/正方向说明/代入展开]|non_reference_method[等价但非参考解法]|non_verbatim_wording[大意对但非参考原词句式]，且须被当前口径允许），再据此令score=maxScore-扣分合计；必须先完成scoringDetails逐项评定，再写comment，最后求和得到score与subScores，严禁先估总分再倒推；输出前核对reason、deductions、comment、scoringDetails之和、score及subScores完全一致，存疑时亦仅给出单一当前得分。';
   return input +
     '\n===== 评分策略与步长 =====' + stepPrompt +
     '\n===== 网页评分框与勤勉度 =====' + unitPrompt + diligencePrompt +
@@ -251,7 +253,7 @@ export function promptFor(config) {
     '\n===== 规则疑点要求 =====' + gradingIssuePrompt +
     '\n===== 评分项清单与输出要求 =====' + schemaPrompt +
     `\n按本次指定口径与已保存评分标准客观评分。comment按评分项换行分段写明满分、学生作答、给扣分依据和得分，末尾列总分计算；公式用LaTeX（$...$、\\frac{分子}{分母}、_{...}、^{...}）并正确转义JSON反斜杠。\n仅输出合法JSON对象（无代码块或【得分】），score为0到${maxScore(config)}的数字（示例0仅表类型），subScores按上述标签顺序返回且合计等于score（无单元返回[]）：\n` +
-    JSON.stringify({ studentAnswer: '实际识别内容', gradingMode:activeGradingMode(config), recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] }, gradingIssues:[], ...(schema.length ? {scoringDetails:schema.map(item=>({...item,score:0,studentAnswer:'实际识别内容',reason:'依据当前标准'}))} : {}), score: 0, comment: '逐项评分依据和分数计算', diligenceLevel: 0, subScores: units.map(u => ({ label: u.label, score: 0 })) });
+    JSON.stringify({ studentAnswer: '实际识别内容', gradingMode:activeGradingMode(config), recognition: { status: 'clear', coverageChecked: true, notes: [], issues: [] }, gradingIssues:[], ...(schema.length ? {scoringDetails:schema.map(item=>({...item,studentAnswer:'实际识别内容',reason:'依据当前标准',deductions:[],score:0}))} : {}), comment: '逐项评分依据和分数计算', score: 0, diligenceLevel: 0, subScores: units.map(u => ({ label: u.label, score: 0 })) });
 }
 export function promptPartsFor(config) {
   const system = promptFor(config);

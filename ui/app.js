@@ -155,6 +155,33 @@ function handleAttention(events=[]) {
   playAttentionSound();
   if($('alertPopup')?.checked !== false) notice(`需要处理\n${next.message}`);
 }
+let lastRoleProgressKey = '';
+function renderModelRoleProgress(record) {
+  const progress = record?.modelProgress && typeof record.modelProgress === 'object' ? record.modelProgress : null;
+  const entries = progress ? Object.entries(progress) : [];
+  const statusLabels = { requesting: '评分中…', retrying: '校验重试中…', completed: '已完成', failed: '异常', cancelled: '已取消' };
+  const key = entries.map(([role, p]) => `${role}:${p?.status}:${p?.attempt}:${p?.score ?? ''}:${p?.message || ''}`).join('|');
+  for (const id of ['gradingLiveProgress', 'modelRoleProgress']) {
+    const el = $(id);
+    if (!el) continue;
+    const show = id === 'gradingLiveProgress' ? Boolean(!record?.result && entries.length) : Boolean(record?.result && entries.length);
+    if (!show) { el.hidden = true; el.replaceChildren(); continue; }
+    if (el.dataset.renderedKey === key && !el.hidden) continue;
+    el.dataset.renderedKey = key;
+    el.replaceChildren(...entries.map(([role, p]) => {
+      const chip = document.createElement('span');
+      chip.className = 'role-progress-chip';
+      chip.dataset.status = p?.status || 'requesting';
+      const scorePart = p?.status === 'completed' && Number.isFinite(p?.score) ? ` ${p.score}分` : '';
+      const attemptPart = p?.attempt > 1 ? `(第${p.attempt}次)` : '';
+      const msgPart = p?.message ? ` · ${p.message}` : '';
+      chip.textContent = `${role}：${statusLabels[p?.status] || p?.status || '处理中'}${attemptPart}${scorePart}${msgPart}`;
+      return chip;
+    }));
+    el.hidden = false;
+  }
+  lastRoleProgressKey = key;
+}
 function renderState() {
   handleAttention(state.events);
   $('phase').textContent=state.phase; $('reason').textContent=state.reason || ''; $('count').textContent=`本次已提交 ${state.count} 份`;
@@ -192,13 +219,54 @@ function renderState() {
   const r=state.record;
   if(r?.state==='grading' && r.modelProgress){const seconds=Math.max(0,Math.floor((Date.now()-new Date(r.time).getTime())/1000));$('reason').textContent=(state.reason || '等待模型评分')+` · 已等待${seconds}秒`; }
   $('reason').hidden=!state.reason||state.reason===diagnosisError||['待开始','页面已识别'].includes(state.phase);
+  renderModelRoleProgress(r);
   if(!r && !$('answerImages').children.length)$('answerImages').innerHTML='<div class="empty">开始阅卷后，这里显示当前答卷图片</div>';
   if(!r && displayedRecord) { displayedRecord=null; $('answerImages').replaceChildren(); $('resultEmpty').hidden=false; $('resultPanel').hidden=true; $('presetLabel').textContent=''; }
   if(r && displayedRecord !== `${r.id}:${!!r.result}:${r.imageFiles?.length}`) {
     displayedRecord=`${r.id}:${!!r.result}:${r.imageFiles?.length}`; renderImages($('answerImages'),r); $('presetLabel').textContent=r.presetName; $('resultEmpty').hidden=!!r.result; $('resultPanel').hidden=!r.result;
-    if(r.result) { $('scores').replaceChildren(); const values=r.result.subScores?.length ? r.result.subScores : [{label:'总分',score:r.result.score}]; for(const [i,s] of values.entries()) { const label=document.createElement('label'); label.textContent=s.label; const input=document.createElement('input'); input.type='number'; input.step=p?.scoring?.units?.[i]?.roundStep||p?.scoring?.roundStep||0.5; input.min=0;input.max=p?.scoring?.units?.[i]?.maxScore||p?.scoring?.maxScore||''; input.value=s.score; input.dataset.score='true'; label.append(input); $('scores').append(label); } $('ocr').textContent=r.result.studentAnswer || '无识别文本'; $('comment').value=r.result.comment || '';renderFeedback($('commentPreview'),r.result.comment || '无评语'); $('correction').value=''; if($('saveCorrectionRule'))$('saveCorrectionRule').checked=false; $('rawResult').textContent=JSON.stringify(r.result,null,2);renderResultDetails($('resultDetails'),r);$('dualSummary').hidden=!r.result.dualEval;$('dualSummary').textContent=r.result.dualEval?`双评：${{consensus:'一致',average:'阈值内平均',arbitration:'仲裁'}[r.result.dualEval.result]} · 主评 ${r.result.dualEval.a?.score??'未通过校验'} / 复评 ${r.result.dualEval.b?.outputFailure?'未通过校验':r.result.dualEval.b?.score??'未参与'}`:''; }
+    if(r.result) {
+      $('scores').replaceChildren();
+      const values=r.result.subScores?.length ? r.result.subScores : [{label:'总分',score:r.result.score}];
+      for(const [i,s] of values.entries()) {
+        const stepVal = Number(p?.scoring?.units?.[i]?.roundStep||p?.scoring?.roundStep||1);
+        const maxVal = Number(p?.scoring?.units?.[i]?.maxScore||p?.scoring?.maxScore||0);
+        const row = document.createElement('div'); row.className = 'score-input-row';
+        const label=document.createElement('label'); label.textContent=s.label;
+        const input=document.createElement('input'); input.type='number'; input.step=String(stepVal); input.min=0; input.max=maxVal||''; input.value=s.score; input.dataset.score='true'; input.dataset.initialScore=String(s.score);
+        label.append(input); row.append(label);
+        const quick = document.createElement('div'); quick.className = 'score-quick-actions';
+        const applyQuickScore = nextScore => {
+          if (input.disabled) return;
+          const clamped = maxVal > 0 ? Math.min(maxVal, Math.max(0, nextScore)) : Math.max(0, nextScore);
+          const rounded = Math.round(clamped * 100) / 100;
+          input.value = String(rounded);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        const btn = (text, actionTag, onClick) => {
+          const b = document.createElement('button'); b.type = 'button'; b.className = 'small score-quick-btn'; b.dataset.quickScore = actionTag; b.textContent = text; b.onclick = onClick; return b;
+        };
+        if (maxVal > 0) quick.append(btn(`满分(${maxVal})`, 'max', () => applyQuickScore(maxVal)));
+        quick.append(
+          btn(`+${stepVal}`, 'plus', () => applyQuickScore((Number(input.value) || 0) + stepVal)),
+          btn(`-${stepVal}`, 'minus', () => applyQuickScore((Number(input.value) || 0) - stepVal)),
+          btn('0分', 'zero', () => applyQuickScore(0))
+        );
+        row.append(quick);
+        $('scores').append(row);
+      }
+      $('ocr').textContent=r.result.studentAnswer || '无识别文本';
+      $('comment').value=r.result.comment || '';renderFeedback($('commentPreview'),r.result.comment || '无评语');
+      $('correction').value='';
+      if($('saveCorrectionRule')){$('saveCorrectionRule').checked=false;delete $('saveCorrectionRule').dataset.userToggled;}
+      $('rawResult').textContent=JSON.stringify(r.result,null,2);renderResultDetails($('resultDetails'),r);
+      $('dualSummary').hidden=!r.result.dualEval;
+      $('dualSummary').textContent=r.result.dualEval?`双评：${{consensus:'一致',average:'阈值内平均',arbitration:'仲裁'}[r.result.dualEval.result]} · 主评 ${r.result.dualEval.a?.score??'未通过校验'} / 复评 ${r.result.dualEval.b?.outputFailure?'未通过校验':r.result.dualEval.b?.score??'未参与'}`:'';
+    }
   }
-  const alertLines = r?.result ? [r.blankDetection?.warning, r.result.formatWarning, r.result.recognitionWarning].filter(Boolean) : [];
+  const issueLines = Array.isArray(r?.result?.gradingIssues)
+    ? r.result.gradingIssues.filter(it => it && it.reason).map(it => `评分标准疑点（${it.location || '未注明位置'}）：${it.reason}`)
+    : [];
+  const alertLines = r?.result ? [...new Set([r.blankDetection?.warning, r.result.formatWarning, r.result.recognitionWarning, ...issueLines].filter(Boolean))] : [];
   const resultAlertKey = `${r?.id || ''}:${alertLines.join('|')}`;
   const banner = $('resultAlertBanner');
   if (banner && resultAlertKey !== lastResultAlertKey) {
@@ -222,7 +290,7 @@ function renderState() {
   if(manualWebsiteFill){$('fill').disabled=true;$('fill').title='此网站给分可能直接提交，请在网站人工确认';}
   $('submit').disabled=!state.review || !canSubmit;
   $('submitHint').textContent=canSubmit ? (config.platform.manualSubmissionTest && !config.platform.verified ? `人工确认提交测试：每份人工确认并核验服务器回执，${config.batchLimit ? `达到本次设定的${config.batchLimit}份后自动停止。` : `本次未设置份数上限，可随时暂停。`}` : '确认提交后会等待平台响应，再处理下一份。') : '提交适配尚未实测：可只填分，再在阅卷网站手动提交。';
-  for(const input of document.querySelectorAll('[data-score]')) input.disabled=!state.review;
+  for(const input of document.querySelectorAll('[data-score],.score-quick-btn')) input.disabled=!state.review;
   $('comment').disabled=!state.review;$('correction').disabled=!state.review;if($('saveCorrectionRule'))$('saveCorrectionRule').disabled=!state.review;updateScoreTotal();
   const visibleEvents = state.events.slice(0, 20);
   const eventsKey = visibleEvents.map(e => `${e.time}:${e.message}`).join('\n');
@@ -230,6 +298,7 @@ function renderState() {
     lastEventsKey = eventsKey;
     $('events').replaceChildren(...visibleEvents.map(e=>{const li=document.createElement('li'),time=document.createElement('time'),message=document.createElement('span');time.textContent=new Date(e.time).toLocaleTimeString();message.textContent=e.message;li.append(time,message);return li;}));
   }
+  enhancements?.refreshShell?.();
 }
 function requestWorkspace(id) {
   if(id===workspace && currentTab!=='models'){pendingWorkspace=null;return;}
@@ -374,11 +443,31 @@ async function workspaceDialog(deleting=false) {
 }
 $('renameWorkspace').onclick=()=>action(async()=>{const name=await workspaceDialog();if(name===null)return;if(!name)throw Error('任务名称不能为空');await api('/api/workspace-name',{name});config.workspaceName=name;await refreshWorkspaces();notice('任务已重命名',true);});
 $('deleteWorkspace').onclick=()=>action(async()=>{if(await workspaceDialog(true)===null)return;const deleted=await api('/api/workspaces',{action:'delete',id:workspace});dirty.clear();await switchWorkspace(deleted.nextId);await refreshWorkspaces();notice('任务已删除，原资料已归档保留',true);});
+function syncAutoSaveCorrectionRule() {
+  const box = $('saveCorrectionRule');
+  if (!box || box.disabled || box.dataset.userToggled === '1') return;
+  const inputs = [...document.querySelectorAll('[data-score]')];
+  const scoreModified = inputs.some(i => i.dataset.initialScore !== undefined && Number(i.value) !== Number(i.dataset.initialScore));
+  const reason = ($('correction')?.value || '').trim();
+  box.checked = Boolean(scoreModified && reason.length >= 2);
+}
+$('saveCorrectionRule')?.addEventListener('change', e => {
+  if (e.isTrusted) e.target.dataset.userToggled = '1';
+});
 function updateScoreTotal(){const inputs=[...document.querySelectorAll('[data-score]')];$('scoreTotal').textContent=inputs.length?inputs.reduce((sum,i)=>sum+(Number(i.value)||0),0)+' 分':'—';}
 document.querySelector('#unitRows').addEventListener('input',()=>{$('unitTotal').textContent='分项总分 '+[...document.querySelectorAll('[data-unit=maxScore]')].reduce((sum,i)=>sum+(Number(i.value)||0),0)+' 分';});
-document.querySelector('#resultPanel').addEventListener('input',e=>{updateScoreTotal();if(state.review&&state.countdown!==null)action(()=>api('/api/hold',{recordId:state.record.id}));});
+document.querySelector('#resultPanel').addEventListener('input',e=>{updateScoreTotal();if(e.target?.matches?.('[data-score],#correction'))syncAutoSaveCorrectionRule();if(state.review&&state.countdown!==null)action(()=>api('/api/hold',{recordId:state.record.id}));});
 const adaptationUI=createAdaptationUI({getConfig:()=>config,api,action,notice,refresh:renderSettings,markDirty,onWebsiteChanged:()=>{pageCheckError='';}});
-try {const initialTasks=await api('/api/workspaces');workspace=initialTasks[0]?.id || 'default';config=await api('/api/settings');renderSettings();await poll();setInterval(poll,700);}catch(e){notice(e.message);}
+let pollTimer = null;
+function scheduleNextPoll() {
+  clearTimeout(pollTimer);
+  const active = Boolean(state?.running || state?.starting || state?.review || adaptationUI);
+  const hidden = typeof document.hidden === 'boolean' && document.hidden;
+  const delayMs = hidden ? 2500 : (state?.running || state?.starting || state?.review) ? 700 : 1400;
+  pollTimer = setTimeout(async () => { await poll(); scheduleNextPoll(); }, delayMs);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleNextPoll(); });
+try {const initialTasks=await api('/api/workspaces');workspace=initialTasks[0]?.id || 'default';config=await api('/api/settings');renderSettings();await poll();scheduleNextPoll();}catch(e){notice(e.message);}
 
 for(const link of document.querySelectorAll('a[href*="/api/export"]')) link.onclick=event=>{event.preventDefault();action(async()=>{const format=new URL(link.href).searchParams.get('format');const result=await api('/api/export-file',{format,chooseDirectory:true,openFolder:true});if(result.cancelled)return;notice(`已导出任务“${result.taskName}”的 ${result.count} 条记录。文件保存在：${result.path}${result.folderOpened?'。已请求打开所在文件夹。':''}${result.folderError?'（文件夹未能自动打开）':''}`,true);});};
 
@@ -408,6 +497,10 @@ for(const id of ['alertPopup','alertSound','alertVolume'])$(id)?.addEventListene
 $('comment').addEventListener('input',()=>renderFeedback($('commentPreview'),$('comment').value));
 
 document.addEventListener('keydown',event=>{
+  if($('historyDialog')?.open && !$('imageDialog')?.open && !['INPUT','TEXTAREA','SELECT'].includes(event.target?.tagName)){
+    if(event.key==='ArrowLeft' && !$('historyRecordPrev')?.disabled){event.preventDefault();historyUI.stepRecord?.(-1);return;}
+    if(event.key==='ArrowRight' && !$('historyRecordNext')?.disabled){event.preventDefault();historyUI.stepRecord?.(1);return;}
+  }
   if(currentTab!=='grading'||!state?.review||document.querySelector('dialog[open]'))return;
   if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){
     event.preventDefault();

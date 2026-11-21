@@ -126,6 +126,38 @@ const GENERAL_PROCESS_EXEMPTION = /(?:不扣|免扣|未扣|不因|不予扣|如�
 const TASK_LIMIT_EXEMPTION = /(?:题目(?:明确)?(?:要求|考查|限定|指定)|题设(?:明确)?(?:要求|考查|限定|指定)|教师(?:明确)?(?:要求|考查|限定|指定)|明确要求必须|指定(?:方法|解法)|限定(?:方法|解法)|证明(?:题|过程)|只写(?:了)?(?:最终)?答案|无(?:任何)?(?:有效)?过程|未写过程|没有过程|(?:方法|公式|规律|结论|推导|答案|结果)(?:错误|有误|无效|不成立|不适用))/u;
 const HUMANITIES_EXEMPTION = /(?:默写|错别字|错字|漏字|增字|字形|词形|拼写|固定搭配|时态|语态|单复数|选择|填空|限定(?:形式|模块|主体|词形)|跨模块|主体错位|主体混淆|审题偏差|跑题|偏题|曲解|答非所问|史实错误|概念错误|未联系材料|纯照抄材料|照抄材料|空泛结论|无依据|缺少依据|字数不足)/u;
 
+export const DEDUCTION_CATEGORIES = Object.freeze({
+  substantive: '实质错误或未作答',
+  task_requirement: '违反题目／教师明确限定',
+  missing_key_step: '缺少关键步骤或核心方程',
+  minor_brevity: '过程简略、跳步或不影响含义的简写',
+  strict_detail: '未单列中间量、正方向说明或常规代入展开',
+  non_reference_method: '未采用参考答案解法或步骤顺序',
+  non_verbatim_wording: '大意符合但未使用参考原词、句式或范文表达'
+});
+
+const FORBIDDEN_In_NON_STRICT = new Set(['strict_detail', 'non_reference_method', 'non_verbatim_wording']);
+const FORBIDDEN_IN_LENIENT = new Set(['strict_detail', 'non_reference_method', 'non_verbatim_wording', 'minor_brevity', 'missing_key_step']);
+
+function collectStructuredDeductionIssues(allDetails, settings, expected) {
+  if ((expected !== 'lenient' && expected !== 'normal') || settings.useCustomPrompt) return [];
+  const forbidden = expected === 'lenient' ? FORBIDDEN_IN_LENIENT : FORBIDDEN_In_NON_STRICT;
+  const issues = [];
+  for (const item of allDetails) {
+    if (!item || !Array.isArray(item.deductions)) continue;
+    const label = item.label || '未命名项';
+    for (const d of item.deductions) {
+      if (!d || !(Number(d.points) > 0) || typeof d.category !== 'string') continue;
+      const cat = d.category.trim();
+      if (!forbidden.has(cat)) continue;
+      if (cat === 'missing_key_step' && item.score === 0) continue;
+      const desc = DEDUCTION_CATEGORIES[cat] || cat;
+      issues.push(`${rubricPrompts[expected].label}口径禁止按“${desc}”(${cat})扣分（${label}扣${d.points}分${d.evidence ? `：${d.evidence}` : ''}）。`);
+    }
+  }
+  return issues;
+}
+
 function collectPolicyIssues(config, result, settings, expected, maximum) {
   const issues = [];
   if (result.gradingMode !== undefined && result.gradingMode !== expected) {
@@ -133,6 +165,7 @@ function collectPolicyIssues(config, result, settings, expected, maximum) {
   }
 
   const allDetails = Array.isArray(result.scoringDetails) ? result.scoringDetails : [];
+  issues.push(...collectStructuredDeductionIssues(allDetails, settings, expected));
   if ((expected === 'lenient' || expected === 'normal') && !settings.useCustomPrompt) {
     const deductedItems = allDetails.filter(item =>
       item && Number.isFinite(item.score) &&
@@ -269,6 +302,17 @@ function collectConsistencyIssues(result, maximum) {
       );
       if (blankOnly || zeroSentence) {
         issues.push(`分项评语与得分矛盾（${label}）：评语写明未作答或不得分，但分项score为${item.score}分。`);
+      }
+    }
+
+    if (Array.isArray(item.deductions) && Number.isFinite(item.maxScore) && item.maxScore > 0) {
+      const validDeductions = item.deductions.filter(d => d && Number.isFinite(Number(d.points)) && Number(d.points) > 0);
+      const deductedSum = validDeductions.reduce((s, d) => s + Number(d.points), 0);
+      if (Math.abs(item.score - item.maxScore) < 1e-8 && deductedSum > 1e-8) {
+        issues.push(`分项扣分明细与得分矛盾（${label}）：得分已为满分${item.maxScore}分，但deductions列出扣${deductedSum}分。`);
+        itemD1Triggered = true;
+      } else if (validDeductions.length && Math.abs((item.maxScore - deductedSum) - item.score) > 1e-8 && item.score > 0) {
+        issues.push(`分项扣分明细与得分矛盾（${label}）：满分${item.maxScore}分减扣分合计${deductedSum}分不等于得分${item.score}分。`);
       }
     }
   }

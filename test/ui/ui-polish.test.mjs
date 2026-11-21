@@ -30,13 +30,26 @@ test('UI incremental polish: metrics chips, row badges, mobile 6-col table, cali
       gradingPage = await context.newPage();
       return context;
     },
-    gradeFunction: async () => ({
-      score: 4,
-      studentAnswer: '作答过程略',
-      comment: '扣1分',
-      formatWarning: '评分口径冲突：非严格口径出现严格扣分依据，请人工核对。',
-      subScores: []
-    })
+    gradeFunction: async (_cfg, _settings, _imgs, _sig, onProgress) => {
+      onProgress?.({ role: '主评', status: 'retrying', attempt: 2, message: '口径核验重试' });
+      onProgress?.({ role: '主评', status: 'completed', attempt: 2, score: 4 });
+      return {
+        score: 4,
+        expectedGradingMode: 'lenient',
+        studentAnswer: '作答过程略',
+        comment: '扣1分',
+        formatWarning: '评分口径冲突：非严格口径出现严格扣分依据，请人工核对。',
+        gradingIssues: [{ location: '第1问', reason: '标准未注明单位换算规则' }],
+        scoringDetails: [{
+          label: '第1问',
+          maxScore: 5,
+          score: 4,
+          reason: '过程简略扣1分',
+          deductions: [{ points: 1, category: 'minor_brevity', evidence: '跳步' }]
+        }],
+        subScores: []
+      };
+    }
   });
   t.after(async () => {
     await app.close();
@@ -44,13 +57,24 @@ test('UI incremental polish: metrics chips, row badges, mobile 6-col table, cali
     await new Promise(resolve => fixture.close(resolve));
   });
 
-  // Pre-seed history records to test badges, metrics chips, and mobile 6-column table
+  // Pre-seed two history records to test badges, interactive filter chips, dialog prev/next, and mobile 6-column table
+  app.store.save({
+    id: 'ui-rec-2',
+    presetName: '测试方案',
+    state: 'submitted',
+    mode: 'trial',
+    time: '2026-11-21T07:00:00.000Z',
+    result: {
+      score: 4,
+      totalUsage: { calls: 1, inputTokens: 400, outputTokens: 100, totalTokens: 500, cachedTokens: 0 }
+    }
+  });
   app.store.save({
     id: 'ui-rec-1',
     presetName: '测试方案',
     state: 'submitted',
     mode: 'trial',
-    time: new Date().toISOString(),
+    time: '2026-11-21T08:00:00.000Z',
     originalResult: { score: 3 },
     correctionReason: '补充步骤得分',
     result: {
@@ -78,15 +102,35 @@ test('UI incremental polish: metrics chips, row badges, mobile 6-col table, cali
   const calCols = await page.locator('#calibrationPanel .calibration-body').evaluate(el => getComputedStyle(el).gridTemplateColumns.trim().split(/\s+/).length);
   assert.equal(calCols, 1);
 
-  // Check History tab: chips + badges + search debounce + mobile 6-column table
+  // Check History tab: chips + interactive chip filter + dialog prev/next + badges + search debounce + mobile 6-column table
   await page.locator('[data-tab=history]').click();
   await page.waitForFunction(() => document.querySelectorAll('#historyMetrics .history-metric-chip').length >= 4);
+  assert.equal(await page.locator('#historyRows tr').count(), 2);
   const firstRowText = await page.locator('#historyRows tr:first-child td:nth-child(3)').innerText();
   assert.match(firstRowText, /已仲裁/);
   assert.match(firstRowText, /核验告警/);
   assert.match(firstRowText, /已改分/);
   const rowClass = await page.locator('#historyRows tr:first-child').getAttribute('class');
   assert.match(rowClass, /history-conflict/);
+
+  // Click interactive "改分" metric chip to filter down to 1 record, then click again to reset
+  await page.locator('#historyMetrics [data-filter="corrected"]').click();
+  await page.waitForFunction(() => document.querySelectorAll('#historyRows tr').length === 1);
+  assert.equal(await page.locator('#historyMetrics [data-filter="corrected"]').getAttribute('aria-pressed'), 'true');
+  await page.locator('#historyMetrics [data-filter="corrected"]').click();
+  await page.waitForFunction(() => document.querySelectorAll('#historyRows tr').length === 2);
+
+  // Open history detail dialog and step to next/prev record via button and keyboard arrow
+  await page.locator('#historyRows tr:first-child td:nth-child(6) button').click();
+  assert.equal(await page.locator('#historyDialog').isVisible(), true);
+  assert.match(await page.locator('#historySummaryScore').innerText(), /5 分/);
+  assert.equal(await page.locator('#historyRecordPrev').isDisabled(), true);
+  assert.equal(await page.locator('#historyRecordNext').isDisabled(), false);
+  await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(() => document.querySelector('#historySummaryScore').textContent.includes('4 分'));
+  await page.locator('#historyRecordPrev').click();
+  await page.waitForFunction(() => document.querySelector('#historySummaryScore').textContent.includes('5 分'));
+  await page.locator('#closeHistory').click();
 
   // Debounce check: rapid typing should coalesce into a single /api/history?search=... request
   searchRequests = 0;
@@ -149,9 +193,25 @@ test('UI incremental polish: metrics chips, row badges, mobile 6-col table, cali
   await page.locator('#start').click();
   await page.waitForFunction(() => document.querySelector('#phase').textContent === '请确认评分');
 
-  // Check #resultAlertBanner displays warning visibly
+  // Check #resultAlertBanner displays both formatWarning and gradingIssues
   assert.equal(await page.locator('#resultAlertBanner').isVisible(), true);
-  assert.match(await page.locator('#resultAlertBanner').innerText(), /需人工重点核对[\s\S]*评分口径冲突/);
+  const bannerText = await page.locator('#resultAlertBanner').innerText();
+  assert.match(bannerText, /需人工重点核对[\s\S]*评分口径冲突/);
+  assert.match(bannerText, /评分标准疑点（第1问）：标准未注明单位换算规则/);
+
+  // Check per-role progress chip and structured deduction conflict badge
+  assert.equal(await page.locator('#modelRoleProgress').isVisible(), true);
+  assert.match(await page.locator('#modelRoleProgress').innerText(), /主评：已完成\(第2次\) 4分/);
+  assert.equal(await page.locator('#resultDetails .deduction-badge-conflict').count(), 1);
+  assert.match(await page.locator('#resultDetails .deduction-badge-conflict').innerText(), /-1分 · 过程简略\/跳步（跳步）/);
+
+  // Check quick score button ("满分(5)") + auto-checking #saveCorrectionRule when reason is entered
+  assert.equal(await page.locator('#saveCorrectionRule').isChecked(), false);
+  await page.locator('[data-quick-score="max"]').click();
+  assert.equal(await page.locator('[data-score]').inputValue(), '5');
+  assert.equal(await page.locator('#scoreTotal').innerText(), '5 分');
+  await page.locator('#correction').fill('过程简略在宽松口径不扣分');
+  assert.equal(await page.locator('#saveCorrectionRule').isChecked(), true);
 
   // Check #imageDialog zoom, rotate, reset, close
   await page.locator('#answerImages img').click();
@@ -171,5 +231,5 @@ test('UI incremental polish: metrics chips, row badges, mobile 6-col table, cali
   await page.locator('#comment').focus();
   await page.keyboard.press('Control+Enter');
   await page.waitForFunction(() => document.querySelector('#reason').textContent.includes('等待用户在网站提交'));
-  assert.equal(await gradingPage.locator('input[name=topicTxt]').inputValue(), '4');
+  assert.equal(await gradingPage.locator('input[name=topicTxt]').inputValue(), '5');
 });

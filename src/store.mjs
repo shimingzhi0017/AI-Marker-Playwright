@@ -83,7 +83,7 @@ export class Store {
     const placeholders = states.map(() => '?').join(',');
     return !!this.db.prepare(`SELECT 1 FROM records WHERE state IN (${placeholders}) AND json_extract(data,'$.identity') = ? LIMIT 1`).get(...states, identity);
   }
-  historyPage({ page = 1, pageSize = 50, state = '', search = '', arbitrated = false } = {}) {
+  historyPage({ page = 1, pageSize = 50, state = '', search = '', arbitrated = false, corrected = false, alerted = false, gradingIssues = false } = {}) {
     page = Math.max(1, Math.floor(Number(page) || 1));
     pageSize = Math.min(200, Math.max(1, Math.floor(Number(pageSize) || 50)));
     const clauses = [], params = [];
@@ -94,6 +94,9 @@ export class Store {
       clauses.push(`lower(${fields.map(field=>`coalesce(json_extract(data,'$.${field}'),'')`).join(" || ' ' || ")}) LIKE ? ESCAPE '\\'`); params.push(`%${escaped}%`);
     }
     if (arbitrated) clauses.push("(json_extract(data,'$.result.dualEval.result') = 'arbitration' OR json_extract(data,'$.result.recognitionArbitration') IS NOT NULL OR json_extract(data,'$.originalResult.dualEval.result') = 'arbitration' OR json_extract(data,'$.originalResult.recognitionArbitration') IS NOT NULL)");
+    if (corrected) clauses.push("((json_extract(data,'$.correctionReason') IS NOT NULL AND json_extract(data,'$.correctionReason') != '') OR (json_extract(data,'$.originalResult.score') IS NOT NULL AND json_extract(data,'$.result.score') IS NOT json_extract(data,'$.originalResult.score')))");
+    if (alerted) clauses.push("(json_array_length(coalesce(json_extract(data,'$.result.policyAudit.issues'),'[]')) > 0 OR json_array_length(coalesce(json_extract(data,'$.result.gradingIssues'),'[]')) > 0 OR (json_extract(data,'$.result.formatWarning') IS NOT NULL AND json_extract(data,'$.result.formatWarning') != ''))");
+    if (gradingIssues) clauses.push("(json_array_length(coalesce(json_extract(data,'$.result.gradingIssues'),'[]')) > 0)");
     const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
     const total = this.db.prepare(`SELECT COUNT(*) AS count FROM records${where}`).get(...params).count;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));

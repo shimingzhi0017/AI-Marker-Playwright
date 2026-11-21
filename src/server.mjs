@@ -275,12 +275,15 @@ export async function createApp({ root = process.env.AI_MARKER_DATA_ROOT || defa
           return;
         }
         if (url.pathname === '/api/history') {
-          const hasPaging = ['page', 'pageSize', 'state', 'search', 'arbitrated'].some(key => url.searchParams.has(key));
+          const hasPaging = ['page', 'pageSize', 'state', 'search', 'arbitrated', 'corrected', 'alerted', 'gradingIssues'].some(key => url.searchParams.has(key));
           if (!hasPaging) { text(res, 200, store.records()); return; }
           text(res, 200, store.historyPage({
             page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize'),
             state: url.searchParams.get('state') || '', search: url.searchParams.get('search') || '',
-            arbitrated: url.searchParams.get('arbitrated') === '1'
+            arbitrated: url.searchParams.get('arbitrated') === '1',
+            corrected: url.searchParams.get('corrected') === '1',
+            alerted: url.searchParams.get('alerted') === '1',
+            gradingIssues: url.searchParams.get('gradingIssues') === '1'
           })); return;
         }
         if (url.pathname === '/api/image') {

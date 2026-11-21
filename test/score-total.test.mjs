@@ -114,7 +114,7 @@ for(const count of [1,2,3,5,8,13]) {
     assert.equal(result.subScores[0].score,sample.sum);
     assert.match(result.formatWarning,/人工确认/);
     const prompt=promptFor(sample.config);
-    assert.ok(prompt.indexOf('"scoringDetails"')<prompt.lastIndexOf('"score":0,"comment"'));
+    assert.ok(prompt.indexOf('"scoringDetails"')<prompt.lastIndexOf('"comment":"逐项评分依据和分数计算","score":0'));
   });
 }
 
