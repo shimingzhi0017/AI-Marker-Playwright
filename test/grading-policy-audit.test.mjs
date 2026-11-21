@@ -121,17 +121,31 @@ test('B2 & B3: implicit over-deductions trigger in lenient/normal while genuine 
     '未单列原始方程扣1分。',
     '过程过于简略，按小问标准扣1分。',
     '省略中间步骤导致未达到参考步骤数量，扣1分。',
-    '不影响含义的单位省略扣1分。'
+    '不影响含义的单位省略扣1分。',
+    '过程不够严谨，扣1分。',
+    '过程不完整，扣1分。',
+    '跳步过多，扣1分。'
   ]) {
     const lenientIssues = gradingPolicyIssues(baseConfig, makeResult({ score: 9, last: 3, reason }));
     assert.ok(lenientIssues.some(i => /宽松口径出现疑似过度扣分依据/.test(i)), reason);
   }
 
-  const zeroPartial = gradingPolicyIssues(
-    baseConfig,
-    makeResult({ score: 6, last: 0, reason: '过程过于简略，按不完整判零。', comment: '总分6分。' })
+  // Normal allows partial deduction for genuine critical omission, but blocks zeroing incomplete work.
+  assert.deepEqual(
+    gradingPolicyIssues(
+      { ...baseConfig, scoring: { ...baseConfig.scoring, strictness: 'normal' } },
+      makeResult({ score: 9, last: 3, gradingMode: 'normal', reason: '关键推理步骤缺失，扣1分。' })
+    ),
+    []
   );
-  assert.ok(zeroPartial.some(i => /宽松口径不得因过程简略或不完整而判零/.test(i)));
+
+  for (const strictness of ['lenient', 'normal']) {
+    const zeroPartial = gradingPolicyIssues(
+      { ...baseConfig, scoring: { ...baseConfig.scoring, strictness } },
+      makeResult({ score: 6, last: 0, gradingMode: strictness, reason: '过程过于简略，按不完整判零。', comment: '总分6分。' })
+    );
+    assert.ok(zeroPartial.some(i => /不得因过程简略、不完整或不够严谨而判零/.test(i)), strictness);
+  }
 
   // Exemptions
   for (const reason of [

@@ -75,7 +75,7 @@ export function setupRubricGenerator({getConfig, getImages, action, api, markDir
     $('rubricMethodHint').textContent=method.summary;
     const subject=rubricSubjects[settings.subject]?.label||'通用';
     const taskLabel=settings.subject&&settings.taskType?subjectTaskTypes[settings.subject]?.[settings.taskType]?.label||'':'';
-    const levels={strict:'按题型检查必要内容、过程和明确要求的细节',normal:'认可等价表达，缺少必要内容按标准扣分',lenient:'过程题答案正确且有相关有效过程即给分；足以支持结论可满分'};
+    const levels={strict:'答案正确、必要过程完备且明确要求的细节齐全',normal:'答案正确且过程足以支持结论给满分，过程不足按有效内容给部分分，不判零',lenient:'答案正确且有过程即可给分，不苛求过程严谨或完整'};
     $('rubricPolicySummary').textContent=`${subject}${taskLabel?`（${taskLabel}）`:''} · ${settings.useCustomPrompt?'自定义要求':levels[settings.strictness]} · ${method.label}。${settings.notes.trim()?'已加入本题补充要求。':''}`;
     $('rubricSubjectReviewSummary').textContent=settings.useCustomPrompt?'学科要求以教师自定义提示词为准。':subjectReviewSummaries[settings.subject]||'选择学科后显示本学科的核验重点。';
     const examples={physics:'例如：单位缺失只扣一次；错算后的正确方法仍给分；有效数字按题目要求。',mathematics:'例如：认可其他正确解法；写明错算后续方法分；证明必须说明关键依据。',english:'例如：本题必须使用过去式；开放表达允许同义替换；说明字数要求。',chinese:'例如：阅读每个有效要点独立给分；同义概括认可；默写错字不给本空分。',chemistry:'例如：说明配平、反应条件与单位要求；实验现象和解释分别给分。'};

@@ -26,14 +26,16 @@ for (const subject of ['physics','mathematics']) {
         assert.match(prompt,/以已保存的各小问具体条款为准/);
         assert.match(prompt,/具体扣几分/);
         if (strictness==='lenient') {
-          assert.match(prompt,/只要最终答案正确，且学生实际写出任何与本题相关、经核验有效的公式、列式、运算或简要推理，就必须给分/);
-          assert.match(prompt,/过程过于简略或未达到参考步骤数量而判零/);
-          assert.match(prompt,/若这段有效过程足以支持结论，应给该小问满分/);
+          assert.match(prompt,/只要最终答案正确，且学生实际写有与本题相关的解题过程/);
+          assert.match(prompt,/至于过程是否严谨、完整、规范.*均不重要/);
           assert.match(prompt,/完全没有写过程、只写最终答案的过程题，不给过程分/);
           assert.match(prompt,/不得在识别文本中补写/);
           assert.doesNotMatch(prompt,/关键推理实际缺失仍按标准处理|常规运算仅限于/);
         } else if (strictness==='normal') {
-          assert.match(prompt,/正常模式下的解答题：答案正确且必要过程充分/);
+          assert.match(prompt,/正常模式下的解答题：答案正确且实际写有任何与本题相关、经核验有效的过程就必须给分/);
+          assert.match(prompt,/不因过程不完整判零/);
+          assert.match(prompt,/过程足以支持结论.*时给该小问满分/);
+          assert.match(prompt,/否则按已体现的有效内容给部分分/);
           assert.match(prompt,/最终答案正确也不能免除此类扣分/);
           assert.match(prompt,/不能把“未单列”和“确实缺失”混同/);
           assert.doesNotMatch(prompt,/严格模式下的解答题|宽松模式下的解答题/);
@@ -107,23 +109,35 @@ test('old rubrics with a lenient marker receive the lenient guidance',()=>{
   assert.match(promptFor({...config,rubric:config.rubric+'\n评分口径：宽松；给分方式为按要点／步骤给分。'}),/宽松模式下的解答题/);
 });
 
-test('lenient process answers receive credit even when incomplete, while answer-only work earns no process credit',()=>{
-  const policy=solutionGradingPolicy({subject:'mathematics',strictness:'lenient'});
-  assert.match(policy,/任何与本题相关、经核验有效的公式、列式、运算或简要推理，就必须给分/);
-  assert.match(policy,/过程过于简略或未达到参考步骤数量而判零/);
-  assert.match(policy,/不得把“未得满分”处理成“不得分”/);
-  assert.match(policy,/完全没有写过程、只写最终答案的过程题，不给过程分/);
+test('lenient awards full marks for correct answers with relevant process, while normal gives partial credit without zeroing incomplete work',()=>{
+  const lenientPolicy=solutionGradingPolicy({subject:'mathematics',strictness:'lenient'});
+  assert.match(lenientPolicy,/只要最终答案正确，且学生实际写有与本题相关的解题过程/);
+  assert.match(lenientPolicy,/过程是否严谨、完整、规范.*均不重要/);
+  assert.match(lenientPolicy,/可以直接给该小问满分/);
+  assert.match(lenientPolicy,/完全没有写过程、只写最终答案的过程题，不给过程分/);
+  const normalPolicy=solutionGradingPolicy({subject:'mathematics',strictness:'normal'});
+  assert.match(normalPolicy,/答案正确且实际写有任何与本题相关、经核验有效的过程就必须给分/);
+  assert.match(normalPolicy,/不因过程不完整判零/);
+  assert.match(normalPolicy,/过程足以支持结论.*时给该小问满分/);
+  assert.match(normalPolicy,/不得把“未得满分”处理成“不得分”/);
 });
 
-test('all natural-science lenient templates award partial credit for valid but incomplete work',()=>{
+test('all natural-science lenient and normal templates match calibrated three-tier definitions',()=>{
   for(const subject of ['mathematics','physics','chemistry','biology']){
-    const requirements=rubricRequirements(subject,'lenient');
-    assert.match(requirements,/任何相关、有效的/ ,subject);
-    assert.match(requirements,/按.*有效内容给部分分|按有效内容给部分分/,subject);
-    assert.match(requirements,/不得因过程不完整判零/,subject);
-    const grading=promptFor({...config,rubricGeneration:{subject,strictness:'lenient'}});
-    assert.match(grading,/过程过于简略或未达到参考步骤数量而判零/,subject);
-    assert.match(grading,/不得把“未得满分”处理成“不得分”/,subject);
+    const lenientReq=rubricRequirements(subject,'lenient');
+    assert.match(lenientReq,/答案正确且实际写有相关解题过程/,subject);
+    assert.match(lenientReq,/过程是否严谨、完整不重要/,subject);
+    const lenientGrade=promptFor({...config,rubricGeneration:{subject,strictness:'lenient'}});
+    assert.match(lenientGrade,/可以直接给该小问满分/,subject);
+    assert.match(lenientGrade,/过程是否严谨、完整、规范/,subject);
+
+    const normalReq=rubricRequirements(subject,'normal');
+    assert.match(normalReq,/不因过程不完整判零/,subject);
+    assert.match(normalReq,/足以支持结论/,subject);
+    assert.match(normalReq,/按.*有效内容给部分分|按有效内容给部分分/,subject);
+    const normalGrade=promptFor({...config,rubricGeneration:{subject,strictness:'normal'}});
+    assert.match(normalGrade,/不因过程不完整判零/,subject);
+    assert.match(normalGrade,/不得把“未得满分”处理成“不得分”/,subject);
   }
 });
 

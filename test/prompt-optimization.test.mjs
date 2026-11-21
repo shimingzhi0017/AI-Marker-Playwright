@@ -437,3 +437,21 @@ test('lintGeneratedRubric flags ambiguous clauses and mode contradictions while 
   assert.equal(generated.warnings[0], '请确认分值');
   assert.match(generated.warnings.join('\n'), /模糊条款[\s\S]*区间分值/);
 });
+
+test('calibrated three-tier science policies enforce lenient vs normal distinction within budgets', () => {
+  for (const subject of ['mathematics', 'physics', 'chemistry', 'biology']) {
+    const lenient = rubricPolicy({ subject, strictness: 'lenient', scoringMethod: 'points' });
+    const normal = rubricPolicy({ subject, strictness: 'normal', scoringMethod: 'points' });
+    assert.match(lenient, /不苛求过程严谨或完整|过程是否严谨、完整.*不重要/);
+    assert.match(lenient, /答案正确且.*写有.*解题过程/);
+    assert.match(normal, /足以支持结论[\s\S]*满分/);
+    assert.match(normal, /不因过程不完整判零/);
+    for (const tier of ['lenient', 'normal', 'strict']) {
+      const points = rubricPolicy({ subject, strictness: tier, scoringMethod: 'points' });
+      const answers = rubricPolicy({ subject, strictness: tier, scoringMethod: 'answers' });
+      const holistic = rubricPolicy({ subject, strictness: tier, scoringMethod: 'holistic' });
+      assert.ok(answers.length < points.length, `${subject}/${tier}: answers >= points`);
+      assert.ok(holistic.length < points.length, `${subject}/${tier}: holistic >= points`);
+    }
+  }
+});
