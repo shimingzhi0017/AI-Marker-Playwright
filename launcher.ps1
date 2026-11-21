@@ -28,7 +28,11 @@ try {
     $dependenciesReady = $LASTEXITCODE -eq 0
     if ($Action -eq 'install' -or !$dependenciesReady) {
         Write-Host '正在安装项目依赖。首次运行需要联网，请等待完成……'
-        & npm.cmd ci
+        & npm.cmd ci --omit=dev
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host '默认源下载超时或失败，正在切换国内镜像重试……'
+            & npm.cmd ci --omit=dev --registry=https://registry.npmmirror.com
+        }
         if ($LASTEXITCODE -ne 0) { throw '依赖安装失败。请检查网络和 npm 下载错误，然后重新运行安装依赖.cmd。' }
     }
     # Browser caches may be missing or broken even when node_modules exists.
