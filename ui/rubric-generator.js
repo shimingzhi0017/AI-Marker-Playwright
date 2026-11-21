@@ -1,5 +1,5 @@
 import {rubricSubjects,rubricRequirements,rubricScoringMethods,rubricPolicy,rubricGradingSettings} from './rubric-prompts.js';
-import {subjectReviewSummaries} from './subject-review-rules.js';
+import {subjectReviewSummaries,subjectTaskTypes} from './subject-review-rules.js';
 export function setupRubricGenerator({getConfig, getImages, action, api, markDirty}) {
   const $ = id => document.getElementById(id);
   $('rubric').closest('label').insertAdjacentHTML('beforebegin', '<div class="wide"><button id="openRubricGenerator">AI生成评分标准</button><p class="hint">使用上方题目和参考答案的文字、图片生成草稿。填写分值、选择评分口径，生成后检查并保存方案。</p><label>实际阅卷口径<select id="gradingStrictness"><option value="">遵循已保存评分标准</option><option value="lenient">宽松</option><option value="normal">正常</option><option value="strict">严格</option></select><span class="hint">保存方案后用于实际评分。显式选择优先于旧模板的宽严标记；本题特别指定的要求仍须满足。</span></label></div>');
@@ -21,7 +21,8 @@ export function setupRubricGenerator({getConfig, getImages, action, api, markDir
   settingsColumns.append(scoreColumn,answerColumn);form.append(settingsColumns);
   scoreColumn.append($('rubricMaxScore').closest('label'), $('rubricRoundStep').closest('label'), $('rubricScoreAllocation').closest('label'));
   answerColumn.append(subjectLevel);
-  answerColumn.insertAdjacentHTML('beforeend',`<label>给分方式<select id="rubricScoringMethod"></select><span id="rubricMethodHint" class="hint"></span></label>
+  answerColumn.insertAdjacentHTML('beforeend',`<label>题型细分 <span class="rubric-optional">选填</span><select id="rubricTaskType"><option value="">自动按题识别</option></select></label>
+    <label>给分方式<select id="rubricScoringMethod"></select><span id="rubricMethodHint" class="hint"></span></label>
     <label>本题补充要求 <span class="rubric-optional">选填</span><textarea id="rubricTeacherNotes" rows="3" maxlength="2000"></textarea><span class="hint">写本题的特殊约定即可，切换学科或宽严程度会保留。</span></label>
     <label class="check"><input id="rubricIncludeCorrections" type="checkbox">带入本任务人工改分记录辅助修订标准</label>
     <div class="rubric-policy-summary"><strong>当前评分口径</strong><p id="rubricPolicySummary"></p><p id="rubricSubjectReviewSummary"></p><span>遵守分值与步长 · 认可等价答案 · 不猜补学生作答</span></div>`);
@@ -57,13 +58,25 @@ export function setupRubricGenerator({getConfig, getImages, action, api, markDir
   const modelHint=form.nextElementSibling;modelHint.textContent='使用已保存的AI接口；含图片时请选择支持视觉的模型。';
   footer.append(modelHint,$('generateRubric'));form.after(footer);
   let generating = false, draftSettings, customRequirements='';
-  const policySettings=()=>({version:2,subject:$('rubricSubject').value,strictness:$('rubricStrictness').value,scoringMethod:$('rubricScoringMethod').value,notes:$('rubricTeacherNotes').value,useCustomPrompt:$('rubricUseCustomPrompt').checked,customRequirements,scoreAllocation:$('rubricScoreAllocation').value});
+  const syncTaskTypes=(selected='')=>{
+    const subject=$('rubricSubject').value;
+    const taskSelect=$('rubricTaskType');
+    const tasks=Object.entries(subjectTaskTypes[subject]||{});
+    taskSelect.replaceChildren(
+      Object.assign(document.createElement('option'),{value:'',textContent:subject?'自动按题识别':'请先选择学科（自动按题识别）'}),
+      ...tasks.map(([value,task])=>Object.assign(document.createElement('option'),{value,textContent:task.label}))
+    );
+    taskSelect.disabled=!subject;
+    taskSelect.value=selected&&Object.hasOwn(subjectTaskTypes[subject]||{},selected)?selected:'';
+  };
+  const policySettings=()=>({version:2,subject:$('rubricSubject').value,taskType:$('rubricTaskType').value,strictness:$('rubricStrictness').value,scoringMethod:$('rubricScoringMethod').value,notes:$('rubricTeacherNotes').value,useCustomPrompt:$('rubricUseCustomPrompt').checked,customRequirements,scoreAllocation:$('rubricScoreAllocation').value});
   const updateRequirements=()=>{
     const settings=policySettings(),method=rubricScoringMethods[settings.scoringMethod];
     $('rubricMethodHint').textContent=method.summary;
     const subject=rubricSubjects[settings.subject]?.label||'通用';
+    const taskLabel=settings.subject&&settings.taskType?subjectTaskTypes[settings.subject]?.[settings.taskType]?.label||'':'';
     const levels={strict:'按题型检查必要内容、过程和明确要求的细节',normal:'认可等价表达，缺少必要内容按标准扣分',lenient:'过程题答案正确且有相关有效过程即给分；足以支持结论可满分'};
-    $('rubricPolicySummary').textContent=`${subject} · ${settings.useCustomPrompt?'自定义要求':levels[settings.strictness]} · ${method.label}。${settings.notes.trim()?'已加入本题补充要求。':''}`;
+    $('rubricPolicySummary').textContent=`${subject}${taskLabel?`（${taskLabel}）`:''} · ${settings.useCustomPrompt?'自定义要求':levels[settings.strictness]} · ${method.label}。${settings.notes.trim()?'已加入本题补充要求。':''}`;
     $('rubricSubjectReviewSummary').textContent=settings.useCustomPrompt?'学科要求以教师自定义提示词为准。':subjectReviewSummaries[settings.subject]||'选择学科后显示本学科的核验重点。';
     const examples={physics:'例如：单位缺失只扣一次；错算后的正确方法仍给分；有效数字按题目要求。',mathematics:'例如：认可其他正确解法；写明错算后续方法分；证明必须说明关键依据。',english:'例如：本题必须使用过去式；开放表达允许同义替换；说明字数要求。',chinese:'例如：阅读每个有效要点独立给分；同义概括认可；默写错字不给本空分。',chemistry:'例如：说明配平、反应条件与单位要求；实验现象和解释分别给分。'};
     $('rubricTeacherNotes').placeholder=examples[settings.subject]||'例如：同义要点不重复计分；列出必需关键词；说明一次错误如何扣分。';
@@ -74,10 +87,12 @@ export function setupRubricGenerator({getConfig, getImages, action, api, markDir
     $('rubricPromptMode').textContent=settings.useCustomPrompt?'已自定义':'使用模板';
     $('rubricPromptHint').textContent=settings.useCustomPrompt?'替换学科与宽严模板；给分方式、本题补充、分值与步长约束仍会加入。取消勾选可恢复模板，自定义文字会保留。':'模板随选项更新；通常只需填写本题补充要求。需要更改模板时，勾选上方自定义。';
   };
-  $('rubricSubject').onchange=updateRequirements;$('rubricStrictness').onchange=updateRequirements;$('rubricScoringMethod').onchange=updateRequirements;$('rubricTeacherNotes').oninput=updateRequirements;
+  $('rubricSubject').onchange=()=>{syncTaskTypes('');updateRequirements();};
+  $('rubricTaskType').onchange=updateRequirements;
+  $('rubricStrictness').onchange=updateRequirements;$('rubricScoringMethod').onchange=updateRequirements;$('rubricTeacherNotes').oninput=updateRequirements;
   $('rubricUseCustomPrompt').onchange=()=>{if($('rubricUseCustomPrompt').checked&&!customRequirements)customRequirements=rubricRequirements($('rubricSubject').value,$('rubricStrictness').value);updateRequirements();};
   $('rubricRequirements').oninput=()=>{if($('rubricUseCustomPrompt').checked)customRequirements=$('rubricRequirements').value;};
-  const generationControls = ['generateRubric','closeRubricGenerator','rubricProvider','rubricModel','rubricChooseModel','rubricModelSearch','rubricMaxScore','rubricRoundStep','rubricSubject','rubricStrictness','rubricScoringMethod','rubricTeacherNotes','rubricIncludeCorrections','rubricUseCustomPrompt','rubricRequirements','rubricScoreAllocation','applyGeneratedRubric'];
+  const generationControls = ['generateRubric','closeRubricGenerator','rubricProvider','rubricModel','rubricChooseModel','rubricModelSearch','rubricMaxScore','rubricRoundStep','rubricSubject','rubricTaskType','rubricStrictness','rubricScoringMethod','rubricTeacherNotes','rubricIncludeCorrections','rubricUseCustomPrompt','rubricRequirements','rubricScoreAllocation','applyGeneratedRubric'];
   const closeModelPicker=()=>{$('rubricModelPicker').hidden=true;$('rubricChooseModel').setAttribute('aria-expanded','false');};
   const catalog = () => {
     const models=getConfig().providers[$('rubricProvider').value]?.models || [],query=$('rubricModelSearch').value.trim().toLowerCase();
@@ -100,7 +115,9 @@ export function setupRubricGenerator({getConfig, getImages, action, api, markDir
     $('rubricScoreAllocation').value = saved.scoreAllocation || '';
     $('rubricMaxScore').value = Number($('maxScore').value) > 0 ? $('maxScore').value : '';
     $('rubricRoundStep').value = $('roundStep').value || '1';
-    $('rubricSubject').value = saved.subject;$('rubricStrictness').value = saved.strictness;
+    $('rubricSubject').value = saved.subject;
+    syncTaskTypes(saved.taskType || '');
+    $('rubricStrictness').value = saved.strictness;
     $('rubricScoringMethod').value=saved.scoringMethod;$('rubricTeacherNotes').value=saved.notes;
     $('rubricUseCustomPrompt').checked=saved.useCustomPrompt;if($('rubricIncludeCorrections'))$('rubricIncludeCorrections').checked=false;customRequirements=saved.customRequirements;
     promptDetails.open=saved.useCustomPrompt;updateRequirements();
@@ -130,7 +147,7 @@ export function setupRubricGenerator({getConfig, getImages, action, api, markDir
       $('rubricWarnings').replaceChildren(...(result.warnings.length ? result.warnings : ['模型未报告疑点，请检查答案、分项和总分分配。']).map(text => Object.assign(document.createElement('li'), {textContent:text})));
       $('rubricDraft').hidden = false; $('rubricGenerationStatus').textContent = result.rubric ? '草稿已生成，请检查后使用。' : '资料不足，未生成标准；请补充下列内容后重试。';
     } catch (error) { $('rubricGenerationStatus').textContent = error.message; }
-    finally { generating = false; for (const id of generationControls) $(id).disabled = false; }
+    finally { generating = false; for (const id of generationControls) $(id).disabled = false; $('rubricTaskType').disabled = !$('rubricSubject').value; }
   });
   $('applyGeneratedRubric').onclick = () => {
     if (!$('generatedRubric').value.trim()) return;

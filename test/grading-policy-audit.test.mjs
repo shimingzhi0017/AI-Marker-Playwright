@@ -59,6 +59,50 @@ test('B1: explicit strict deductions are caught in multiple phrasings, but exemp
   );
 });
 
+test('B4: humanities and holistic over-strict reference-wording deductions trigger while substantive exemptions pass', () => {
+  const zhConfig = {
+    workflowId: 'w',
+    answer: '人物勇敢担当，顺叙揭示主旨',
+    rubric: '第（1）问：满分4分\n依据文本合理概括即可。\n学科：语文。\n评分口径：宽松；给分方式为按要点／步骤给分。',
+    scoring: { strictness: 'lenient', maxScore: 4, units: [] }
+  };
+  const makeZh = (reason, score = 3) => makeResult({
+    score,
+    gradingMode: 'lenient',
+    details: [{ label: '第（1）问', score, maxScore: 4, reason }],
+    comment: `总分${score}分。`
+  });
+
+  for (const reason of [
+    '学生大意准确，但未命中参考答案原词，扣1分。',
+    '语序与参考答案不同，扣1分。',
+    '文言翻译意思准确，但未逐字对译，扣1分。',
+    '立意与范文不同，扣2分。'
+  ]) {
+    const issues = gradingPolicyIssues(zhConfig, makeZh(reason, 2));
+    assert.ok(issues.some(i => /不得仅因未使用参考原词、句式或范文表达而扣分/.test(i)), reason);
+  }
+
+  for (const reason of [
+    '默写出现错别字，该空扣1分。',
+    '审题偏差跑题，仅给三档分。',
+    '仅抄录材料未联系材料分析原理，扣1分。'
+  ]) {
+    assert.deepEqual(gradingPolicyIssues(zhConfig, makeZh(reason, 3)), [], reason);
+  }
+
+  const politicsConfig = {
+    ...zhConfig,
+    rubric: '第（1）问：满分4分\n限定哲学原理。\n学科：政治。\n评分口径：正常；给分方式为按要点／步骤给分。',
+    scoring: { strictness: 'normal', maxScore: 4, units: [] }
+  };
+  assert.deepEqual(gradingPolicyIssues(politicsConfig, { ...makeZh('跨模块原理回答，不给分。', 0), gradingMode: 'normal' }), []);
+  assert.deepEqual(
+    gradingPolicyIssues({ ...zhConfig, scoring: { strictness: 'strict', maxScore: 4, units: [] } }, { ...makeZh('未命中参考答案原词，按严格要求扣1分。', 3), gradingMode: 'strict' }),
+    []
+  );
+});
+
 test('B2 & B3: implicit over-deductions trigger in lenient/normal while genuine omissions, proofs, task requirements and custom rubrics are exempt', () => {
   for (const reason of [
     '结果正确，但未采用参考答案解法扣1分。',

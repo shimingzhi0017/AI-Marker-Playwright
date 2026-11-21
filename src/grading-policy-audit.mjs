@@ -121,8 +121,10 @@ function extractCommentTotalScore(comment) {
   return fallbackTotal;
 }
 
+const HUMANITIES_SUBJECTS = new Set(['chinese', 'english', 'politics', 'history', 'geography']);
 const GENERAL_PROCESS_EXEMPTION = /(?:不扣|免扣|未扣|不因|不予扣|如果|假如|若按|若是)/u;
 const TASK_LIMIT_EXEMPTION = /(?:题目(?:明确)?(?:要求|考查|限定|指定)|题设(?:明确)?(?:要求|考查|限定|指定)|教师(?:明确)?(?:要求|考查|限定|指定)|明确要求必须|指定(?:方法|解法)|限定(?:方法|解法)|证明(?:题|过程)|只写(?:了)?(?:最终)?答案|无(?:任何)?(?:有效)?过程|未写过程|没有过程|(?:方法|公式|规律|结论|推导|答案|结果)(?:错误|有误|无效|不成立|不适用))/u;
+const HUMANITIES_EXEMPTION = /(?:默写|错别字|错字|漏字|增字|字形|词形|拼写|固定搭配|时态|语态|单复数|选择|填空|限定(?:形式|模块|主体|词形)|跨模块|主体错位|主体混淆|审题偏差|跑题|偏题|曲解|答非所问|史实错误|概念错误|未联系材料|纯照抄材料|照抄材料|空泛结论|无依据|缺少依据|字数不足)/u;
 
 function collectPolicyIssues(config, result, settings, expected, maximum) {
   const issues = [];
@@ -140,7 +142,8 @@ function collectPolicyIssues(config, result, settings, expected, maximum) {
     if (deductedItems.length || (Number.isFinite(maximum) && result.score < maximum)) {
       texts.push(result.comment || '');
     }
-    const isProcessTask = settings.scoringMethod !== 'answers' && settings.scoringMethod !== 'holistic';
+    const isHumanities = HUMANITIES_SUBJECTS.has(settings.subject);
+    const isScienceProcess = !isHumanities && settings.scoringMethod !== 'answers' && settings.scoringMethod !== 'holistic';
 
     for (const text of texts) {
       for (const sentence of splitSentences(text)) {
@@ -153,19 +156,30 @@ function collectPolicyIssues(config, result, settings, expected, maximum) {
           continue;
         }
 
-        if (!isProcessTask || GENERAL_PROCESS_EXEMPTION.test(sentence) || TASK_LIMIT_EXEMPTION.test(sentence)) continue;
+        if (isScienceProcess && !GENERAL_PROCESS_EXEMPTION.test(sentence) && !TASK_LIMIT_EXEMPTION.test(sentence)) {
+          if (/(?:未采用|未使用|未按照?|不同于|与)参考(?:答案|解法|步骤|公式)(?:的(?:方法|解法|步骤|思路))?[^。；\n]{0,30}(?:扣\s*\d|扣分|失分|不给|不得分|判[零0])/u.test(sentence)) {
+            issues.push(`非严格口径不得仅因未采用参考答案解法或步骤而扣分：${sentence}`);
+            continue;
+          } else if (/(?:未(?:单列|单独列出)中间量|未(?:另写|单列|写出?)重复说明|未(?:单列|单独声明|写出?)正方向(?:文字)?说明|省略(?:了)?常规(?:代入|运算|计算)|未逐(?:项|步|行)展开(?:常规)?(?:代入|运算|计算))[^。；\n]{0,35}(?:扣\s*\d|扣分|失分|不给|不得分|判[零0])/u.test(sentence)) {
+            issues.push(`非严格口径出现疑似严格细节扣分：${sentence}`);
+            continue;
+          } else if (expected === 'lenient' && /(?:未(?:单列|单独写出?)原始方程|过程(?:过于)?简略|未达到参考步骤数量|省略(?:了)?(?:中间步骤|中间变形|中间代入)|不影响含义的(?:单位省略|符号简写)|符号简写)[^。；\n]{0,35}(?:扣\s*\d|扣分|失分|不给|不得分|判[零0])/u.test(sentence)) {
+            issues.push(`宽松口径出现疑似过度扣分依据：${sentence}`);
+            continue;
+          }
+        }
 
-        if (/(?:未采用|未使用|未按照?|不同于|与)参考(?:答案|解法|步骤|公式)(?:的(?:方法|解法|步骤|思路))?[^。；\n]{0,30}(?:扣\s*\d|扣分|失分|不给|不得分|判[零0])/u.test(sentence)) {
-          issues.push(`非严格口径不得仅因未采用参考答案解法或步骤而扣分：${sentence}`);
-        } else if (/(?:未(?:单列|单独列出)中间量|未(?:另写|单列|写出?)重复说明|未(?:单列|单独声明|写出?)正方向(?:文字)?说明|省略(?:了)?常规(?:代入|运算|计算)|未逐(?:项|步|行)展开(?:常规)?(?:代入|运算|计算))[^。；\n]{0,35}(?:扣\s*\d|扣分|失分|不给|不得分|判[零0])/u.test(sentence)) {
-          issues.push(`非严格口径出现疑似严格细节扣分：${sentence}`);
-        } else if (expected === 'lenient' && /(?:未(?:单列|单独写出?)原始方程|过程(?:过于)?简略|未达到参考步骤数量|省略(?:了)?(?:中间步骤|中间变形|中间代入)|不影响含义的(?:单位省略|符号简写)|符号简写)[^。；\n]{0,35}(?:扣\s*\d|扣分|失分|不给|不得分|判[零0])/u.test(sentence)) {
-          issues.push(`宽松口径出现疑似过度扣分依据：${sentence}`);
+        if ((isHumanities || settings.scoringMethod === 'holistic') && settings.scoringMethod !== 'answers' &&
+            !GENERAL_PROCESS_EXEMPTION.test(sentence) && !TASK_LIMIT_EXEMPTION.test(sentence) && !HUMANITIES_EXEMPTION.test(sentence)) {
+          if (/(?:未(?:命中|使用|采用|出现|照抄|写出?)|没有(?:命中|使用|采用|照抄))[^。；\n]{0,16}(?:参考(?:答案)?(?:原词|原文|原话|原句|措辞|表达)|范文(?:原句|情节|立意|模板))[^。；\n]{0,30}(?:扣\s*\d|扣分|失分|不给|不得分|判[零0])/u.test(sentence) ||
+              /(?:(?:语序|句式|表达方式|立意|叙事|角度)(?:与|不同于)(?:参考(?:答案)?|范文)(?:不同|不一致|有异)|未逐字(?:对译|照抄))[^。；\n]{0,30}(?:扣\s*\d|扣分|失分|不给|不得分|判[零0])/u.test(sentence)) {
+            issues.push(`非严格口径不得仅因未使用参考原词、句式或范文表达而扣分：${sentence}`);
+          }
         }
       }
     }
 
-    if (expected === 'lenient' && isProcessTask) {
+    if (expected === 'lenient' && isScienceProcess) {
       for (const item of allDetails) {
         if (!item || item.score !== 0 || !Number.isFinite(item.maxScore) || !(item.maxScore > 0)) continue;
         const reason = item.reason || item.comment || '';

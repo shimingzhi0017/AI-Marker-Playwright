@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseModelJson, repairInvalidJsonEscapes, recoverCorruptedLatexControls } from '../src/model-json.mjs';
 import { parseResult, promptFor } from '../src/domain.mjs';
-import { generateRubric } from '../src/rubric-generator.mjs';
-import { rubricPolicy, rubricSubjects, solutionGradingPolicy } from '../ui/rubric-prompts.js';
-import { subjectReviewRules } from '../ui/subject-review-rules.js';
+import { generateRubric, lintGeneratedRubric } from '../src/rubric-generator.mjs';
+import { rubricPolicy, rubricSubjects, solutionGradingPolicy, rubricGradingSettings } from '../ui/rubric-prompts.js';
+import { subjectReviewRules, subjectTaskTypes } from '../ui/subject-review-rules.js';
 
 const CONFLICTING_PROCESS_PHRASES = [
   /解答题有效解法与合并步骤规则/,
@@ -229,4 +229,211 @@ test('parseModelJson and parseResult repair unescaped LaTeX and recover control-
   // 4. Non-JSON text still preserves original parseResult error contract
   assert.throws(() => parseResult('not json', cfg), /模型没有返回完整JSON评分结果/);
   assert.throws(() => parseResult('{"x":1}', cfg), /总分无效/);
+});
+
+test('humanities isolation, 3-tier answers/holistic policies, scoped physics example, and 7 enriched subjects', () => {
+  const humanities = ['chinese', 'english', 'politics', 'history', 'geography'];
+  for (const subject of humanities) {
+    for (const strictness of ['lenient', 'normal', 'strict']) {
+      for (const scoringMethod of ['auto', 'points']) {
+        const policy = solutionGradingPolicy({ subject, strictness, scoringMethod });
+        assert.match(policy, /文科与综合要点评分规则/);
+        for (const pattern of CONFLICTING_PROCESS_PHRASES) {
+          assert.doesNotMatch(policy, pattern, `${subject}/${strictness}/${scoringMethod} leaked science rule`);
+        }
+      }
+    }
+  }
+
+  for (const subject of Object.keys(rubricSubjects)) {
+    for (const scoringMethod of ['answers', 'holistic']) {
+      const tiers = ['lenient', 'normal', 'strict'].map(strictness =>
+        solutionGradingPolicy({ subject, strictness, scoringMethod })
+      );
+      assert.equal(new Set(tiers).size, 3, `${subject}/${scoringMethod} should distinguish 3 strictnesses`);
+    }
+  }
+
+  assert.match(solutionGradingPolicy({ subject: 'physics', scoringMethod: 'points' }), /刹车区间的充分证据示例/);
+  assert.doesNotMatch(solutionGradingPolicy({ subject: 'physics', scoringMethod: 'answers' }), /刹车区间的充分证据示例/);
+  assert.doesNotMatch(solutionGradingPolicy({ subject: 'physics', scoringMethod: 'holistic' }), /刹车区间的充分证据示例/);
+
+  assert.match(rubricPolicy({ subject: 'chemistry', scoringMethod: 'points' }), /-CHO 与 -COH[\s\S]*ΔH[\s\S]*坩埚\/研钵/);
+  const biologyPolicy = rubricPolicy({ subject: 'biology', scoringMethod: 'points' });
+  assert.match(biologyPolicy, /遗传图解要素/);
+  assert.match(biologyPolicy, /净光合与总光合/);
+  assert.match(rubricPolicy({ subject: 'chinese', scoringMethod: 'points' }), /默写执行零容错边界[\s\S]*文言翻译按/);
+  assert.match(rubricPolicy({ subject: 'english', scoringMethod: 'points' }), /应用文[\s\S]*读后续写/);
+  assert.match(rubricPolicy({ subject: 'politics', scoringMethod: 'points' }), /跨模块作答[\s\S]*双层赋分/);
+  assert.match(rubricPolicy({ subject: 'history', scoringMethod: 'points' }), /观点论述\/小论文题/);
+  assert.match(rubricPolicy({ subject: 'geography', scoringMethod: 'points' }), /有利\/不利条件[\s\S]*因果链/);
+});
+
+test('humanities generation and grading remove residual science phrases and unnecessary LaTeX requirement', async () => {
+  const humanities = ['chinese', 'english', 'politics', 'history', 'geography'];
+  const residualSciencePhrases = [
+    /需要过程的解答题/,
+    /完全只写答案、没有过程的过程题/,
+    /理科解答题默认一主问一项/,
+    /列式、计算、单位与错算延续为项内细则/,
+    /公式\/代入\/前问结果已体现/,
+    /局部错算/
+  ];
+
+  for (const subject of humanities) {
+    for (const strictness of ['lenient', 'normal', 'strict']) {
+      for (const scoringMethod of ['auto', 'points', 'answers', 'holistic']) {
+        let requested = '';
+        const generated = await generateRubric(
+          { providers: { p: {} } },
+          {
+            version: 2,
+            provider: 'p',
+            model: 'fixture',
+            subject,
+            strictness,
+            scoringMethod,
+            question: '材料题',
+            answer: '参考要点',
+            maxScore: 4,
+            roundStep: 1
+          },
+          async (_provider, _model, prompt) => {
+            requested = prompt;
+            return JSON.stringify({
+              question: '材料题',
+              answer: '参考要点',
+              items: [{ label: '第（1）问', maxScore: 4, criteria: '按内容、依据与分档要求给分。' }],
+              warnings: []
+            });
+          }
+        );
+        const grading = promptFor({ answer: '参考要点', rubric: generated.rubric, scoring: { maxScore: 4, units: [] } });
+        for (const text of [requested, generated.rubric, grading]) {
+          for (const pattern of residualSciencePhrases) {
+            assert.doesNotMatch(text, pattern, `${subject}/${strictness}/${scoringMethod} leaked ${pattern}`);
+          }
+        }
+        if (subject !== 'geography') {
+          assert.doesNotMatch(requested, /公式用LaTeX/);
+        }
+      }
+    }
+  }
+});
+
+test('answers and holistic modes exclude science top-level item phrasing across all 9 subjects', () => {
+  for (const subject of Object.keys(rubricSubjects)) {
+    for (const strictness of ['lenient', 'normal', 'strict']) {
+      for (const scoringMethod of ['answers', 'holistic']) {
+        const policy = rubricPolicy({ subject, strictness, scoringMethod });
+        assert.doesNotMatch(policy, /理科解答题默认一主问一项/);
+        assert.doesNotMatch(policy, /列式、计算、单位与错算延续为项内细则/);
+      }
+    }
+  }
+});
+
+test('subjectTaskTypes integrate across generation, persistence, grading deduplication, and physics scoping', async () => {
+  for (const [subject, tasks] of Object.entries(subjectTaskTypes)) {
+    for (const [taskType, entry] of Object.entries(tasks)) {
+      let requested = '';
+      const generated = await generateRubric(
+        { providers: { p: {} } },
+        {
+          version: 2,
+          provider: 'p',
+          model: 'fixture',
+          subject,
+          taskType,
+          strictness: 'normal',
+          scoringMethod: 'auto',
+          question: '测试小题',
+          answer: '参考答案',
+          maxScore: 4,
+          roundStep: 1
+        },
+        async (_provider, _model, prompt) => {
+          requested = prompt;
+          return JSON.stringify({
+            question: '测试小题',
+            answer: '参考答案',
+            items: [{ label: '第（1）问', maxScore: 4, criteria: '按核心条款给4分。' }],
+            warnings: []
+          });
+        }
+      );
+      assert.ok(requested.includes(`题型细分：${entry.label}`));
+      assert.ok(requested.includes(entry.guidance));
+      assert.ok(generated.rubric.includes(`题型细分：${entry.label}。`));
+
+      const resolved = rubricGradingSettings(generated.rubric);
+      assert.equal(resolved.subject, subject);
+      assert.equal(resolved.taskType, taskType);
+
+      const grading = promptFor({ answer: '参考答案', rubric: generated.rubric, scoring: { maxScore: 4, units: [] } });
+      assert.equal(grading.split(entry.guidance).length - 1, 1, `${subject}/${taskType} duplicated in grading`);
+    }
+  }
+
+  assert.throws(() => rubricPolicy({ subject: 'chinese', taskType: 'mechanics_calc' }), /题型细分选项无效/);
+  await assert.rejects(
+    generateRubric(
+      { providers: { p: {} } },
+      { version: 2, provider: 'p', model: 'fixture', subject: 'chinese', taskType: 'nonexistent', question: 'q', answer: 'a', maxScore: 4 },
+      async () => '{}'
+    ),
+    /题型细分选项无效/
+  );
+
+  const mechanics = solutionGradingPolicy({ subject: 'physics', taskType: 'mechanics_calc', scoringMethod: 'points' });
+  const electricity = solutionGradingPolicy({ subject: 'physics', taskType: 'electricity_exp', scoringMethod: 'points' });
+  const graph = solutionGradingPolicy({ subject: 'physics', taskType: 'graph_analysis', scoringMethod: 'points' });
+  assert.match(mechanics, /刹车区间的充分证据示例/);
+  assert.doesNotMatch(electricity, /刹车区间的充分证据示例/);
+  assert.doesNotMatch(graph, /刹车区间的充分证据示例/);
+  assert.match(electricity, /器材替代方案/);
+  assert.match(graph, /斜率、截距与围成面积/);
+
+  const switched = rubricGradingSettings('学科：物理。\n评分口径：正常。', { subject: 'chinese', taskType: 'translation' });
+  assert.equal(switched.subject, 'physics');
+  assert.equal(switched.taskType, '');
+});
+
+test('lintGeneratedRubric flags ambiguous clauses and mode contradictions while exempting valid constructs', async () => {
+  assert.deepEqual(lintGeneratedRubric('正确得4分，错别字扣1分。', { step: 1, scoringMethod: 'auto' }), []);
+  assert.deepEqual(lintGeneratedRubric('不得出现“酌情扣分”，禁止酌情给分，切勿适当扣分。', { step: 1, scoringMethod: 'auto' }), []);
+  assert.deepEqual(lintGeneratedRubric('0.5分钟内完成3-5分米位移；一等（16—20分）。', { step: 1, scoringMethod: 'auto' }), []);
+  assert.deepEqual(lintGeneratedRubric('一等16—20分，内容立意深刻，语言流畅。', { step: 1, scoringMethod: 'holistic' }), []);
+  assert.deepEqual(lintGeneratedRubric('写对得2分，写错0分；不设过程分，不拆步骤分。', { step: 1, scoringMethod: 'answers' }), []);
+
+  const vague = lintGeneratedRubric('核心要点正确，若有偏差酌情扣分；思路合理可适当给分。', { step: 1, scoringMethod: 'points' });
+  assert.equal(vague.length, 2);
+  assert.match(vague[0], /模糊条款/);
+
+  const rangeWarnings = lintGeneratedRubric('每处错别字扣1—2分；结论给1~3分。', { step: 1, scoringMethod: 'points' });
+  assert.equal(rangeWarnings.length, 2);
+  assert.match(rangeWarnings[0], /区间分值/);
+
+  const answersWarnings = lintGeneratedRubric('答案正确得2分，仅式子对可给过程分1分。', { step: 1, scoringMethod: 'answers' });
+  assert.equal(answersWarnings.length, 1);
+  assert.match(answersWarnings[0], /按答案逐项给分/);
+
+  const holisticWarnings = lintGeneratedRubric('观点明确且论述完整即可获得较高分数。', { step: 1, scoringMethod: 'holistic' });
+  assert.equal(holisticWarnings.length, 1);
+  assert.match(holisticWarnings[0], /按等级综合评价/);
+
+  const generated = await generateRubric(
+    { providers: { p: {} } },
+    { version: 2, provider: 'p', model: 'fixture', subject: 'chinese', strictness: 'normal', scoringMethod: 'points', question: '阅读题', answer: '要点', maxScore: 4, roundStep: 1 },
+    async () => JSON.stringify({
+      question: '阅读题',
+      answer: '要点',
+      items: [{ label: '第（1）问', maxScore: 4, criteria: '要点对给4分，缺依据酌情扣分，错字扣1—2分。' }],
+      warnings: ['请确认分值']
+    })
+  );
+  assert.equal(generated.warnings.length, 3);
+  assert.equal(generated.warnings[0], '请确认分值');
+  assert.match(generated.warnings.join('\n'), /模糊条款[\s\S]*区间分值/);
 });

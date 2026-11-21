@@ -18,6 +18,7 @@ try {
     for(const subject of subjects){
       await page.locator('#rubricSubject').selectOption(subject);
       if(!(await page.locator('#rubricSubjectReviewSummary').innerText()) || !(await page.locator('#rubricRequirements').inputValue()).includes('真实阅卷'))throw Error(`学科模板未接入：${subject}`);
+      if((await page.locator('#rubricTaskType option').count())<3)throw Error(`题型细分未接入：${subject}`);
     }
   }
   finally {await app.close();await browser.close();}
